@@ -1,0 +1,24 @@
+cell_class	cell_subclass	n_cells	kept
+Endothelial	Endo	155	True
+Endothelial	SMC	106	True
+Endothelial	Peri	28	True
+GABAergic	Vip	2645	True
+GABAergic	Sst	2534	True
+GABAergic	Pvalb	2065	True
+GABAergic	Lamp5	1837	True
+GABAergic	Sncg	244	True
+GABAergic	Serpinf1	84	True
+GABAergic	Meis2	55	True
+Glutamatergic	L5 IT	2952	True
+Glutamatergic	L6 IT	2166	True
+Glutamatergic	L4	1340	True
+Glutamatergic	L6 CT	1220	True
+Glutamatergic	L2/3 IT	1172	True
+Glutamatergic	L5 PT	895	True
+Glutamatergic	NP	733	True
+Glutamatergic	L6b	457	True
+Glutamatergic	CR	17	False
+Non-Neuronal	Astro	545	True
+Non-Neuronal	Oligo	185	True
+Non-Neuronal	Macrophage	131	True
+Non-Neuronal	VLMC	131	True

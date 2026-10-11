@@ -145,6 +145,7 @@ dmypy.json
 # data
 data/
 figures/
+c2l_test_out/
 
 # Vim .swp
 *.swp

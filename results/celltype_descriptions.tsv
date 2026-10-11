@@ -1,0 +1,23 @@
+Cell type	Class	Description
+L2/3 IT	Glutamatergic	Layer 2/3 intratelencephalic pyramidal neurons; project to other cortical areas, including the contralateral hemisphere via the corpus callosum. Top specific genes in this reference: Fst, Myh7, Tmem215. n = 1172 cells, 6 fine cluster(s).
+L4	Glutamatergic	Layer 4 IT neurons, the main recipients of thalamic sensory input in primary sensory cortex (here VISp). Top specific genes in this reference: Bglap3, Rspo1, Igfn1. n = 1340 cells, 1 fine cluster(s).
+L5 IT	Glutamatergic	Layer 5 intratelencephalic neurons; project within the telencephalon (cortex, striatum). Top specific genes in this reference: Tnnc1, Dkkl1, Krt12. n = 2952 cells, 14 fine cluster(s).
+L5 PT	Glutamatergic	Layer 5 pyramidal-tract (extratelencephalic) neurons; large cells projecting to subcortical targets (thalamus, midbrain, brainstem, spinal cord). Top specific genes in this reference: Npr3, Fam19a1, Kcng1. n = 895 cells, 8 fine cluster(s).
+L6 IT	Glutamatergic	Layer 6 intratelencephalic neurons; cortico-cortical and cortico-striatal projections. Top specific genes in this reference: Slc26a4, Car12, Rasl10a. n = 2166 cells, 7 fine cluster(s).
+L6 CT	Glutamatergic	Layer 6 corticothalamic neurons; feedback projections to the thalamus. Top specific genes in this reference: Foxp2, Rprm, Col5a1. n = 1220 cells, 7 fine cluster(s).
+L6b	Glutamatergic	Layer 6b (subplate-derived) neurons in the deepest cortical layer, next to the white matter. Top specific genes in this reference: Tnmd, Nxph4, Tmem40. n = 457 cells, 8 fine cluster(s).
+NP	Glutamatergic	Near-projecting neurons of layers 5/6; mainly local (short-range) axonal projections. Top specific genes in this reference: Sla2, Trhr, Tshz2. n = 733 cells, 4 fine cluster(s).
+Pvalb	GABAergic	MGE-derived fast-spiking interneurons (basket and chandelier cells); perisomatic and axon-initial-segment inhibition. Top specific genes in this reference: Pvalb, Tac1, Cartpt. n = 2065 cells, 10 fine cluster(s).
+Sst	GABAergic	MGE-derived somatostatin interneurons (e.g. Martinotti cells); inhibit pyramidal-cell dendrites. Includes long-range Sst Chodl cells. Top specific genes in this reference: Sst, Pdyn, Chodl. n = 2534 cells, 21 fine cluster(s).
+Vip	GABAergic	CGE-derived interneurons, enriched in upper layers; mainly inhibit other interneurons (disinhibition of pyramidal cells). Top specific genes in this reference: Slc5a7, Pthlh, Sostdc1. n = 2645 cells, 16 fine cluster(s).
+Lamp5	GABAergic	CGE-derived interneurons, largely neurogliaform cells of layer 1 and upper layers; slow, volume-type GABA release. Top specific genes in this reference: Tnnt1, Mia, Pde11a. n = 1837 cells, 7 fine cluster(s).
+Sncg	GABAergic	CGE-derived Vip-low/Cck-expressing interneurons. Top specific genes in this reference: Krt73, Crabp1, Htr3a. n = 244 cells, 4 fine cluster(s).
+Serpinf1	GABAergic	Small CGE-derived interneuron group closely related to Vip/Sncg types (2 clusters in this reference). Top specific genes in this reference: Clrn1, Nov, Col14a1. n = 84 cells, 2 fine cluster(s).
+Meis2	GABAergic	Meis2+ GABAergic cells located mostly in the white matter beneath cortex (one cluster, from ALM). Top specific genes in this reference: Adamts19, Scgn, Zar1. n = 55 cells, 1 fine cluster(s).
+Astro	Non-Neuronal	Astrocytes: ion/neurotransmitter homeostasis, synapse support, blood-brain-barrier end-feet. Present in every brain region. Top specific genes in this reference: Cyp4f15, Rpe65, Ppp1r3g. n = 545 cells, 1 fine cluster(s).
+Oligo	Non-Neuronal	Oligodendrocyte lineage, including OPCs (Pdgfra+) and myelinating oligodendrocytes; most abundant in white-matter/fibre tracts. Top specific genes in this reference: Klk6, Opalin, Gjc3. n = 185 cells, 5 fine cluster(s).
+Macrophage	Non-Neuronal	Brain-resident immune cells: microglia (Siglech+) and perivascular macrophages (PVM, Mrc1+). Top specific genes in this reference: Ccl12, Cd209f, Clec4n. n = 131 cells, 2 fine cluster(s).
+VLMC	Non-Neuronal	Vascular leptomeningeal cells: fibroblast-like cells of the meninges and perivascular spaces. Top specific genes in this reference: Lum, Slc22a6, Fam180a. n = 131 cells, 4 fine cluster(s).
+Endo	Endothelial	Endothelial cells lining brain blood vessels; form the blood-brain barrier. Top specific genes in this reference: Cytl1, Slc38a5, AU021092. n = 155 cells, 2 fine cluster(s).
+SMC	Endothelial	Vascular smooth-muscle cells around arteries/arterioles; regulate blood flow. Top specific genes in this reference: BC051019, Aoc3, Cnn1. n = 106 cells, 1 fine cluster(s).
+Peri	Endothelial	Pericytes wrapping capillaries; blood-brain-barrier maintenance and capillary tone. Top specific genes in this reference: Kcnj8, Abcc9, Ace2. n = 28 cells, 1 fine cluster(s).
