@@ -33,13 +33,9 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 from scipy import sparse, stats
-from scipy.spatial import cKDTree
+from scipy.spatial import KDTree
 
-try:
-    from .programs import PROGRAMS, flatten
-except ImportError:  # run as a plain script
-    from programs import PROGRAMS, flatten
-
+from .programs import PROGRAMS, flatten
 
 # --------------------------------------------------------------------------- #
 # Expression helpers                                                          #
@@ -79,7 +75,7 @@ def complex_expr(adata, entities, layer=None) -> pd.DataFrame:
 
 def spot_spacing(coords: np.ndarray) -> float:
     """Median nearest-neighbour distance (= centre-to-centre spacing on Visium)."""
-    d, _ = cKDTree(coords).query(coords, k=2)
+    d, _ = KDTree(coords).query(coords, k=2)
     return float(np.median(d[:, 1]))
 
 
@@ -99,10 +95,10 @@ def select_center(adata, *, barcode=None, xy=None, mask=None, genes=None, progra
     if barcode is not None:
         return int(adata.obs_names.get_loc(barcode))
     if xy is not None:
-        return int(cKDTree(coords).query(np.asarray(xy))[1])
+        return int(KDTree(coords).query(np.asarray(xy))[1])
     if mask is not None:
         m = adata.obs[mask].values.astype(bool) if isinstance(mask, str) else np.asarray(mask, bool)
-        return int(cKDTree(coords).query(coords[m].mean(0))[1])
+        return int(KDTree(coords).query(coords[m].mean(0))[1])
     if program is not None:
         flat = flatten(programs)
         key = program if program in flat else next(k for k in flat if k.split(":")[1] == program)
@@ -110,7 +106,7 @@ def select_center(adata, *, barcode=None, xy=None, mask=None, genes=None, progra
     if genes is None:
         raise ValueError("give barcode, xy, mask, genes or program")
     s = _zscore_mean(gene_expr(adata, genes, layer))
-    _, nn = cKDTree(coords).query(coords, k=smooth_k)          # smooth to find a *region*
+    _, nn = KDTree(coords).query(coords, k=smooth_k)          # smooth to find a *region*
     return int(np.argmax(s[nn].mean(1)))
 
 
@@ -120,7 +116,7 @@ def neighborhood(adata, center: int, k: int = 20, max_radius: float | None = Non
     (same units as coordinates). Columns: idx, barcode, dx, dy, dist, ring, angle_deg."""
     k = min(k, 20)
     coords = np.asarray(adata.obsm[spatial_key])[:, :2]
-    tree = cKDTree(coords)
+    tree = KDTree(coords)
     d, i = tree.query(coords[center], k=k + 1)
     d, i = d[1:], i[1:]
     if max_radius is not None:
@@ -208,7 +204,7 @@ def score_niche_lr(adata, center: int, nbrs: pd.DataFrame, lr: pd.DataFrame | No
 
     # background niches with the same geometry (pool + k - pool partners)
     bg = _background_centers(len(coords), n_background, bg_mask, seed)
-    dB, iB = cKDTree(coords).query(coords[bg], k=k + 1)
+    dB, iB = KDTree(coords).query(coords[bg], k=k + 1)
     poolB, iP, dP = iB[:, :center_pool + 1], iB[:, center_pool + 1:], dB[:, center_pool + 1:]
     wB = _gauss(dP, sigma)
     wB = wB / wB.sum(1, keepdims=True)
@@ -268,7 +264,7 @@ def niche_program_activity(adata, center: int, nbrs: pd.DataFrame, programs=PROG
     k = len(nbrs)
     niche = np.r_[center, nbrs.idx.values]
     bg = _background_centers(len(coords), n_background, bg_mask, seed)
-    _, iB = cKDTree(coords).query(coords[bg], k=k + 1)
+    _, iB = KDTree(coords).query(coords[bg], k=k + 1)
     allg = {g for gs in flat.values() for g in gs}
     E = gene_expr(adata, allg, layer)
     Z = (E - E.mean()) / (E.std() + 1e-9)
@@ -438,10 +434,12 @@ def analyze_niche(adata, center: int, *, k: int = 20, center_pool: int = 0, lr: 
                   programs=PROGRAMS, layer=None, spatial_key="spatial", fdr: float = 0.1,
                   n_top_gradients: int = 15, n_line_cells: int = 6, um_per_unit: float | None = None,
                   n_background: int = 2000, bg_mask=None, seed: int = 0, **lr_kw) -> NicheResult:
-    """Full pipeline for one center. `um_per_unit`: for Visium in full-res pixels use
+    """
+    Full pipeline for one center. `um_per_unit`: for Visium in full-res pixels use
     100 / spot_spacing(adata.obsm['spatial']) (100 um centre-to-centre).
     center_pool: pool the center with its nearest spots (6 = ring 1 on Visium) into a central
-    region; partners are then the remaining k - center_pool neighbours."""
+    region; partners are then the remaining k - center_pool neighbours.
+    """
     nbrs = neighborhood(adata, center, k=k, spatial_key=spatial_key)
     lr_res = score_niche_lr(adata, center, nbrs, lr, layer=layer, spatial_key=spatial_key,
                             center_pool=center_pool, n_background=n_background, bg_mask=bg_mask,
@@ -537,7 +535,7 @@ def centers_by_group(adata, groupby: str, spatial_key: str = "spatial", min_spot
     coords = np.asarray(adata.obsm[spatial_key])[:, :2]
     lab = np.asarray(adata.obs[groupby].astype(str), dtype=object)
     sp = spot_spacing(coords)
-    tree = cKDTree(coords)
+    tree = KDTree(coords)
     d, nn = tree.query(coords, k=21)
     purity = (lab[nn[:, 1:]] == lab[:, None]).mean(1)
     ring1 = (d[:, 1:] <= 1.2 * sp).sum(1)

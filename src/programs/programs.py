@@ -714,8 +714,10 @@ def human_to_mouse(genes, exceptions=HUMAN2MOUSE_EXCEPTIONS) -> list[str]:
 
 def to_mouse(nested: dict[str, dict[str, list[str]]], var_names=None,
              report: bool = True) -> dict[str, dict[str, list[str]]]:
-    """Convert a nested program dict to mouse symbols. If var_names is given, keep only genes
-    present in the data (and report per-program coverage)."""
+    """
+    Convert a nested program dict to mouse symbols. 
+    If var_names is given, keep only genes present in the data (and report per-program coverage).
+    """
     present = set(var_names) if var_names is not None else None
     out, rows = {}, []
     for c, d in nested.items():
