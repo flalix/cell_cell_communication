@@ -303,10 +303,13 @@ def annotate_lr_programs(lr_res: pd.DataFrame, programs=PROGRAMS) -> pd.DataFram
 
 def infer_functions(lr_res: pd.DataFrame, activity: pd.DataFrame, programs=PROGRAMS,
                     fdr: float = 0.1, w_lr: float = 0.5) -> pd.DataFrame:
-    """Rank candidate functions of the niche.
-    lr_support = sum over significant LRs of -log10(p) for pairs whose L or R belongs to the
-    program (shared L+R membership counts double). Final score = w_lr * rank-pct(lr_support)
-    + (1 - w_lr) * rank-pct(activity z)."""
+    """
+    Rank candidate functions of the niche.
+    lr_support = sum over significant LRs of -log10(p),
+       for pairs whose L or R belongs to the program (shared L+R membership counts double). 
+    Final score = w_lr * rank-pct(lr_support)
+    + (1 - w_lr) * rank-pct(activity z).
+    """
     sig = annotate_lr_programs(lr_res[lr_res.fdr <= fdr], programs)
     sup, who = {}, {}
     for _, r in sig.iterrows():
@@ -513,10 +516,12 @@ def plot_gradients(res: NicheResult, keys=None, ncols: int = 3):
 # --------------------------------------------------------------------------- #
 def scan_niches(adata, centers: dict, *, value: str = "score", exclude_own_group: str | None = None,
                 **kw) -> tuple[pd.DataFrame, dict]:
-    """Run analyze_niche for several centers, e.g. {'Hippocampus': idx, ...}.
+    """
+    Run analyze_niche for several centers, e.g. {'Hippocampus': idx, ...}.
     exclude_own_group: obs column; if given, each niche is compared with niches centred
     outside its own group (region vs. rest).
-    Returns (programs x centers matrix of `value` from res.functions, {name: NicheResult})."""
+    Returns (programs x centers matrix of `value` from res.functions, {name: NicheResult}).
+    """
     results, cols = {}, {}
     for name, c in centers.items():
         if exclude_own_group is not None:
