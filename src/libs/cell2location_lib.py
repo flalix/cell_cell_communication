@@ -37,7 +37,6 @@ import scipy.sparse as sp
 
 AGE_ORDER = ("babies", "young", "adult", "old adult", "elder")
 TISSUE_ORDER = ("Tonsil", "Spleen", "iLN", "tLN", "mLN")
-EXPR_CMAP_COLORS = ("#e6e6e6", "#fdbb84", "#e34a33", "#7f0000")   # light grey -> dark red (sequential)
 
 __all__ = [
     "AGE_ORDER", "TISSUE_ORDER",
@@ -183,7 +182,7 @@ def create_gene_age_tissue_groups(adata, genes_plot: Sequence[str], symbol_col: 
 def plot_panel_umap_by_tissue_age(adata, genes: Sequence[str], out_png: Optional[str] = None,
                                   symbol_col: str = "symbol", q: float = 99.2, basis: str = "X_umap",
                                   labels: Optional[Dict[str, str]] = None, n_bg: int = 20000, seed: int = 0,
-                                  cmap_blue_to_red: bool = True, dpi: int = 200):
+                                  cmap_num: int = 1, dpi: int = 200):
     """UMAP grid: rows = genes, columns = tissue x age groups.
 
     Colour = log1p(CP10k) clipped per gene at the q-th percentile (non-zero fallback for sparse genes),
@@ -204,10 +203,14 @@ def plot_panel_umap_by_tissue_age(adata, genes: Sequence[str], out_png: Optional
     rng = np.random.default_rng(seed)
     bg = rng.choice(len(U), min(n_bg, len(U)), replace=False)
 
-    if cmap_blue_to_red:
+    if cmap_num == 1:
         cmap = 'RdBu_r'
+    elif cmap_num == 2:
+        colors = ("#57a4e2", "#ebd246", "#f30707")
+        cmap = LinearSegmentedColormap.from_list("blue_yellow_red", list(colors))
     else:
-        cmap = LinearSegmentedColormap.from_list("expr", list(EXPR_CMAP_COLORS))
+        colors = ("#e6e6e6", "#fdbb84", "#e34a33", "#7f0000")   # light grey -> dark red (sequential)
+        cmap = LinearSegmentedColormap.from_list("expr", list(colors))
 
     nr, nc = len(found), len(order)
     fig, axes = plt.subplots(nr, nc, figsize=(1.35 * nc + 0.9, 1.2 * nr + 0.8), squeeze=False,
