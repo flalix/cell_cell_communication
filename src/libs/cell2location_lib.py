@@ -42,7 +42,7 @@ __all__ = [
     "AGE_ORDER", "TISSUE_ORDER",
     "resolve_gene_ids", "percentile_cap", "clip_for_plot",
     "age_group", "add_tissue_age_group", "panel_lognorm", "create_gene_age_tissue_groups",
-    "plot_panel_umap_by_tissue_age",
+    "plot_panel_umap_by_tissue_age", "plot_genes_per_cell_type",
     "get_reference_signatures", "ensure_posterior_samples",
 ]
 
@@ -252,6 +252,13 @@ def plot_panel_umap_by_tissue_age(adata, genes: Sequence[str], out_png: Optional
 
 
 def plot_genes_per_cell_type(slide, genes, ctypes):
+    """Spatial maps of total expression (column 0) and cell-type-specific expected expression
+    (one column per cell type) for each gene (rows).
+
+    Requires slide.layers[<cell type>] for every factor in slide.uns['mod']['factor_names'],
+    written from mod.module.model.compute_expected_per_cell_type(...) (sparse csr layers),
+    and slide.var['symbol']. Returns (fig, axs).
+    """
 
     import matplotlib.pyplot as plt
     import scanpy as sc
