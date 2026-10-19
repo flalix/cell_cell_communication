@@ -89,6 +89,7 @@ dependencies = [
   "cell2location>=0.1.5",
   "pyro-ppl==1.9.1",
   "scvi-colab>=0.15.0",
+  "plotly>=7.1.0",
 ]
 optional-dependencies.leiden = [
   "leidenalg",
