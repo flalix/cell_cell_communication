@@ -90,6 +90,7 @@ dependencies = [
   "pyro-ppl==1.9.1",
   "scvi-colab>=0.15.0",
   "plotly>=7.1.0",
+  "ipython>=9.17.1",
 ]
 optional-dependencies.leiden = [
   "leidenalg",
