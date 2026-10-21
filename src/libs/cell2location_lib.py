@@ -39,6 +39,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.lines import Line2D
 import matplotlib.patheffects as pe
+import matplotlib; matplotlib.use("Agg")
 
 import scanpy as sc
 
@@ -47,6 +48,7 @@ from scipy.stats import spearmanr
 import scipy.sparse as sps
 
 from libs.Basic import pdwritecsv, pdreadcsv
+from libs.matplotlib_figure_style import apply_figure_style
 
 AGE_ORDER = ("babies", "young", "adult", "old adult", "elder")
 TISSUE_ORDER = ("Tonsil", "Spleen", "iLN", "tLN", "mLN")
@@ -750,3 +752,54 @@ def spatial_plot_cell_abundance(adata_vis, adata_ref, genes_plot, focus, lineage
     _ = pdwritecsv(df_rho, fname, root_results)
 
     return df_rho
+
+def dotplot_bcell_markers(adata_bcell, markers, root_figure):
+
+    apply_figure_style(sizes=(8,7,6))
+
+    miss=[btype for v in markers.values() for btype in v if btype not in adata_bcell.var_names]
+    print("missing:",miss)
+
+    markers={k:[btype for btype in v if btype in adata_bcell.var_names] for k,v in markers.items()}
+
+    dp=sc.pl.dotplot(adata_bcell,markers, groupby="Subset", 
+                    standard_scale="var", cmap='RdBu_r', show=False, figsize=(15, 5),
+                    var_group_rotation=30,colorbar_title="mean expression\n(scaled 0-1 per gene)",size_title="% cells expressing")
+
+    fig=plt.gcf()
+
+    for ax in fig.axes:
+        for t in ax.get_xticklabels(): t.set_style("italic")
+
+    fig.suptitle("Markers separating the 10 B-cell subsets (within-B comparison; 38,309 cells)", ha="left", fontsize=8, x=0.02, y=1.06)
+    plt.show()
+
+    fig.savefig(root_figure / "bcell_subset_markers_dotplot.png",dpi=200,bbox_inches="tight")
+
+    return dp
+
+
+def plot_slide_loc_cell_types(slide, clust_labels, C2L_COLORS, root_figure, figsize=(5,5)):
+    # select up to 6 clusters
+    # Follicular dendritic cells (FDCs)
+    from cell2location.plt import plot_spatial
+    from matplotlib.patches import Patch
+    
+    clust_col = [str(i) for i in clust_labels]# in case column names differ from labels
+
+    with mpl.rc_context({'figure.figsize': figsize}):
+        fig = plot_spatial(adata=slide, color=clust_col, labels=clust_labels,
+                        show_img=True, style='fast', max_color_quantile=0.992,
+                        circle_diameter=6, colorbar_position=None)
+
+    handles = [Patch(facecolor=C2L_COLORS[i], edgecolor="black", label=lab) for i, lab in enumerate(clust_labels)]
+
+    fig.axes[0].legend(handles=handles, title="cell type",
+                    loc="center left", bbox_to_anchor=(1.02, 0.5),     # just outside the right edge, vertically centred
+                    fontsize=10, title_fontsize=11, frameon=False, borderaxespad=0)
+
+    plt.show()
+
+    figfile = root_figure / "spatial_T_naive_B_naive_FDC.png"
+    fig.savefig(figfile, dpi=300, bbox_inches="tight")
+        
