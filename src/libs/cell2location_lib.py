@@ -35,6 +35,12 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
+
+import scanpy as sc
+
 AGE_ORDER = ("babies", "young", "adult", "old adult", "elder")
 TISSUE_ORDER = ("Tonsil", "Spleen", "iLN", "tLN", "mLN")
 
@@ -190,9 +196,6 @@ def plot_panel_umap_by_tissue_age(adata, genes: Sequence[str], out_png: Optional
     one scale per gene row shared across columns; grey = random subsample of all cells.
     labels maps symbol -> display label (e.g. {'MS4A1': 'MS4A1 (CD20)'}). Returns the matplotlib Figure.
     """
-    import matplotlib as mpl
-    import matplotlib.pyplot as plt
-    from matplotlib.colors import LinearSegmentedColormap
 
     labels = labels or {}
     order = add_tissue_age_group(adata)
@@ -261,16 +264,15 @@ def plot_genes_per_cell_type(slide, genes, ctypes):
     and slide.var['symbol']. Returns (fig, axs).
     """
 
-    import matplotlib.pyplot as plt
-    import scanpy as sc
-    import numpy as np
-
     n_genes = len(genes)
     n_ctypes = len(ctypes)
     fig, axs = plt.subplots(
         nrows=n_genes, ncols=n_ctypes + 1, figsize=(4.5 * (n_ctypes + 1) + 2, 5 * n_genes + 1), squeeze=False
     )
     # axs = axs.reshape((n_genes, n_ctypes+1))
+
+    colors = ("#57a4e2", "#ebd246", "#f30707")
+    cmap = LinearSegmentedColormap.from_list("blue_yellow_red", list(colors))
 
     # plots of every gene
     for j in range(n_genes):
@@ -284,7 +286,7 @@ def plot_genes_per_cell_type(slide, genes, ctypes):
         quantile_across_ct = np.partition(quantile_across_ct.flatten(), -2)[-2]
         sc.pl.spatial(
             slide,
-            cmap="RdBu_r",
+            cmap=cmap,
             color=genes[j],
             # layer=ctypes[i],
             gene_symbols="symbol",
@@ -302,7 +304,7 @@ def plot_genes_per_cell_type(slide, genes, ctypes):
         for i in range(n_ctypes):
             sc.pl.spatial(
                 slide,
-                cmap="RdBu_r",
+                cmap=cmap,
                 color=genes[j],
                 layer=ctypes[i],
                 gene_symbols="symbol",
