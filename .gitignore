@@ -146,7 +146,6 @@ dmypy.json
 
 # data
 data/
-figures/
 c2l_test_out/
 
 # Vim .swp
@@ -164,6 +163,8 @@ _version.py
 *.h5ad
 results/*.h5ad
 results/*
+
+figures/c2l_liana
 
 figures/c2l_liana/liana_bivariate_top.png
 figures/c2l_liana/c2l_abundance_maps.png
