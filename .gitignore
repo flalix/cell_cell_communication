@@ -50,14 +50,14 @@ backup/
 *.mo
 *.pot
 
-*.html
-*.png
-*.jpeg
-*.jpg
-*.gif
-*.giff
-*.tiv
-*.svg
+# *.html
+# *.png
+# *.jpeg
+# *.jpg
+# *.gif
+# *.giff
+# *.tiv
+# *.svg
 
 
 # Django stuff:
