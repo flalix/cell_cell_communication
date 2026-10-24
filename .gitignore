@@ -183,3 +183,8 @@ figures/spatial_T_naive_B_naive_FDC.png
 figures/umap_region_sample.png
 figures/visium_hne_image.tiff
 figures/visium_umi_detection_heatmaps.png
+figures/c2l_liana/liana_bivariate_top.png
+figures/c2l_liana/c2l_abundance_maps.png
+figures/celltype_spatial_maps.png
+figures/liana_spatial_LR.png
+figures/visium_hne_image.tiff
