@@ -44,6 +44,8 @@ data/
 tests/figures/
 tests/_images/*-failed-diff.png
 
+backup/
+
 # Translations
 *.mo
 *.pot

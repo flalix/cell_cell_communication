@@ -48,5 +48,5 @@ extra-dependencies = [
     "napari-spatialdata",
 ]
 extras = ["docs"]
-scripts.setup-squidpy-kernel = "python -m ipykernel install --user --name=squidpy"
+scripts.setup-cell_cell_communication-kernel = "python -m ipykernel install --user --name=cell_cell_communication"
 scripts.run-notebooks = "python ./.scripts/ci/run_notebooks.py docs/notebooks"

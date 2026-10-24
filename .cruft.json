@@ -4,13 +4,13 @@
   "checkout": "v0.8.0",
   "context": {
     "cookiecutter": {
-      "project_name": "squidpy",
-      "package_name": "squidpy",
+      "project_name": "cell_cell_communication",
+      "package_name": "cell_cell_communication",
       "project_description": "Spatial Single Cell Analysis in Python",
-      "author_full_name": "Giovanni Palla",
+      "author_full_name": "SquidPy: Giovanni Palla",
       "author_email": "giovanni.palla@helmholtz-muenchen.de",
       "github_user": "giovp",
-      "github_repo": "squidpy",
+      "github_repo": "cell_cell_communication",
       "license": "BSD 3-Clause License",
       "ide_integration": true,
       "issue_categorization": "",
