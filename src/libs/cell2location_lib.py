@@ -574,7 +574,90 @@ def umap_spatial_3plot(adata_vis, root_figure):
     plt.show()
 
 
-def umap_cell_type_plot(adata_vis, adata_ref, genes_plot, lineage, focus, root_figure):
+def plot_spatial_visium(adata_vis, names):
+    s = 'V1_Human_Lymph_Node'
+
+    with mpl.rc_context({'axes.facecolor': 'black'}):
+        fig, ax = plt.subplots(figsize=(8,4))
+        sc.pl.spatial(adata_vis, color='region_cluster', library_id=s,
+                    size=1.3, img_key='hires', alpha=0.5,
+                    legend_loc=None, ax=ax, show=False, title=s)
+
+        cats   = adata_vis.obs['region_cluster'].cat.categories
+        colors = adata_vis.uns['region_cluster_colors']
+        handles = [Line2D([0], [0], marker='o', linestyle='', markersize=8,
+                        markerfacecolor=c, markeredgecolor='none',
+                        label=f"{k} – {names.get(k, '')}")
+                for k, c in zip(cats, colors)]
+
+        fig.legend(handles=handles, loc='lower center', ncol=2,
+                fontsize=6, frameon=False, bbox_to_anchor=(0.9, 0.5),
+                handletextpad=0.3, columnspacing=1.2)
+
+        plt.tight_layout(rect=[0, 0.25, 1, 1])
+        plt.show()
+
+
+def plotly_spatial_visium(adata_vis, names):
+    
+    import plotly.graph_objects as go
+
+    kelly = ['#F3C300', '#875692', '#F38400', '#A1CAF1', '#BE0032', '#C2B280',
+            '#848482', '#008856', '#E68FAC', '#0067A5', '#F99379', '#604E97',
+            '#F6A600', '#B3446C', '#DCD300', '#882D17', '#8DB600', '#654522',
+            '#E25822', '#2B3D26', '#F2F3F4', '#222222']
+
+    cats = adata_vis.obs['region_cluster'].cat.categories
+    colors = kelly[:len(cats)]
+    adata_vis.uns['region_cluster_colors'] = colors   # keeps scanpy/UMAP plots consistent
+
+    s   = 'V1_Human_Lymph_Node'
+    lib = adata_vis.uns['spatial'][s]
+
+    # background image (hires) as uint8
+    img = lib['images']['hires']
+    if img.dtype != np.uint8:
+        img = (np.clip(img, 0, 1) * 255).astype(np.uint8)
+
+    # spot coordinates scaled to the hires image
+    sf = lib['scalefactors']['tissue_hires_scalef']
+    xy = adata_vis.obsm['spatial'] * sf
+
+    cats   = adata_vis.obs['region_cluster'].cat.categories
+    colors = adata_vis.uns['region_cluster_colors']
+    clust  = adata_vis.obs['region_cluster'].astype(str).values
+
+    fig = go.Figure()
+    fig.add_trace(go.Image(z=img, hoverinfo='skip'))
+
+    for k, c in zip(cats, colors):
+        m = clust == k
+        label = f"{k} – {names.get(k, '')}"
+        fig.add_trace(go.Scattergl(
+            x=xy[m, 0], y=xy[m, 1],
+            mode='markers',
+            marker=dict(size=6, color=c, opacity=0.9, line=dict(width=0.5, color='black')),
+            name=label,
+            text=adata_vis.obs_names[m],
+            hovertemplate=f"<b>{label}</b><br>spot: %{{text}}<extra></extra>",
+        ))
+
+    fig.update_layout(
+        title=s,
+        width=1400, height=900,
+        plot_bgcolor='black',
+        margin=dict(l=10, r=10, t=40, b=10),
+        legend=dict(font=dict(size=15), itemsizing='constant',
+                    x=1.01, y=0.5, yanchor='middle'),   # right side
+    )
+    fig.update_xaxes(visible=False, range=[0, img.shape[1]])
+    fig.update_yaxes(visible=False, range=[img.shape[0], 0],  # image coords: y down
+                    scaleanchor='x')
+
+    return fig
+
+def umap_cell_type_plot(adata_vis, adata_ref, genes_plot, lineage, focus, cmaps, root_figure,
+                        sizes=(8, 7, 6), dpi=300):
     '''
     Per tissue x age-group table
     - Per tissue x age-group summary of the B-cell gene panel in the lymphoid-organ scRNA reference.
@@ -585,7 +668,7 @@ def umap_cell_type_plot(adata_vis, adata_ref, genes_plot, lineage, focus, root_f
 
     '''
     from libs.matplotlib_figure_style import apply_figure_style
-    apply_figure_style(sizes=(8, 7, 6))
+    apply_figure_style(sizes=sizes)
 
     # cell types: ct
     ct = adata_ref.obs["Subset"].astype(str).values          # cell-type label per cell
@@ -606,10 +689,9 @@ def umap_cell_type_plot(adata_vis, adata_ref, genes_plot, lineage, focus, root_f
 
     lib = list(adata_vis.uns["spatial"].keys())[0]                       # 'V1_Human_Lymph_Node'
 
-    img = adata_vis.uns["spatial"][lib]["images"]["hires"]
+    # img = adata_vis.uns["spatial"][lib]["images"]["hires"]
     sf  = adata_vis.uns["spatial"][lib]["scalefactors"]["tissue_hires_scalef"]
-    xy  = adata_vis.obsm["spatial"] * sf                                 # spot centres in hires-image pixels
-
+    # xy  = adata_vis.obsm["spatial"] * sf                                 # spot centres in hires-image pixels
 
     order=[c for v in lineage.values() for c in v]; assert set(order)==set(ct), set(ct)^set(order)
     col={}
@@ -620,7 +702,6 @@ def umap_cell_type_plot(adata_vis, adata_ref, genes_plot, lineage, focus, root_f
     # Per tissue x age-group table
     dfg = create_gene_age_tissue_groups(adata_ref, genes_plot)   # also writes adata_ref.obs['age_group']
     # dfg.to_csv(root0 / 'results' / 'bcell_genes_by_tissue_age.csv', index=False)
-
 
     fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(14,8))
 
@@ -659,14 +740,20 @@ def umap_cell_type_plot(adata_vis, adata_ref, genes_plot, lineage, focus, root_f
     for p in (25,50,100): ax2.scatter([],[],s=p/100*60,c="#555555",label=f"{p}%")
     ax2.legend(title="% cells >0",loc="upper left",bbox_to_anchor=(1.18,0.35),frameon=False,fontsize=6,title_fontsize=7)
 
+    order=[c for v in lineage.values() for c in v]; assert set(order)==set(ct), set(ct)^set(order)
+    col={}
+    for k,v in lineage.items():
+        cm=plt.get_cmap(cmaps[k]); 
+        for j,c in enumerate(v): col[c]=cm(0.45+0.45*(j/(max(len(v)-1,1))))
+
     plt.show()
 
     filefig = root_figure / "celltype_umap_dotplot.png"
-    fig.savefig(filefig, dpi=300, bbox_inches="tight")
+    fig.savefig(filefig, dpi=dpi, bbox_inches="tight")
 
     return dfg
 
-
+cmaps
 
 def spatial_plot_bcell_types(adata_vis, focus, lineage, root_figure):
     lib = list(adata_vis.uns["spatial"].keys())[0]
