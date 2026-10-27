@@ -753,7 +753,6 @@ def umap_cell_type_plot(adata_vis, adata_ref, genes_plot, lineage, focus, cmaps,
 
     return dfg
 
-cmaps
 
 def spatial_plot_bcell_types(adata_vis, focus, lineage, root_figure):
     lib = list(adata_vis.uns["spatial"].keys())[0]
