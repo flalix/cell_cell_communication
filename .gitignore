@@ -51,6 +51,7 @@ backup/
 *.pot
 
 *.html
+
 # *.png
 # *.jpeg
 # *.jpg
