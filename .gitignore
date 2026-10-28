@@ -50,7 +50,7 @@ backup/
 *.mo
 *.pot
 
-# *.html
+*.html
 # *.png
 # *.jpeg
 # *.jpg
