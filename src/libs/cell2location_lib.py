@@ -1,7 +1,8 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Helpers for notebooks/cell2location01_tutorial.ipynb (human lymph node Visium + lymphoid-organ scRNA reference).
+Helpers for notebooks/ccc01_tutorial.ipynb and ccc02_study.ipynb
+(human lymph node Visium + lymphoid-organ scRNA reference).
 
 Sections
 --------
@@ -9,12 +10,20 @@ Sections
 2. Tissue x age-group summaries of the reference   : age_group, add_tissue_age_group, panel_lognorm,
                                                      create_gene_age_tissue_groups, plot_panel_umap_by_tissue_age
 3. cell2location model utilities                   : get_reference_signatures, ensure_posterior_samples
+4. Downstream plots / analyses                     : plot_genes_per_cell_type, region_names, umap_spatial_3plot,
+                                                     plot_spatial_visium, plotly_spatial_visium, umap_cell_type_plot,
+                                                     spatial_plot_bcell_types, spatial_plot_cell_abundance,
+                                                     dotplot_bcell_markers, plot_slide_loc_cell_types,
+                                                     isg_hotspot, run_isg_hotspot
 
 Usage (notebook)
 ----------------
-    ROOT_SRC = Path("/home/flavio/uv/squidpy/src")
+    ROOT_SRC = Path("/home/flavio/uv/cell_cell_communication/src")
     sys.path.append(str(ROOT_SRC))
     from libs.cell2location_lib import *
+    import libs.cell2location_lib as c2l
+
+The module does not change the matplotlib backend (inline display in notebooks keeps working).
 
 Notes on the lymphoid-organ reference (lymphoid_organ_sc.h5ad, 73,260 cells x 10,237 genes)
 ------------------------------------------------------------------------------------------
@@ -28,6 +37,7 @@ Notes on the lymphoid-organ reference (lymphoid_organ_sc.h5ad, 73,260 cells x 10
 @author: Flavio Lichtenstein
 """
 
+import math
 import warnings
 import numpy as np
 import pandas as pd
@@ -39,13 +49,13 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.lines import Line2D
 import matplotlib.patheffects as pe
-import matplotlib; matplotlib.use("Agg")
 
 import scanpy as sc
 
 import scipy.sparse as sp
-from scipy.stats import spearmanr
-import scipy.sparse as sps
+from scipy.stats import spearmanr, mannwhitneyu
+from scipy.spatial import cKDTree, ConvexHull
+from scipy.sparse.csgraph import connected_components
 
 from libs.Basic import pdwritecsv, pdreadcsv
 from libs.matplotlib_figure_style import apply_figure_style
@@ -59,14 +69,40 @@ __all__ = [
     "age_group", "add_tissue_age_group", "panel_lognorm", "create_gene_age_tissue_groups",
     "plot_panel_umap_by_tissue_age", "plot_genes_per_cell_type",
     "get_reference_signatures", "ensure_posterior_samples",
+    "wtab", "donor_consistency", "isg_hotspot", "spot_expr", "run_isg_hotspot",
+    "region_names", "legend_figure_bottom", "umap_spatial_3plot", "plot_spatial_visium",
+    "plotly_spatial_visium", "umap_cell_type_plot", "spatial_plot_bcell_types",
+    "spatial_plot_cell_abundance", "dotplot_bcell_markers", "plot_slide_loc_cell_types",
 ]
 
-__version__ = '1.0.0'
+__version__ = '1.1.0'
 
 colors = ("#57a4e2", "#ebd246", "#f30707")
 cmap_byr = LinearSegmentedColormap.from_list("blue_yellow_red", list(colors))
 
 bcell_cmaps={"GC B":"Reds","naive/mem B":"Blues","plasma":"Purples","T":"Greens","NK/ILC":"GnBu","myeloid":"Oranges","stromal":"Greys"}
+
+# Kelly's colours of maximum contrast, without near-white (#F2F3F4) and near-black (#222222)
+KELLY_COLORS = ['#F3C300', '#875692', '#F38400', '#A1CAF1', '#BE0032', '#C2B280',
+                '#848482', '#008856', '#E68FAC', '#0067A5', '#F99379', '#604E97',
+                '#F6A600', '#B3446C', '#DCD300', '#882D17', '#8DB600', '#654522',
+                '#E25822', '#2B3D26']
+
+
+def _lineage_colors(lineage: Dict[str, Sequence[str]], cmaps: Optional[Dict[str, str]] = None) -> Dict[str, tuple]:
+    """cell type -> RGBA, shades of one colormap per lineage (cmaps: lineage -> matplotlib cmap name)."""
+    cmaps = cmaps or bcell_cmaps
+    col = {}
+    for k, v in lineage.items():
+        cm = plt.get_cmap(cmaps[k])
+        for j, c in enumerate(v):
+            col[c] = cm(0.45 + 0.45 * (j / (max(len(v) - 1, 1))))
+    return col
+
+
+def _library_id(adata) -> str:
+    """First (usually only) Visium library id in adata.uns['spatial']."""
+    return list(adata.uns["spatial"].keys())[0]
 
 
 # ---------------------------------------------------------------------------------------------------------
@@ -204,12 +240,15 @@ def create_gene_age_tissue_groups(adata, genes_plot: Sequence[str], symbol_col: 
 def plot_panel_umap_by_tissue_age(adata, genes: Sequence[str], out_png: Optional[str] = None,
                                   symbol_col: str = "symbol", q: float = 99.2, basis: str = "X_umap",
                                   labels: Optional[Dict[str, str]] = None, n_bg: int = 20000, seed: int = 0,
-                                  cmap_num: int = 1, dpi: int = 200):
+                                  cmap_num: int = 3, dpi: int = 200):
     """UMAP grid: rows = genes, columns = tissue x age groups.
 
     Colour = log1p(CP10k) clipped per gene at the q-th percentile (non-zero fallback for sparse genes),
     one scale per gene row shared across columns; grey = random subsample of all cells.
     labels maps symbol -> display label (e.g. {'MS4A1': 'MS4A1 (CD20)'}). Returns the matplotlib Figure.
+
+    cmap_num: 1 = 'RdBu_r' (diverging; expression has no midpoint, so not recommended),
+              2 = blue-yellow-red (cmap_byr, same as the Visium plots), 3 = light grey -> dark red (sequential, default).
     """
 
     labels = labels or {}
@@ -225,11 +264,10 @@ def plot_panel_umap_by_tissue_age(adata, genes: Sequence[str], out_png: Optional
     if cmap_num == 1:
         cmap = 'RdBu_r'
     elif cmap_num == 2:
-        colors = ("#57a4e2", "#ebd246", "#f30707")
-        cmap = LinearSegmentedColormap.from_list("blue_yellow_red", list(colors))
+        cmap = cmap_byr
     else:
-        colors = ("#e6e6e6", "#fdbb84", "#e34a33", "#7f0000")   # light grey -> dark red (sequential)
-        cmap = LinearSegmentedColormap.from_list("expr", list(colors))
+        cmap = LinearSegmentedColormap.from_list(
+            "expr", ["#e6e6e6", "#fdbb84", "#e34a33", "#7f0000"])   # light grey -> dark red (sequential)
 
     nr, nc = len(found), len(order)
     fig, axes = plt.subplots(nr, nc, figsize=(1.35 * nc + 0.9, 1.2 * nr + 0.8), squeeze=False,
@@ -284,10 +322,7 @@ def plot_genes_per_cell_type(slide, genes, ctypes):
     fig, axs = plt.subplots(
         nrows=n_genes, ncols=n_ctypes + 1, figsize=(4.5 * (n_ctypes + 1) + 2, 5 * n_genes + 1), squeeze=False
     )
-    # axs = axs.reshape((n_genes, n_ctypes+1))
-
-    colors = ("#57a4e2", "#ebd246", "#f30707")
-    cmap = LinearSegmentedColormap.from_list("blue_yellow_red", list(colors))
+    cmap = cmap_byr
 
     # plots of every gene
     for j in range(n_genes):
@@ -381,39 +416,49 @@ def ensure_posterior_samples(mod, adata, quantiles: Sequence[str] = ("q05", "q50
 
 
 def wtab(btype, rgg):
-    dic = {"gene":rgg["names"][btype],
-           "lfc_vs_restB":rgg["logfoldchanges"][btype],
-           "padj":rgg["pvals_adj"][btype],
-           "score":rgg["scores"][btype]}
-    
-    df=pd.DataFrame(dic).set_index("gene")
-    return df
+    """One group of a scanpy rank_genes_groups result (rgg = adata.uns['rank_genes_groups']) as a DataFrame
+    indexed by gene: lfc_vs_restB, padj, score."""
+    dic = {"gene": rgg["names"][btype],
+           "lfc_vs_restB": rgg["logfoldchanges"][btype],
+           "padj": rgg["pvals_adj"][btype],
+           "score": rgg["scores"][btype]}
+    return pd.DataFrame(dic).set_index("gene")
 
-def donor_consistency(adata_bcell, gene, btype, btypes, donors, grp, Xn, cnt):
+
+def donor_consistency(adata_bcell, gene, btype, btypes, donors, grp, Xn, cnt, min_cells: int = 20):
+    """Count donors in which `gene` is higher in `btype` than in every other B type.
+
+    Xn: normalised matrix (cells x genes, aligned with adata_bcell); donors / grp: per-cell donor and
+    B-type labels; cnt: donor x B-type cell-count table. Only donor/type pairs with >= min_cells cells are used.
+    Returns (n_donors_where_btype_is_highest, n_donors_tested).
+    """
     j = adata_bcell.var_names.get_loc(gene)
-    col = np.asarray(Xn[:,j].todense()).ravel() if sp.issparse(Xn) else Xn[:,j]
-    ok=tot=0
+    col = np.asarray(Xn[:, j].todense()).ravel() if sp.issparse(Xn) else Xn[:, j]
+    ok = tot = 0
     for dn in cnt.index:
-        if cnt.loc[dn,btype]<20: continue
-        others=[o for o in btypes if o!=btype and cnt.loc[dn,o]>=20]
-        if not others: continue
-        mi=col[(donors==dn)&(grp==btype)].mean(); mo=max(col[(donors==dn)&(grp==o)].mean() for o in others)
-        tot+=1; ok+=mi>mo
-    return ok,tot
+        if cnt.loc[dn, btype] < min_cells:
+            continue
+        others = [o for o in btypes if o != btype and cnt.loc[dn, o] >= min_cells]
+        if not others:
+            continue
+        mi = col[(donors == dn) & (grp == btype)].mean()
+        mo = max(col[(donors == dn) & (grp == o)].mean() for o in others)
+        tot += 1
+        ok += mi > mo
+    return ok, tot
 
 
-
-# import numpy as np, pandas as pd, scipy.sparse as sp
-from scipy.spatial import cKDTree
-from scipy.sparse.csgraph import connected_components
-from scipy.spatial import ConvexHull
-from scipy.stats import mannwhitneyu
-from statsmodels.stats.multitest import multipletests
-
-
+# ---------------------------------------------------------------------------------------------------------
+# 4. Downstream plots / analyses
+# ---------------------------------------------------------------------------------------------------------
 def isg_hotspot(adata, ISG_GENES, genes=None, q=0.97, symbol_col="symbol"):
-    """ISG score per spot (mean z-score of log1p(CP10k)) and the largest spatially connected
-    cluster of spots above the q-th quantile. Returns (score Series, hotspot bool array)."""
+    """ISG score per spot (mean z-score of log1p(CP10k) over the ISG genes found) and the largest spatially
+    connected cluster of spots above the q-th quantile of that score.
+
+    `genes`, if given, overrides ISG_GENES (kept for backward compatibility).
+    Spots are linked when closer than 1.6 x the median centre-to-centre distance (first hexagonal ring only).
+    Returns (score Series, hotspot bool array over adata.obs_names).
+    """
     if genes is None:
         genes = ISG_GENES
     sym = adata.var[symbol_col].astype(str).values
@@ -426,16 +471,22 @@ def isg_hotspot(adata, ISG_GENES, genes=None, q=0.97, symbol_col="symbol"):
         x = adata.X[:, j[0]]
         x = np.asarray(x.todense()).ravel() if sp.issparse(x) else np.asarray(x).ravel()
         cols[g] = np.log1p(x / tot * 1e4)
+    if not cols:
+        raise KeyError(f"none of the ISG genes found in var['{symbol_col}']")
     Z = pd.DataFrame(cols, index=adata.obs_names)
     score = ((Z - Z.mean()) / Z.std()).mean(1)
 
     xy = adata.obsm["spatial"].astype(float)
     step = np.median(cKDTree(xy).query(xy, k=2)[0][:, 1])        # centre-to-centre spot distance
     idx = np.where(score.values >= np.quantile(score, q))[0]
-    pairs = np.array(list(cKDTree(xy[idx]).query_pairs(r=1.6 * step)))
+    hs = np.zeros(adata.n_obs, bool)
+    pairs = np.array(list(cKDTree(xy[idx]).query_pairs(r=1.6 * step)), dtype=int).reshape(-1, 2)
+    if len(pairs) == 0:                                           # no two high-score spots are adjacent
+        warnings.warn("no adjacent high-score spots: hotspot = single top spot")
+        hs[idx[np.argmax(score.values[idx])]] = True
+        return score, hs
     A = sp.coo_matrix((np.ones(len(pairs)), (pairs[:, 0], pairs[:, 1])), shape=(len(idx), len(idx)))
     _, lab = connected_components(A, directed=False)
-    hs = np.zeros(adata.n_obs, bool)
     hs[idx[lab == np.bincount(lab).argmax()]] = True
     return score, hs
 
@@ -448,22 +499,26 @@ def spot_expr(adata_vis, gene):
     return np.log1p(x / np.asarray(adata_vis.X.sum(1)).ravel() * 1e4)
 
 
-def run_isg_hotspot(adata_vis, ISG_GENES: list, root_results:Path, root_figure: Path):
-    '''
-    Run ISG hotspot detection and visualization.
+def run_isg_hotspot(adata_vis, ISG_GENES: list, root_results: Path, root_figure: Path):
+    """Detect the interferon-stimulated-gene (ISG) hotspot and summarise it.
 
-    spot_xy[hs] uses two variables that exist only in my kernel:
-    spot_xy: the spot centres in hires-image pixels, adata_vis.obsm["spatial"] * tissue_hires_scalef. You already have this as xy (cell 116).
-    hs: a boolean mask over the 4,035 spots that is True for the 120 hotspot spots, so P[hs] is the coordinates of the hotspot spots.
+    Needs adata_vis with cell2location output (obsm['q05_cell_abundance_w_sf'], uns['mod']) and the
+    Visium hires image. Steps:
+      1. isg_hotspot(): ISG score per spot and the largest connected cluster of high-score spots (hs).
+      2. Cell-type enrichment in the hotspot vs the rest of the slide (q05 abundance; Mann-Whitney U, BH FDR).
+      3. Figure (a-d: ISG score, B_IFN, CXCL10, DC_CCR7+ maps with the hotspot hull; e: log2FC bar plot),
+         saved to root_figure / 'ifn_hotspot_summary.png'; table saved to
+         root_results / 'ifn_hotspot_celltype_enrichment.csv'.
+    Returns the enrichment table (DataFrame).
+    """
+    from statsmodels.stats.multitest import multipletests
 
-    '''
-
-    # ---- inputs (needs adata_vis after cell 97, and isg_hotspot() from the previous cell) ----
     isg_score, hs = isg_hotspot(adata_vis, ISG_GENES)
+    n_isg = int(adata_vis.var["symbol"].astype(str).isin(ISG_GENES).sum())
     Q_ab = pd.DataFrame(np.asarray(adata_vis.obsm["q05_cell_abundance_w_sf"]),
                         index=adata_vis.obs_names, columns=list(adata_vis.uns["mod"]["factor_names"]))
 
-    lib_id  = list(adata_vis.uns["spatial"].keys())[0]
+    lib_id  = _library_id(adata_vis)
     hires   = adata_vis.uns["spatial"][lib_id]["images"]["hires"]
     sf      = adata_vis.uns["spatial"][lib_id]["scalefactors"]["tissue_hires_scalef"]
     spot_xy = adata_vis.obsm["spatial"] * sf                       # spot centres in hires pixels
@@ -473,34 +528,41 @@ def run_isg_hotspot(adata_vis, ISG_GENES: list, root_results:Path, root_figure: 
     for c in Q_ab.columns:
         a, b = Q_ab.loc[hs, c], Q_ab.loc[~hs, c]
         rows.append(dict(cell_type=c, mean_hot=a.mean(), mean_rest=b.mean(),
-                        log2fc=np.log2((a.mean() + 0.05) / (b.mean() + 0.05)), p=mannwhitneyu(a, b).pvalue))
+                         log2fc=np.log2((a.mean() + 0.05) / (b.mean() + 0.05)), p=mannwhitneyu(a, b).pvalue))
     hot_res = pd.DataFrame(rows).sort_values("log2fc", ascending=False)
     hot_res["padj"] = multipletests(hot_res.p, method="fdr_bh")[1]
     hot_sel = pd.concat([hot_res.head(8), hot_res.tail(7)]).set_index("cell_type").iloc[::-1]
 
     # ---- figure ----
-    maps = [("ISG score (mean z of 12 ISGs)", isg_score.values, "a"),
-            ("B_IFN abundance (q05)",         Q_ab["B_IFN"].values, "b"),
-            ("CXCL10 log1p(CP10k)",           spot_expr(adata_vis, "CXCL10"), "c"),
-            ("DC_CCR7+ abundance (q05)",      Q_ab["DC_CCR7+"].values, "d")]
+    maps = [(f"ISG score (mean z of {n_isg} ISGs)", isg_score.values, "a"),
+            ("B_IFN abundance (q05)",              Q_ab["B_IFN"].values, "b"),
+            ("CXCL10 log1p(CP10k)",                spot_expr(adata_vis, "CXCL10"), "c"),
+            ("DC_CCR7+ abundance (q05)",           Q_ab["DC_CCR7+"].values, "d")]
 
-    hull = ConvexHull(spot_xy[hs]); hv = np.append(hull.vertices, hull.vertices[0])
+    hull = ConvexHull(spot_xy[hs]) if hs.sum() >= 3 else None
     x0, x1 = spot_xy[:, 0].min() - 30, spot_xy[:, 0].max() + 30
     y0, y1 = spot_xy[:, 1].min() - 30, spot_xy[:, 1].max() + 30
 
     fig = plt.figure(figsize=(14, 7.4))
     gs  = fig.add_gridspec(2, 3, width_ratios=[1, 1, 0.95], wspace=0.55, hspace=0.2)
     for k, (title, v, let) in enumerate(maps):
-        ax = fig.add_subplot(gs[k // 2, k % 2]); ax.imshow(hires, alpha=0.5)
-        vmin = np.percentile(v, 1) if v.min() < 0 else 0; vmax = np.percentile(v, 99.2); o = np.argsort(v)
+        ax = fig.add_subplot(gs[k // 2, k % 2])
+        ax.imshow(hires, alpha=0.5)
+        vmin = np.percentile(v, 1) if v.min() < 0 else 0
+        vmax = np.percentile(v, 99.2)
+        o = np.argsort(v)
         s = ax.scatter(spot_xy[o, 0], spot_xy[o, 1], c=np.clip(v[o], vmin, vmax), cmap="magma",
-                    vmin=vmin, vmax=vmax, s=4.5, lw=0)
-        ax.plot(spot_xy[hs][hv, 0], spot_xy[hs][hv, 1], color="#00e5ff", lw=1.0, ls="--")
+                       vmin=vmin, vmax=vmax, s=4.5, lw=0)
+        if hull is not None:
+            hv = np.append(hull.vertices, hull.vertices[0])
+            ax.plot(spot_xy[hs][hv, 0], spot_xy[hs][hv, 1], color="#00e5ff", lw=1.0, ls="--")
         ax.set_xlim(x0, x1); ax.set_ylim(y1, y0); ax.set_xticks([]); ax.set_yticks([])
-        for sp_ in ax.spines.values(): sp_.set_visible(False)
+        for sp_ in ax.spines.values():
+            sp_.set_visible(False)
         ax.set_title(title, loc="left", fontsize=8)
         ax.text(-0.06, 1.04, let, transform=ax.transAxes, fontweight="bold", fontsize=10)
-        cb = fig.colorbar(s, ax=ax, fraction=0.04, pad=0.01); cb.ax.tick_params(labelsize=6)
+        cb = fig.colorbar(s, ax=ax, fraction=0.04, pad=0.01)
+        cb.ax.tick_params(labelsize=6)
 
     ax = fig.add_subplot(gs[:, 2])
     ax.barh(range(len(hot_sel)), hot_sel.log2fc, height=0.7,
@@ -508,12 +570,14 @@ def run_isg_hotspot(adata_vis, ISG_GENES: list, root_results:Path, root_figure: 
     ax.axvline(0, color="#888", lw=0.8)
     ax.set_yticks(range(len(hot_sel))); ax.set_yticklabels(hot_sel.index)
     for i, (fc, pa) in enumerate(zip(hot_sel.log2fc, hot_sel.padj)):
-        if pa >= 0.05: ax.text(fc + 0.05, i, "n.s.", va="center", ha="left", fontsize=6, color="#555")
+        if pa >= 0.05:
+            ax.text(fc + 0.05, i, "n.s.", va="center", ha="left", fontsize=6, color="#555")
     ax.set_xlabel("log2 fold change, hotspot vs rest\n(mapped q05 abundance)")
     ax.set_title("Cell types enriched / depleted in the hotspot", loc="left", fontsize=8)
-    ax.text(-0.42, 1.02, "e", transform=ax.transAxes, fontweight="bold", fontsize=10); ax.margins(x=0.08)
+    ax.text(-0.42, 1.02, "e", transform=ax.transAxes, fontweight="bold", fontsize=10)
+    ax.margins(x=0.08)
     fig.text(0.1, 0.03, f"Dashed cyan = hull of the hotspot ({hs.sum()} of {adata_vis.n_obs:,} spots). "
-            "V1_Human_Lymph_Node, one section, one donor.", fontsize=7)
+             f"{lib_id}, one section, one donor.", fontsize=7)
 
     fig.savefig(root_figure / "ifn_hotspot_summary.png", dpi=200, bbox_inches="tight")
     plt.show()
@@ -521,19 +585,41 @@ def run_isg_hotspot(adata_vis, ISG_GENES: list, root_results:Path, root_figure: 
 
     return hot_res
 
-def region_names(adata, key='region_cluster',
-                 obsm_key='q05_cell_abundance_w_sf', top_n=2):
-    """Name each region cluster by its top enriched cell types (cluster mean / global mean)."""
+
+def region_names(adata, key='region_cluster', obsm_key='q05_cell_abundance_w_sf', top_n=2,
+                 method: str = 'abundance', min_enrich: float = 1.2):
+    """Name each region cluster by top_n cell types.
+
+    enrichment = mean abundance in the cluster / mean abundance over all spots (>1 = enriched).
+
+    method='abundance' (default): among cell types with enrichment > min_enrich, take the top_n with the
+        highest mean abundance (cells per spot) in the cluster; clusters with fewer candidates are filled
+        with the next types by enrichment. Gives names like 'B_naive / B_mem' (follicle) or
+        'T_CD4+_naive / T_CD8+_naive' (T zone).
+    method='ratio': top_n by enrichment only. Rare cell types (Mast, ILC, pDC) have tiny global means,
+        so they tend to dominate these names.
+    Returns {cluster (str): 'type1 / type2 ...'}.
+    """
     ab = pd.DataFrame(adata.obsm[obsm_key], index=adata.obs_names)
-    ab.columns = [c.replace('q05cell_abundance_w_sf_', '') for c in ab.columns]
+    ab.columns = [str(c).replace('q05cell_abundance_w_sf_', '') for c in ab.columns]
     mean_by_cl = ab.groupby(adata.obs[key], observed=False).mean()
-    enrich = mean_by_cl / ab.mean(axis=0)            # >1 = enriched in that region
-    return {cl: ' / '.join(enrich.loc[cl].nlargest(top_n).index)
-            for cl in enrich.index}
+    enrich = mean_by_cl / ab.mean(axis=0)
+    names = {}
+    for cl in enrich.index:
+        by_ratio = list(enrich.loc[cl].sort_values(ascending=False).index)
+        if method == 'ratio':
+            top = by_ratio[:top_n]
+        else:
+            cand = mean_by_cl.loc[cl][enrich.loc[cl] > min_enrich].sort_values(ascending=False)
+            top = list(cand.index[:top_n])
+            top += [c for c in by_ratio if c not in top][:top_n - len(top)]
+        names[str(cl)] = ' / '.join(top)
+    return names
 
 
 def legend_figure_bottom(fig, adata, key, names=None, ncol=4, fontsize=9):
-    """Horizontal legend spanning the whole bottom of the figure: 'number: name'."""
+    """Horizontal legend spanning the whole bottom of the figure: 'number: name'.
+    Needs a figure created with layout='constrained' (uses loc='outside lower center')."""
     cats = adata.obs[key].cat.categories
     colors = adata.uns[f'{key}_colors']
     names = names or {}
@@ -548,70 +634,87 @@ def legend_figure_bottom(fig, adata, key, names=None, ncol=4, fontsize=9):
                handletextpad=0.3, columnspacing=1.5)
 
 
-def umap_spatial_3plot(adata_vis, root_figure):
-    # compute UMAP using KNN graph based on the cell2location output
-    sc.tl.umap(adata_vis, min_dist=0.3, spread=1)
+def umap_spatial_3plot(adata_vis, root_figure, names: Optional[Dict[str, str]] = None,
+                       recompute_umap: bool = False, top_n: int = 2):
+    """UMAP by region_cluster, UMAP by sample, and spatial map by region_cluster, with a shared bottom legend.
+
+    names: cluster -> label; default region_names(adata_vis, top_n=top_n). Pass the same dict used in
+    other figures so cluster labels agree.
+    The UMAP is computed only when obsm['X_umap'] is missing or recompute_umap=True
+    (needs sc.pp.neighbors on the cell2location abundances first).
+    Saves root_figure / 'umap_region_sample.png'.
+    """
+    if recompute_umap or "X_umap" not in adata_vis.obsm:
+        sc.tl.umap(adata_vis, min_dist=0.3, spread=1)
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 6.5), layout='constrained')
 
     sc.pl.umap(adata_vis, color='region_cluster', size=30,
-            legend_loc='on data', legend_fontsize=20,
-            ax=axes[0], show=False, title='region_cluster')
+               legend_loc='on data', legend_fontsize=20,
+               ax=axes[0], show=False, title='region_cluster')
 
     sc.pl.umap(adata_vis, color='sample', size=30,
-            legend_loc='none',
-            ax=axes[1], show=False, title='sample')
+               legend_loc='none',
+               ax=axes[1], show=False, title='sample')
 
     axes[2].set_facecolor('black')
     sc.pl.spatial(adata_vis, color='region_cluster',
-                ax=axes[2], size=1.3, img_key='hires', alpha=0.5,
-                title='spatial', legend_loc='none', show=False)
+                  ax=axes[2], size=1.3, img_key='hires', alpha=0.5,
+                  title='spatial', legend_loc='none', show=False)
 
-    names = region_names(adata_vis, top_n=2)
+    if names is None:
+        names = region_names(adata_vis, top_n=top_n)
     legend_figure_bottom(fig, adata_vis, 'region_cluster', names=names, ncol=4)
 
     fig.savefig(root_figure / 'umap_region_sample.png', dpi=300, bbox_inches='tight')
     plt.show()
 
 
-def plot_spatial_visium(adata_vis, names):
-    s = 'V1_Human_Lymph_Node'
+def plot_spatial_visium(adata_vis, names, library_id: Optional[str] = None):
+    """Spatial map of region_cluster on the hires image with a 'cluster – name' legend."""
+    s = library_id or _library_id(adata_vis)
 
     with mpl.rc_context({'axes.facecolor': 'black'}):
-        fig, ax = plt.subplots(figsize=(8,4))
+        fig, ax = plt.subplots(figsize=(8, 4))
         sc.pl.spatial(adata_vis, color='region_cluster', library_id=s,
-                    size=1.3, img_key='hires', alpha=0.5,
-                    legend_loc=None, ax=ax, show=False, title=s)
+                      size=1.3, img_key='hires', alpha=0.5,
+                      legend_loc=None, ax=ax, show=False, title=s)
 
         cats   = adata_vis.obs['region_cluster'].cat.categories
         colors = adata_vis.uns['region_cluster_colors']
         handles = [Line2D([0], [0], marker='o', linestyle='', markersize=8,
-                        markerfacecolor=c, markeredgecolor='none',
-                        label=f"{k} – {names.get(k, '')}")
-                for k, c in zip(cats, colors)]
+                          markerfacecolor=c, markeredgecolor='none',
+                          label=f"{k} – {names.get(k, '')}")
+                   for k, c in zip(cats, colors)]
 
         fig.legend(handles=handles, loc='lower center', ncol=2,
-                fontsize=6, frameon=False, bbox_to_anchor=(0.9, 0.5),
-                handletextpad=0.3, columnspacing=1.2)
+                   fontsize=6, frameon=False, bbox_to_anchor=(0.9, 0.5),
+                   handletextpad=0.3, columnspacing=1.2)
 
         plt.tight_layout(rect=[0, 0.25, 1, 1])
         plt.show()
+    return fig
 
 
-def plotly_spatial_visium(adata_vis, names):
-    
+def plotly_spatial_visium(adata_vis, names, library_id: Optional[str] = None, set_colors: bool = False):
+    """Interactive (plotly) spatial map of region_cluster on the hires image; hover shows cluster and spot.
+
+    Colours: adata_vis.uns['region_cluster_colors'] when present and long enough; otherwise (or with
+    set_colors=True) Kelly colours, extended with tab20 when there are more clusters, written back to
+    uns['region_cluster_colors'] so scanpy plots use the same colours.
+    """
     import plotly.graph_objects as go
 
-    kelly = ['#F3C300', '#875692', '#F38400', '#A1CAF1', '#BE0032', '#C2B280',
-            '#848482', '#008856', '#E68FAC', '#0067A5', '#F99379', '#604E97',
-            '#F6A600', '#B3446C', '#DCD300', '#882D17', '#8DB600', '#654522',
-            '#E25822', '#2B3D26', '#F2F3F4', '#222222']
-
     cats = adata_vis.obs['region_cluster'].cat.categories
-    colors = kelly[:len(cats)]
-    adata_vis.uns['region_cluster_colors'] = colors   # keeps scanpy/UMAP plots consistent
+    colors = list(adata_vis.uns.get('region_cluster_colors', []))
+    if set_colors or len(colors) < len(cats):
+        palette = KELLY_COLORS + [mpl.colors.to_hex(c) for c in plt.get_cmap('tab20').colors]
+        if len(cats) > len(palette):
+            raise ValueError(f"{len(cats)} clusters but only {len(palette)} colours")
+        colors = palette[:len(cats)]
+        adata_vis.uns['region_cluster_colors'] = colors
 
-    s   = 'V1_Human_Lymph_Node'
+    s   = library_id or _library_id(adata_vis)
     lib = adata_vis.uns['spatial'][s]
 
     # background image (hires) as uint8
@@ -622,10 +725,7 @@ def plotly_spatial_visium(adata_vis, names):
     # spot coordinates scaled to the hires image
     sf = lib['scalefactors']['tissue_hires_scalef']
     xy = adata_vis.obsm['spatial'] * sf
-
-    cats   = adata_vis.obs['region_cluster'].cat.categories
-    colors = adata_vis.uns['region_cluster_colors']
-    clust  = adata_vis.obs['region_cluster'].astype(str).values
+    clust = adata_vis.obs['region_cluster'].astype(str).values
 
     fig = go.Figure()
     fig.add_trace(go.Image(z=img, hoverinfo='skip'))
@@ -652,25 +752,25 @@ def plotly_spatial_visium(adata_vis, names):
     )
     fig.update_xaxes(visible=False, range=[0, img.shape[1]])
     fig.update_yaxes(visible=False, range=[img.shape[0], 0],  # image coords: y down
-                    scaleanchor='x')
+                     scaleanchor='x')
 
     return fig
 
+
 def umap_cell_type_plot(adata_vis, adata_ref, genes_plot, lineage, focus, cmaps, root_figure,
                         sizes=(8, 7, 6), dpi=300):
-    '''
-    Per tissue x age-group table
-    - Per tissue x age-group summary of the B-cell gene panel in the lymphoid-organ scRNA reference.
-      n_cells, % cells with >0 counts, mean log1p(CP10k). Functions in libs/cell2location_lib.py.
+    """Figure 1: reference UMAP coloured by cell type (Subset) + dot plot of the panel genes by cell type.
 
-
-    Figure 1: UMAP by cell type + dot plot
-
-    '''
-    from libs.matplotlib_figure_style import apply_figure_style
+    lineage: lineage -> list of Subset cell types (row order of the dot plot; must cover every Subset).
+    focus:   cell types labelled on the UMAP and highlighted on the dot plot.
+    cmaps:   lineage -> matplotlib colormap name (None -> module default bcell_cmaps).
+    adata_vis is not used; it is kept so existing calls keep working.
+    Also computes the per tissue x age-group panel table (create_gene_age_tissue_groups; writes
+    adata_ref.obs['age_group']). Calls apply_figure_style(sizes) (global rcParams).
+    Saves root_figure / 'celltype_umap_dotplot.png'. Returns that table.
+    """
     apply_figure_style(sizes=sizes)
 
-    # cell types: ct
     ct = adata_ref.obs["Subset"].astype(str).values          # cell-type label per cell
 
     # found = genes present in the reference; X = raw counts; E = log1p(CP10k)   (cells x genes)
@@ -678,160 +778,167 @@ def umap_cell_type_plot(adata_vis, adata_ref, genes_plot, lineage, focus, cmaps,
 
     df_pct  = pd.DataFrame(X > 0, columns=found).groupby(ct).mean() * 100   # % cells with >0 counts
     df_mean = pd.DataFrame(E,     columns=found).groupby(ct).mean()         # mean log1p(CP10k)
-    n_ct = pd.Series(ct).value_counts()  
+    n_ct = pd.Series(ct).value_counts()
 
-    ct_order = [c for v in lineage.values() for c in v]
-    assert set(ct_order) == set(ct), set(ct) ^ set(ct_order)
-
-    P = df_pct.loc[ct_order, found]
-    M = df_mean.loc[ct_order, found]
+    order = [c for v in lineage.values() for c in v]
+    assert set(order) == set(ct), set(ct) ^ set(order)
+    P = df_pct.loc[order, found]
+    M = df_mean.loc[order, found]
     U = adata_ref.obsm["X_umap"]
-
-    lib = list(adata_vis.uns["spatial"].keys())[0]                       # 'V1_Human_Lymph_Node'
-
-    # img = adata_vis.uns["spatial"][lib]["images"]["hires"]
-    sf  = adata_vis.uns["spatial"][lib]["scalefactors"]["tissue_hires_scalef"]
-    # xy  = adata_vis.obsm["spatial"] * sf                                 # spot centres in hires-image pixels
-
-    order=[c for v in lineage.values() for c in v]; assert set(order)==set(ct), set(ct)^set(order)
-    col={}
-    for k,v in lineage.items():
-        cm=plt.get_cmap(bcell_cmaps[k]); 
-        for j,c in enumerate(v): col[c]=cm(0.45+0.45*(j/(max(len(v)-1,1))))
+    col = _lineage_colors(lineage, cmaps)
+    cmaps = cmaps or bcell_cmaps
 
     # Per tissue x age-group table
     dfg = create_gene_age_tissue_groups(adata_ref, genes_plot)   # also writes adata_ref.obs['age_group']
-    # dfg.to_csv(root0 / 'results' / 'bcell_genes_by_tissue_age.csv', index=False)
 
-    fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(14,8))
+    fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(14, 8))
 
-    ax=axes[0]
-    rng = np.random.default_rng(0); o=rng.permutation(len(U))
-    ax.scatter(U[o,0],U[o,1],s=0.4,c=[col[c] for c in ct[o]],lw=0,rasterized=True)
+    ax = axes[0]
+    rng = np.random.default_rng(0)
+    o = rng.permutation(len(U))
+    ax.scatter(U[o, 0], U[o, 1], s=0.4, c=[col[c] for c in ct[o]], lw=0, rasterized=True)
 
     for c in focus:
-        m=ct==c; x,y=np.median(U[m],0)
-        ax.text(x,y,c,fontsize=7,ha="center",va="center",path_effects=[pe.withStroke(linewidth=2.2,foreground="white")])
+        m = ct == c
+        x, y = np.median(U[m], 0)
+        ax.text(x, y, c, fontsize=7, ha="center", va="center",
+                path_effects=[pe.withStroke(linewidth=2.2, foreground="white")])
 
-    ax.set_xticks([]); ax.set_yticks([]); [s.set_visible(False) for s in ax.spines.values()]
-    ax.set_title("Reference UMAP coloured by cell type (Subset); labelled = types the panel genes point to",loc="left",fontsize=8)
+    ax.set_xticks([]); ax.set_yticks([])
+    for s in ax.spines.values():
+        s.set_visible(False)
+    ax.set_title("Reference UMAP coloured by cell type (Subset); labelled = types the panel genes point to",
+                 loc="left", fontsize=8)
 
-    h=[Line2D([],[],marker="o",ls="",color=plt.get_cmap(bcell_cmaps[k])(0.75),label=k) for k in lineage]
-    ax.legend(handles=h,loc="lower left",frameon=False,fontsize=7,markerscale=1.2)
-    ax.text(0.0,-0.02,"UMAP 1 →",transform=ax.transAxes,fontsize=6,va="top"); ax.text(-0.02,0.0,"UMAP 2 →",transform=ax.transAxes,fontsize=6,rotation=90,ha="right")
+    h = [Line2D([], [], marker="o", ls="", color=plt.get_cmap(cmaps[k])(0.75), label=k) for k in lineage]
+    ax.legend(handles=h, loc="lower left", frameon=False, fontsize=7, markerscale=1.2)
+    ax.text(0.0, -0.02, "UMAP 1 →", transform=ax.transAxes, fontsize=6, va="top")
+    ax.text(-0.02, 0.0, "UMAP 2 →", transform=ax.transAxes, fontsize=6, rotation=90, ha="right")
 
-    ax2=axes[1]
-    P=df_pct.loc[order,found]
-    M=df_mean.loc[order,found]
-    yy,xx=np.meshgrid(np.arange(len(order)),np.arange(len(found)),indexing="ij")
-    sca=ax2.scatter(xx.ravel(),yy.ravel(),s=(P.values.ravel()/100)*60,c=M.values.ravel(),cmap="magma_r",vmin=0,vmax=np.nanmax(M.values),lw=0)
+    ax2 = axes[1]
+    yy, xx = np.meshgrid(np.arange(len(order)), np.arange(len(found)), indexing="ij")
+    sca = ax2.scatter(xx.ravel(), yy.ravel(), s=(P.values.ravel() / 100) * 60, c=M.values.ravel(),
+                      cmap="magma_r", vmin=0, vmax=np.nanmax(M.values), lw=0)
     ax2.set_xticks(range(len(found)))
-    ax2.set_xticklabels([("MS4A1 (CD20)" if g=="MS4A1" else g) for g in found],rotation=90,style="italic")
+    ax2.set_xticklabels([("MS4A1 (CD20)" if g == "MS4A1" else "CR2 (CD21)" if g == "CR2" else g) for g in found],
+                        rotation=90, style="italic")
     ax2.set_yticks(range(len(order)))
-
-    n_ct = pd.Series(ct).value_counts()          # cells per cell type (skip if already defined)
     ax2.set_yticklabels([f"{c} (n={n_ct[c]:,})" for c in order], fontsize=6)
-
-
-    for t,c in zip(ax2.get_yticklabels(),order): t.set_color(col[c] if c in focus else "#555555"); t.set_fontweight("bold" if c in focus else "normal")
-    ax2.invert_yaxis(); ax2.set_xlim(-0.6,len(found)-0.4); ax2.set_ylim(len(order)-0.4,-0.6)
-    ax2.set_title("Panel genes by reference cell type",loc="left",fontsize=8)
-    cb=fig.colorbar(sca,ax=ax2,fraction=0.03,pad=0.02); cb.set_label("mean log1p(CP10k)",fontsize=7)
-    for p in (25,50,100): ax2.scatter([],[],s=p/100*60,c="#555555",label=f"{p}%")
-    ax2.legend(title="% cells >0",loc="upper left",bbox_to_anchor=(1.18,0.35),frameon=False,fontsize=6,title_fontsize=7)
-
-    order=[c for v in lineage.values() for c in v]; assert set(order)==set(ct), set(ct)^set(order)
-    col={}
-    for k,v in lineage.items():
-        cm=plt.get_cmap(cmaps[k]); 
-        for j,c in enumerate(v): col[c]=cm(0.45+0.45*(j/(max(len(v)-1,1))))
-
-    plt.show()
+    for t, c in zip(ax2.get_yticklabels(), order):
+        t.set_color(col[c] if c in focus else "#555555")
+        t.set_fontweight("bold" if c in focus else "normal")
+    ax2.set_xlim(-0.6, len(found) - 0.4)
+    ax2.set_ylim(len(order) - 0.4, -0.6)                       # first cell type at the top
+    ax2.set_title("Panel genes by reference cell type", loc="left", fontsize=8)
+    cb = fig.colorbar(sca, ax=ax2, fraction=0.03, pad=0.02)
+    cb.set_label("mean log1p(CP10k)", fontsize=7)
+    for p in (25, 50, 100):
+        ax2.scatter([], [], s=p / 100 * 60, c="#555555", label=f"{p}%")
+    ax2.legend(title="% cells >0", loc="upper left", bbox_to_anchor=(1.18, 0.35), frameon=False,
+               fontsize=6, title_fontsize=7)
 
     filefig = root_figure / "celltype_umap_dotplot.png"
     fig.savefig(filefig, dpi=dpi, bbox_inches="tight")
+    plt.show()
 
     return dfg
 
 
-def spatial_plot_bcell_types(adata_vis, focus, lineage, root_figure):
-    lib = list(adata_vis.uns["spatial"].keys())[0]
-    img=adata_vis.uns["spatial"][lib]["images"]["hires"]; sf=adata_vis.uns["spatial"][lib]["scalefactors"]["tissue_hires_scalef"]
-    xy=adata_vis.obsm["spatial"]*sf
+def spatial_plot_bcell_types(adata_vis, focus, lineage, root_figure, cmaps=None, ncols: int = 4):
+    """One spatial panel per cell type in `focus` (q05 abundance, clipped at the 99.2th percentile).
+    Grid has ncols columns and as many rows as needed; unused panels are hidden.
+    Saves root_figure / 'celltype_spatial_maps.png'."""
+    lib = _library_id(adata_vis)
+    img = adata_vis.uns["spatial"][lib]["images"]["hires"]
+    sf = adata_vis.uns["spatial"][lib]["scalefactors"]["tissue_hires_scalef"]
+    xy = adata_vis.obsm["spatial"] * sf
 
-    fig,axes=plt.subplots(3,4,figsize=(12,9.6),gridspec_kw=dict(wspace=0.08,hspace=0.18))
+    nrows = math.ceil(len(focus) / ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(3 * ncols, 3.2 * nrows), squeeze=False,
+                             gridspec_kw=dict(wspace=0.08, hspace=0.18))
 
-    x0,x1=xy[:,0].min()-40,xy[:,0].max()+40; y0,y1=xy[:,1].min()-40,xy[:,1].max()+40
+    x0, x1 = xy[:, 0].min() - 40, xy[:, 0].max() + 40
+    y0, y1 = xy[:, 1].min() - 40, xy[:, 1].max() + 40
 
-    Q   = pd.DataFrame(np.asarray(adata_vis.obsm["q05_cell_abundance_w_sf"]),   # spots x 34 cell types
-                    index=adata_vis.obs_names, columns=list(adata_vis.uns["mod"]["factor_names"]))
+    Q = pd.DataFrame(np.asarray(adata_vis.obsm["q05_cell_abundance_w_sf"]),   # spots x cell types
+                     index=adata_vis.obs_names, columns=list(adata_vis.uns["mod"]["factor_names"]))
+    col = _lineage_colors(lineage, cmaps)
 
-    col={}
-    for k,v in lineage.items():
-        cm=plt.get_cmap(bcell_cmaps[k]); 
-        for j,c in enumerate(v): col[c]=cm(0.45+0.45*(j/(max(len(v)-1,1))))
+    for ax in axes.ravel()[len(focus):]:
+        ax.set_visible(False)
 
-    for ax,c in zip(axes.ravel(),focus):
-        v=Q[c].values; vmax=np.percentile(v,99.2)
-        ax.imshow(img,alpha=0.55)
-        o=np.argsort(v)
-        s=ax.scatter(xy[o,0],xy[o,1],c=np.clip(v[o],0,vmax),cmap=cmap_byr,vmin=0,vmax=vmax,s=5.5,lw=0,alpha=0.9)
-        ax.set_xlim(x0,x1); ax.set_ylim(y1,y0); ax.set_xticks([]); ax.set_yticks([])
-        [sp_.set_visible(False) for sp_ in ax.spines.values()]
-        ax.set_title(c,fontsize=8,color=col[c],fontweight="bold")
-        cbar=fig.colorbar(s,ax=ax,fraction=0.04,pad=0.01)
-        cbar.set_ticks([0,round(vmax,1)])
-        cbar.ax.tick_params(labelsize=6,length=2)
+    for ax, c in zip(axes.ravel(), focus):
+        v = Q[c].values
+        vmax = np.percentile(v, 99.2)
+        ax.imshow(img, alpha=0.55)
+        o = np.argsort(v)
+        s = ax.scatter(xy[o, 0], xy[o, 1], c=np.clip(v[o], 0, vmax), cmap=cmap_byr, vmin=0, vmax=vmax,
+                       s=5.5, lw=0, alpha=0.9)
+        ax.set_xlim(x0, x1); ax.set_ylim(y1, y0); ax.set_xticks([]); ax.set_yticks([])
+        for sp_ in ax.spines.values():
+            sp_.set_visible(False)
+        ax.set_title(c, fontsize=8, color=col.get(c, "black"), fontweight="bold")
+        cbar = fig.colorbar(s, ax=ax, fraction=0.04, pad=0.01)
+        cbar.set_ticks([0, round(vmax, 1)])
+        cbar.ax.tick_params(labelsize=6, length=2)
 
-    fig.text(0.5,0.075,"cell2location q05 abundance (cells per spot, 'at least this many present'), clipped at the 99.2th percentile per cell type; V1_Human_Lymph_Node, 4,035 spots.",ha="center",fontsize=7)
-
-    plt.show()
+    fig.text(0.5, 0.075, "cell2location q05 abundance (cells per spot, 'at least this many present'), "
+             f"clipped at the 99.2th percentile per cell type; {lib}, {adata_vis.n_obs:,} spots.",
+             ha="center", fontsize=7)
 
     filefig = root_figure / "celltype_spatial_maps.png"
     fig.savefig(filefig, dpi=300, bbox_inches="tight")
+    plt.show()
 
 
+def spatial_plot_cell_abundance(adata_vis, adata_ref, genes_plot, focus, lineage, root_results, root_figure,
+                                cmaps=None) -> pd.DataFrame:
+    """Spearman rho across spots between Visium gene expression (log1p CP10k) and mapped q05 abundance.
 
-def spatial_plot_cell_abundance(adata_vis, adata_ref, genes_plot, focus, lineage, root_results, root_figure) -> pd.DataFrame:
+    Caveat: cell2location inferred the abundances from these same Visium counts, so part of each
+    correlation is built in; read it as consistency, not independent validation.
+    Genes = panel genes present in the reference (adata_ref) and in adata_vis.
+    Saves the heatmap (root_figure) and the rho table (root_results / gene_celltype_spatial_correlation.tsv).
+    """
+    found, _ = resolve_gene_ids(adata_ref, genes_plot)          # genes present in the reference
+    gene_found, gene_ids = resolve_gene_ids(adata_vis, found)
+    X_sel = adata_vis[:, gene_ids].X
+    X_sel = X_sel.toarray() if sp.issparse(X_sel) else np.asarray(X_sel)
+    tot = np.asarray(adata_vis.X.sum(1)).ravel()
 
-    # found = genes present in the reference; X = raw counts; E = log1p(CP10k)   (cells x genes)
-    found, X, E = panel_lognorm(adata_ref, genes_plot)
+    Q = pd.DataFrame(np.asarray(adata_vis.obsm["q05_cell_abundance_w_sf"]),   # spots x cell types
+                     index=adata_vis.obs_names, columns=list(adata_vis.uns["mod"]["factor_names"]))
 
-    symV=adata_vis.var["symbol"].astype(str)
-    vf,vids=resolve_gene_ids(adata_vis, found)
-    Xv=adata_vis[:,vids].X; Xv=Xv.toarray() if sps.issparse(Xv) else np.asarray(Xv)
-    tot=np.asarray(adata_vis.X.sum(1)).ravel()
+    Ev = np.log1p(X_sel / tot[:, None] * 1e4)
+    df_rho = pd.DataFrame([[spearmanr(Ev[:, i], Q[c].values)[0] for c in focus] for i in range(len(gene_found))],
+                          index=gene_found, columns=focus)
 
-    Q   = pd.DataFrame(np.asarray(adata_vis.obsm["q05_cell_abundance_w_sf"]),   # spots x 34 cell types
-                    index=adata_vis.obs_names, columns=list(adata_vis.uns["mod"]["factor_names"]))
+    fig, ax = plt.subplots(figsize=(12, 8))
 
-    Ev=np.log1p(Xv/tot[:,None]*1e4)
-    df_rho=pd.DataFrame([[spearmanr(Ev[:,i],Q[c].values)[0] for c in focus] for i in range(len(vf))],index=vf,columns=focus)
-
-    fig,ax=plt.subplots(figsize=(12, 8))
-
-    im=ax.imshow(df_rho.values,cmap="RdBu_r",vmin=-0.8,vmax=0.8,aspect="auto")
+    im = ax.imshow(df_rho.values, cmap="RdBu_r", vmin=-0.8, vmax=0.8, aspect="auto")
     for i in range(df_rho.shape[0]):
         for j in range(df_rho.shape[1]):
-            r=df_rho.values[i,j]; ax.text(j,i,f"{r:.2f}",ha="center",va="center",fontsize=5.5,color="white" if abs(r)>0.5 else "black")
+            r = df_rho.values[i, j]
+            ax.text(j, i, f"{r:.2f}", ha="center", va="center", fontsize=5.5,
+                    color="white" if abs(r) > 0.5 else "black")
 
-    ax.set_xticks(range(len(focus))); ax.set_xticklabels(focus,rotation=60,ha="right")
+    ax.set_xticks(range(len(focus))); ax.set_xticklabels(focus, rotation=60, ha="right")
+    col = _lineage_colors(lineage, cmaps)
+    for t, c in zip(ax.get_xticklabels(), focus):
+        t.set_color(col.get(c, "black"))
 
-    col={}
-    for k,v in lineage.items():
-        cm=plt.get_cmap(bcell_cmaps[k]); 
-        for j,c in enumerate(v): col[c]=cm(0.45+0.45*(j/(max(len(v)-1,1))))
+    ax.set_yticks(range(len(gene_found)))
+    ax.set_yticklabels([("MS4A1 (CD20)" if g == "MS4A1" else "CR2 (CD21)" if g == "CR2" else g) for g in gene_found],
+                       style="italic")
+    cb = fig.colorbar(im, ax=ax, fraction=0.04, pad=0.02)
+    cb.set_label("Spearman ρ across spots (0 = no association)", fontsize=7)
+    cb.set_ticks([-0.8, -0.4, 0, 0.4, 0.8])
+    ax.set_title(f"Visium gene expression vs mapped cell-type abundance (n = {adata_vis.n_obs:,} spots)",
+                 loc="left", fontsize=8)
 
-    for t,c in zip(ax.get_xticklabels(),focus): 
-        t.set_color(col[c])
-
-    ax.set_yticks(range(len(vf))); ax.set_yticklabels([("MS4A1 (CD20)" if g=="MS4A1" else g) for g in vf],style="italic")
-    cb=fig.colorbar(im,ax=ax,fraction=0.04,pad=0.02); cb.set_label("Spearman ρ across spots (0 = no association)",fontsize=7); cb.set_ticks([-0.8,-0.4,0,0.4,0.8])
-    ax.set_title("Visium gene expression vs mapped cell-type abundance (n = 4,035 spots)",loc="left",fontsize=8)
-
-    plt.show()
     filefig = root_figure / "gene_celltype_spatial_correlation.png"
     fig.savefig(filefig, dpi=300, bbox_inches="tight")
+    plt.show()
 
     fname = "gene_celltype_spatial_correlation.tsv"
     df_rho = df_rho.round(3)
@@ -839,53 +946,59 @@ def spatial_plot_cell_abundance(adata_vis, adata_ref, genes_plot, focus, lineage
 
     return df_rho
 
-def dotplot_bcell_markers(adata_bcell, markers, root_figure):
 
-    apply_figure_style(sizes=(8,7,6))
+def dotplot_bcell_markers(adata_bcell, markers, root_figure, groupby: str = "Subset"):
+    """scanpy dot plot of marker genes (markers: group label -> list of genes in adata_bcell.var_names)
+    by `groupby`, scaled 0-1 per gene. Missing genes are printed and dropped.
+    Saves root_figure / 'bcell_subset_markers_dotplot.png'. Returns the DotPlot object."""
+    apply_figure_style(sizes=(8, 7, 6))
 
-    miss=[btype for v in markers.values() for btype in v if btype not in adata_bcell.var_names]
-    print("missing:",miss)
+    miss = [g for v in markers.values() for g in v if g not in adata_bcell.var_names]
+    print("missing:", miss)
+    markers = {k: [g for g in v if g in adata_bcell.var_names] for k, v in markers.items()}
 
-    markers={k:[btype for btype in v if btype in adata_bcell.var_names] for k,v in markers.items()}
-
-    dp=sc.pl.dotplot(adata_bcell,markers, groupby="Subset", 
-                    standard_scale="var", cmap='RdBu_r', show=False, figsize=(15, 5),
-                    var_group_rotation=30,colorbar_title="mean expression\n(scaled 0-1 per gene)",size_title="% cells expressing")
-
-    fig=plt.gcf()
-
+    dp = sc.pl.dotplot(adata_bcell, markers, groupby=groupby,
+                       standard_scale="var", cmap='RdBu_r', show=False, figsize=(15, 5),
+                       var_group_rotation=30, colorbar_title="mean expression\n(scaled 0-1 per gene)",
+                       size_title="% cells expressing")
+    fig = plt.gcf()
     for ax in fig.axes:
-        for t in ax.get_xticklabels(): t.set_style("italic")
+        for t in ax.get_xticklabels():
+            t.set_style("italic")
 
-    fig.suptitle("Markers separating the 10 B-cell subsets (within-B comparison; 38,309 cells)", ha="left", fontsize=8, x=0.02, y=1.06)
+    n_groups = adata_bcell.obs[groupby].nunique()
+    fig.suptitle(f"Markers separating the {n_groups} B-cell subsets "
+                 f"(within-B comparison; {adata_bcell.n_obs:,} cells)", ha="left", fontsize=8, x=0.02, y=1.06)
+
+    fig.savefig(root_figure / "bcell_subset_markers_dotplot.png", dpi=200, bbox_inches="tight")
     plt.show()
-
-    fig.savefig(root_figure / "bcell_subset_markers_dotplot.png",dpi=200,bbox_inches="tight")
 
     return dp
 
 
-def plot_slide_loc_cell_types(slide, clust_labels, C2L_COLORS, root_figure, figsize=(5,5)):
-    # select up to 6 clusters
-    # Follicular dendritic cells (FDCs)
+def plot_slide_loc_cell_types(slide, clust_labels, C2L_COLORS, root_figure, figsize=(5, 5)):
+    """cell2location plot_spatial of up to 6 cell types in one panel, legend outside on the right.
+
+    C2L_COLORS must list the colours plot_spatial uses, in the same order as clust_labels.
+    Saves root_figure / 'spatial_<label1>_<label2>....png'.
+    """
     from cell2location.plt import plot_spatial
     from matplotlib.patches import Patch
-    
-    clust_col = [str(i) for i in clust_labels]# in case column names differ from labels
+
+    clust_col = [str(i) for i in clust_labels]   # in case column names differ from labels
 
     with mpl.rc_context({'figure.figsize': figsize}):
         fig = plot_spatial(adata=slide, color=clust_col, labels=clust_labels,
-                        show_img=True, style='fast', max_color_quantile=0.992,
-                        circle_diameter=6, colorbar_position=None)
+                           show_img=True, style='fast', max_color_quantile=0.992,
+                           circle_diameter=6, colorbar_position=None)
 
     handles = [Patch(facecolor=C2L_COLORS[i], edgecolor="black", label=lab) for i, lab in enumerate(clust_labels)]
-
     fig.axes[0].legend(handles=handles, title="cell type",
-                    loc="center left", bbox_to_anchor=(1.02, 0.5),     # just outside the right edge, vertically centred
-                    fontsize=10, title_fontsize=11, frameon=False, borderaxespad=0)
+                       loc="center left", bbox_to_anchor=(1.02, 0.5),   # just outside the right edge
+                       fontsize=10, title_fontsize=11, frameon=False, borderaxespad=0)
 
-    plt.show()
-
-    figfile = root_figure / "spatial_T_naive_B_naive_FDC.png"
+    tag = "_".join(str(c).replace("+", "pos").replace("/", "-") for c in clust_labels)
+    figfile = root_figure / f"spatial_{tag}.png"
     fig.savefig(figfile, dpi=300, bbox_inches="tight")
-        
+    plt.show()
+    return fig
