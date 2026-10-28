@@ -1,7 +1,8 @@
 """
 cell2location -> LIANA+ cell-cell communication (CCC) helpers.
 
-Input: the cell2location spatial output written by `cell2location01a_tutorial.ipynb`
+Input: the ccc01_tutorial.ipynb
+
 (`results/lymph_nodes_analysis/cell2location_map/sp.h5ad`):
     X                         raw Visium counts (Ensembl var_names, symbols in var['symbol'])
     obsm['q05_cell_abundance_w_sf'] ...  posterior cell abundance per spot (34 cell types)
@@ -26,12 +27,45 @@ niche_celltype_attribution()   which cell types carry the ligand / receptor of n
                             (center pool vs partners) - links niche_lr results to c2l.
 """
 from __future__ import annotations
+from fileinput import filename
 
 import h5py
 import numpy as np
 import pandas as pd
+import time
+from pathlib import Path
+
 import anndata as ad
+import scanpy as sc
+import squidpy as sq
+import liana as li
+
 from scipy import sparse, stats
+import scipy.sparse as sps
+from scipy.stats import rankdata
+
+import seaborn as sns
+
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+from matplotlib import rcParams
+from matplotlib.colors import LinearSegmentedColormap
+
+rcParams['pdf.fonttype']= 42 # enables correct plotting of text for PDFs
+
+colors = ("#16466d", "#ebd246", "#f30707")
+cmap_byr = LinearSegmentedColormap.from_list("blue_yellow_red", list(colors))
+
+import programs.niche_lr as nl
+import programs.programs as pg
+import programs.c2l_liana as cl
+
+from libs.Basic import pdwritecsv, pdreadcsv
+
+def _plain(df):        # niche_lr keeps numpy arrays in DataFrame.attrs -> breaks repr / pd.concat
+    d = df.copy()
+    d.attrs = {}
+    return d
 
 
 # --------------------------------------------------------------------------- #
@@ -85,14 +119,42 @@ def load_c2l_spots(path, summary: str = "q05", region_labels=None, target_sum: f
     return vis
 
 
-def region_names_by_enrichment(frac: pd.DataFrame, regions, n: int = 2, min_frac: float = 0.02) -> dict:
-    """Region -> 'typeA, typeB': cell types with the highest log2(mean fraction in region /
+def region_names_by_enrichment(adata_pos: ad.AnnData, df_frac: pd.DataFrame, regions: pd.Series, 
+                               n: int = 2, min_frac: float = 0.02, root_liana: Path = Path("."),
+                               verbose: bool = False, force: bool = False) -> pd.DataFrame:
+    """
+    Region -> 'typeA, typeB': cell types with the highest log2(mean fraction in region /
     mean fraction overall), among those making up >= min_frac of the region (avoids names
-    driven by rare cell types, as happens with a max-scaled ranking)."""
-    regions = pd.Series(np.asarray(regions).astype(str), index=frac.index)
-    m = frac.groupby(regions).mean()
-    enr = np.log2((m + 1e-4) / (frac.mean() + 1e-4)).where(m >= min_frac)
-    return {r: ", ".join(enr.loc[r].dropna().nlargest(n).index) for r in m.index}
+    driven by rare cell types, as happens with a max-scaled ranking).
+    """
+
+    fname = 'c2l_region_names.tsv'
+    filename = root_liana / fname
+
+    if filename.exists() and not force:
+         df_reg = pdreadcsv(fname, root_liana, verbose=verbose)
+         return df_reg
+
+
+    regions = pd.Series(np.asarray(regions).astype(str), index=df_frac.index)
+   
+    df_mu = df_frac.groupby(regions).mean()
+    
+    df_enr = np.log2((df_mu + 1e-4) / (df_frac.mean() + 1e-4)).where(df_mu >= min_frac)
+    
+    reg_names = {r: ", ".join(df_enr.loc[r].dropna().nlargest(n).index) for r in df_mu.index}
+
+    adata_pos.obs['region_cluster'] = pd.Categorical(adata_pos.obs['region_cluster'].astype(str), categories=order_reg)
+    adata_pos.obs['region_name'] = adata_pos.obs['region_cluster'].astype(str).map(lambda r: f"{r}: {reg_names[r]}")
+
+    dic = {'region_cluster': order_reg, 'region_name': [reg_names[r] for r in order_reg],
+                            'n_spots': adata_pos.obs['region_cluster'].value_counts().reindex(order_reg).values,
+                            'name_tutorial': adata_pos.obs.groupby('region_cluster', observed=True)['region_name_tutorial'].first().reindex(order_reg).values}
+    df_reg = pd.DataFrame(dic)
+
+    _ = pdwritecsv(df_reg, fname, root_liana, verbose=verbose)
+
+    return df_reg
 
 
 # --------------------------------------------------------------------------- #
@@ -317,3 +379,255 @@ def style_clustermap(g, xlabel: str = "", ylabel: str = "", title: str | None = 
     g.ax_cbar.set_position([x_right + pad, hm.y0 + (1 - cbar_height) / 2 * hm.height,
                             cbar_width, cbar_height * hm.height])
     return g
+
+
+def build_abund_perc(adata_pos: sc.AnnData) -> pd.DataFrame:
+
+    df_abund_perc = adata_pos.obsm['c2l_abund'].copy()
+
+    df_abund_perc = df_abund_perc.sum().sort_values(ascending=False).round(0).reset_index()
+    df_abund_perc.columns = ['cell_type', 'abundance']
+    df_abund_perc.abundance = df_abund_perc.abundance.astype(int)
+    total = df_abund_perc.abundance.sum()
+    df_abund_perc['perc'] = df_abund_perc.abundance / total
+
+    return df_abund_perc
+
+def plot_abundance(adata_pos: sc.AnnData, sel_cell_types: list, 
+                   title='cell2location: q05 cell abundance per spot (colour capped at the 99.2th percentile)',
+                   root_fig_liana: Path=Path('.'), cmap:LinearSegmentedColormap=cmap_byr, dpi: int=300, figsize: tuple=(17, 10.5)):
+
+    lib_id = list(adata_pos.uns['spatial'].keys())[0]
+
+    fig, axs = plt.subplots(3, 5, figsize=figsize)
+
+    for ax, c in zip(axs.flat, sel_cell_types):
+        v = adata_pos.obs[f'c2l_{c}']
+        sq.pl.spatial_scatter(adata_pos, color=f'c2l_{c}', library_id=lib_id, img_res_key='hires', img_alpha=0.5,
+                            size=1.3, cmap=cmap, vmax=float(np.quantile(v, 0.992)), title=c, ax=ax, colorbar=True)
+
+    sq.pl.spatial_scatter(adata_pos, color='region_cluster', library_id=lib_id, img_res_key='hires', img_alpha=0.5,
+                          size=1.3, title='c2l regions', ax=axs.flat[len(sel_cell_types)], legend_loc='on data', legend_fontsize=6)
+
+    for ax in axs.flat[len(sel_cell_types) + 1:]:
+        ax.axis('off')
+
+    for ax in axs.flat:
+        ax.set_xlabel(''); ax.set_ylabel('')
+
+    fig.suptitle(title, y=0.995)
+    fig.tight_layout()
+
+    filefig = root_fig_liana / 'c2l_abundance_maps.png'
+    fig.savefig(filefig, dpi=dpi, bbox_inches='tight')
+    plt.show()
+
+
+def calc_liana_spacing(adata_pos: sc.AnnData, bandwidth:int = 150) -> pd.DataFrame:
+    # nl = niche_lr lib
+    spacing = nl.spot_spacing(adata_pos.obsm['spatial'])
+    um_per_px = 100 / spacing
+    
+    li.ut.spatial_neighbors(adata_pos, bandwidth=bandwidth, cutoff=0.1, kernel='gaussian', set_diag=True)
+    W = adata_pos.obsp['spatial_connectivities'].tocsr()
+    W.eliminate_zeros()
+
+    i = int(np.argmin(np.linalg.norm(adata_pos.obsm['spatial'] - np.median(adata_pos.obsm['spatial'], 0), axis=1)))   # a central spot
+    d = np.linalg.norm(adata_pos.obsm['spatial'][W[i].indices] - adata_pos.obsm['spatial'][i], axis=1)
+
+    dic = {'dist_um': (d * um_per_px).round(0), 'weight': W[i].data.round(3)}
+    df_w = pd.DataFrame(dic)
+    df_w = df_w.groupby('dist_um').agg(n=('weight', 'size'), weight=('weight', 'mean')).reset_index()
+
+    print(f"spacing {spacing:.1f} px = 100 um -> {um_per_px:.3f} um/px; neighbours per spot (incl. self): {np.diff(W.indptr).mean():.1f}")
+
+    return df_w
+
+    
+def calc_liana_bivariate(root_liana: Path = Path('.'), force: bool = False, verbose: bool = False) -> tuple[pd.DataFrame, sc.AnnData]:
+
+    filename_libiv = root_liana / 'visium_lymph_node_liana_bivariate.h5ad'
+    fname = 'liana_bivariate_global.tsv'
+    filename = root_liana / fname
+
+    if filename_libiv.exists() and not force:
+        adata_lr = ad.read_h5ad(filename_libiv)
+        if verbose: print(f"read {filename_libiv}")
+    else:
+        t0 = time.time()
+        adata_lr = li.mt.bivariate(adata_pos, resource_name='consensus', local_name='cosine', global_name='morans',
+                                n_perms=100, mask_negatives=False, add_categories=True, nz_prop=0.05,
+                                use_raw=False, verbose=True)
+        adata_lr.write_h5ad(filename_libiv)
+        if verbose: print(f"Bivariate calc done in {time.time() - t0:.0f} s -> {filename_libiv}")
+
+    if filename.exists() and not force:
+        df_inter = pdreadcsv(fname, root_liana, verbose=verbose)
+        df_inter.set_index('interaction', inplace=True)
+        return df_inter, adata_lr
+
+    df_inter = adata_lr.var.sort_values('morans', ascending=False).copy()
+    df_inter['morans_fdr'] = nl._bh(df_inter.morans_pvals.values)          # BH over all tested pairs
+
+    ret = pdwritecsv(df_inter.reset_index(), fname, root_liana, verbose=verbose)
+    return df_inter, adata_lr
+
+
+
+def plot_liana_bivariate(df_inter: pd.DataFrame, adata_lr: sc.AnnData, adata_pos: sc.AnnData, 
+                         N:int=6, root_fig_liana: Path=Path('.'), 
+                         cmap: LinearSegmentedColormap=cmap_byr, figsize: tuple=(16, 7.5)):
+
+    lib_id = list(adata_pos.uns['spatial'].keys())[0]
+
+    top_show = df_inter.index[:N].tolist()
+
+    fig = plt.figure(figsize=figsize)
+
+    gs = fig.add_gridspec(2, 4, width_ratios=[1.25, 1, 1, 1])
+
+    ax = fig.add_subplot(gs[:, 0])
+    t25 = df_inter.head(25)[::-1]
+
+    ax.barh(t25.index, t25.morans, color='#4c72b0')
+    ax.set_xlabel("global Moran's R (bivariate)")
+    ax.set_title('top 25 LR pairs')
+    ax.tick_params(axis='y', labelsize=6)
+
+    for k, lr_id in enumerate(top_show):
+        ax = fig.add_subplot(gs[k // 3, 1 + k % 3])
+        v = adata_lr[:, lr_id].X
+        v = np.asarray(v.toarray() if sps.issparse(v) else v).ravel()
+        # local cosine saturates near 1 where L and R are both broadly expressed -> percentile limits for contrast
+        sq.pl.spatial_scatter(adata_lr, color=lr_id, library_id=lib_id, img_res_key='hires', img_alpha=0.4,
+                            size=1.3, cmap=cmap, vmin=float(np.quantile(v, 0.02)), vmax=float(np.quantile(v, 0.995)),
+                            title=f"{lr_id}  (local cosine, 2-99.5th pct)", ax=ax)
+        
+        ax.set_xlabel(''); ax.set_ylabel('')
+
+    fig.tight_layout()
+    plt.show()
+
+    filefig = root_fig_liana / 'liana_bivariate_top.png'
+    fig.savefig(filefig, dpi=300, bbox_inches='tight')
+
+def _rz(M):
+    R = np.apply_along_axis(rankdata, 0, M)
+    return (R - R.mean(0)) / (R.std(0) + 1e-12)
+
+
+def calc_spearman_correlation(df_inter_sig: pd.DataFrame, adata_lr: sc.AnnData, 
+                              df_frac: pd.DataFrame, celltypes: list,
+                              root_liana: Path=Path('.'), force: bool=False, verbose: bool=False) -> pd.DataFrame:
+
+    fname = 'liana_local_vs_c2l_fraction_spearman.tsv'
+    filename = root_liana / fname
+
+    if filename.exists() and not force:
+        df_rho = pdreadcsv(fname, root_liana, verbose=verbose)
+        df_rho.set_index('interaction', inplace=True)
+        return df_rho
+
+    lr_top = df_inter_sig.index[:40]
+    Xl = adata_lr[:, lr_top].X
+    Xl = Xl.toarray() if sps.issparse(Xl) else np.asarray(Xl)
+
+    df_rho = pd.DataFrame(_rz(Xl).T @ _rz(df_frac.values) / len(Xl), index=lr_top, columns=celltypes)
+
+    pdwritecsv(df_rho.reset_index(names='interaction'), fname, root_liana, verbose=verbose)
+
+    return df_rho
+
+
+def plot_spearman_correlation(df_rho: pd.DataFrame,
+                              cmap: str|LinearSegmentedColormap='RdBu_r', 
+                              fontsize:int=12, dpi:int=300,
+                              root_fig_liana: Path=Path('.')):
+
+    g = sns.clustermap(df_rho, cmap=cmap, center=0, vmin=-0.8, vmax=0.8, figsize=(15, 14),
+                    dendrogram_ratio=(0.06, 0.06), 
+                    # cbar_kws={'label': 'Spearman rho'},
+                    xticklabels=True, yticklabels=True)
+
+    ax = g.ax_heatmap
+
+    # Place legend at the extreme right outside the axes
+    # Place colorbar at the extreme right, outside the axes (beyond the row labels)
+    fig = g.fig
+    fig.canvas.draw()                                   # needed so label extents are known
+    renderer = fig.canvas.get_renderer()
+
+    bboxes = [t.get_window_extent(renderer) for t in ax.get_yticklabels()]
+    bboxes.append(ax.yaxis.label.get_window_extent(renderer))
+    x_right_px = max(b.x1 for b in bboxes)
+    x_right = fig.transFigure.inverted().transform((x_right_px, 0))[0]   # pixels -> figure coords
+
+    hm = ax.get_position()
+    pad, width = 0.09, 0.015
+
+    # left, bottom (vertically centred), width, height
+    g.ax_cbar.set_position([x_right + pad, hm.y0 + 0.30 * hm.height, width,  0.40 * hm.height])
+
+    # Tick font size (heatmap + colorbar) — must come before measuring label extents
+    g.ax_cbar.tick_params(labelsize=fontsize)
+    g.ax_cbar.yaxis.set_ticks_position('right')
+    g.ax_cbar.yaxis.set_label_position('right')
+
+    ax.set_xlabel('c2l cell type (fraction)')
+    ax.set_ylabel('LR pair (local cosine)')
+    ax.xaxis.label.set_size(fontsize + 4)
+    ax.yaxis.label.set_size(fontsize + 4)
+
+    ax.tick_params(axis='x', labelsize=fontsize)    # cell-type names
+    ax.tick_params(axis='y', labelsize=fontsize)   # LR-pair names
+
+    g.fig.suptitle("Spearman rho heatmap", fontsize=fontsize + 6, y=1.02)
+    plt.show()
+
+    filefig = root_fig_liana / 'liana_local_vs_c2l_fraction.png'
+    g.savefig(filefig, dpi=dpi, bbox_inches='tight')
+
+    return
+
+
+def open_lr_biological_functions(root_liana: Path = Path('.'), verbose: bool = False):
+    fname = 'ccc_lr_biological_functions.tsv'
+    
+    df_lr_bio = pdreadcsv(fname, root_liana)
+
+    return df_lr_bio
+
+
+def save_liana_inflow(adata_pos: ad.AnnData, df_inter: pd.DataFrame, df_frac: pd.DataFrame,
+                      root_liana: Path=Path('.'), force: bool=False, verbose: bool=False):
+
+    fname = 'liana_inflow_source_enrichment.tsv'
+    filename = root_liana / fname
+    lr150 = list(zip(df_inter.ligand[:150], df_inter.receptor[:150]))
+
+    if filename.exists() and not force:
+        df_inf = pdreadcsv(fname, root_liana, sep='\t', verbose=verbose)
+    else:
+        inf = li.mt.inflow(adata_pos, obsm_key='c2l_frac', interactions=lr150, use_raw=False)
+        df_inf = cl.inflow_source_enrichment(inf, df_frac)
+        pdwritecsv(df_inf, fname, root_liana, verbose=verbose)
+        del inf
+
+    return df_inf
+
+
+def plot_liana_inflow(df_inter: pd.DataFrame, df_inf: pd.DataFrame, fontsize: int = 12,
+                      root_fig_liana: Path = Path('.'), dpi: int = 300):
+    
+    lr_inf = df_inter.index[:25]
+    E_inf = (df_inf[df_inf.interaction.isin(lr_inf)]
+            .pivot(index='interaction', columns='source', values='log2_enrichment').reindex(lr_inf))
+
+    g = sns.clustermap(E_inf.fillna(0), cmap='RdBu_r', center=0, vmin=-1.5, vmax=1.5, figsize=(15, 10),
+                    row_cluster=False, dendrogram_ratio=(0.06, 0.08), xticklabels=True, yticklabels=True)
+    cl.style_clustermap(g, xlabel='source cell type (c2l proportion)', ylabel="LR pair (ordered by Moran's R)",
+                        title='LIANA inflow: source enrichment', cbar_label='log2 enrichment', fontsize=fontsize)
+    plt.show()
+
+    filefig = root_fig_liana / 'liana_inflow_source_enrichment.png'
+    g.savefig(filefig, dpi=dpi, bbox_inches='tight')
