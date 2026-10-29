@@ -95,28 +95,29 @@ def load_c2l_spots(path, summary: str = "q05", region_labels=None, target_sum: f
     abund.columns = factor_names
     keep_obs = [c for c in ["in_tissue", "array_row", "array_col", "sample", "region_cluster"] if c in obs]
     sym = ad.utils.make_index_unique(pd.Index(var["symbol"].astype(str).values))     # MATR3 is duplicated
-    vis = ad.AnnData(X=sparse.csr_matrix(X, dtype=np.float32), obs=obs[keep_obs].copy(),
+    adata_vis = ad.AnnData(X=sparse.csr_matrix(X, dtype=np.float32), obs=obs[keep_obs].copy(),
                      var=pd.DataFrame({"gene_ids": var.index.values, "symbol": var["symbol"].astype(str).values},
                                       index=sym),
                      obsm={"spatial": np.asarray(spatial)}, uns={"spatial": uns_spatial})
-    vis.layers["counts"] = vis.X.copy()
-    tot = np.asarray(vis.X.sum(1)).ravel()
-    vis.obs["total_counts"] = tot
-    vis.X = sparse.csr_matrix(sparse.diags(target_sum / np.maximum(tot, 1)) @ vis.X)
-    vis.X.data = np.log1p(vis.X.data)
-    abund.index = vis.obs_names
-    vis.obsm["c2l_abund"] = abund
-    vis.obsm["c2l_frac"] = abund.div(abund.sum(1), axis=0)
-    vis.obs["c2l_total_cells"] = abund.sum(1).values
-    vis.uns["c2l_factor_names"] = factor_names
-    vis.uns["c2l_summary"] = summary
+    adata_vis.layers["counts"] = adata_vis.X.copy()
+    tot = np.asarray(adata_vis.X.sum(1)).ravel()
+    adata_vis.obs["total_counts"] = tot
+    adata_vis.X = sparse.csr_matrix(sparse.diags(target_sum / np.maximum(tot, 1)) @ adata_vis.X)
+    adata_vis.X.data = np.log1p(adata_vis.X.data)
+    abund.index = adata_vis.obs_names
+    adata_vis.obsm["c2l_abund"] = abund
+    adata_vis.obsm["c2l_frac"] = abund.div(abund.sum(1), axis=0)
+    adata_vis.obs["c2l_total_cells"] = abund.sum(1).values
+    adata_vis.uns["c2l_factor_names"] = factor_names
+    adata_vis.uns["c2l_summary"] = summary
+
     if region_labels is not None:
         lab = pd.read_csv(region_labels, index_col=0) if not isinstance(region_labels, pd.DataFrame) else region_labels
-        lab = lab.reindex(vis.obs_names)
-        vis.obs["region_cluster"] = lab["region_cluster"].astype(str).astype("category").values
+        lab = lab.reindex(adata_vis.obs_names)
+        adata_vis.obs["region_cluster"] = lab["region_cluster"].astype(str).astype("category").values
         if "region_name" in lab:
-            vis.obs["region_name_tutorial"] = lab["region_name"].astype(str).values
-    return vis
+            adata_vis.obs["region_name_tutorial"] = lab["region_name"].astype(str).values
+    return adata_vis
 
 
 def region_names_by_enrichment(adata_pos: ad.AnnData, df_frac: pd.DataFrame, regions: pd.Series, 
@@ -196,15 +197,15 @@ def read_c2l_layers(path, gene_idx, celltypes) -> dict:
     return out
 
 
-def celltype_expr(path, vis, genes, celltypes=None, target_sum: float = 1e4):
+def celltype_expr(filename, adata_vis, genes, celltypes=None, target_sum: float = 1e4):
     """Array (n_spots, n_celltypes, n_genes) = log1p(CP10k) of the counts that cell2location
     attributes to each cell type; CP10k uses the spot's total counts, so the values add the
     cell type's share of the spot to its expression level. Returns (E, genes_found, celltypes)."""
-    celltypes = list(celltypes or vis.uns["c2l_factor_names"])
-    genes = [g for g in dict.fromkeys(genes) if g in vis.var_names]
-    idx = vis.var_names.get_indexer(genes)
-    L = read_c2l_layers(path, idx, celltypes)
-    tot = np.asarray(vis.obs["total_counts"]).astype(float)
+    celltypes = list(celltypes or adata_vis.uns["c2l_factor_names"])
+    genes = [g for g in dict.fromkeys(genes) if g in adata_vis.var_names]
+    idx = adata_vis.var_names.get_indexer(genes)
+    L = read_c2l_layers(filename, idx, celltypes)
+    tot = np.asarray(adata_vis.obs["total_counts"]).astype(float)
     E = np.stack([L[c].toarray() for c in celltypes], axis=1)
     E = np.log1p(E / np.maximum(tot, 1)[:, None, None] * target_sum)
     return E, genes, celltypes
@@ -295,16 +296,16 @@ def inflow_source_enrichment(inf, frac: pd.DataFrame, xy_sep: str = "^") -> pd.D
 # --------------------------------------------------------------------------- #
 # niche_lr <-> cell2location                                                   #
 # --------------------------------------------------------------------------- #
-def niche_celltype_attribution(path, vis, res, n: int = 15, celltypes=None, sep: str = "_") -> pd.DataFrame:
+def niche_celltype_attribution(path, adata_vis, res, n: int = 15, celltypes=None, sep: str = "_") -> pd.DataFrame:
     """For the top-n LRs of a niche_lr NicheResult: fraction of the ligand counts (sender side)
     and of the receptor counts (receiver side) carried by each cell type, from the c2l layers.
     Sender side = pooled center for 'center->neighbors', partners for 'neighbors->center'.
     Complexes: mean share over subunits. Returns top sender / receiver with their shares."""
-    celltypes = list(celltypes or vis.uns["c2l_factor_names"])
+    celltypes = list(celltypes or adata_vis.uns["c2l_factor_names"])
     top = res.lr.head(n)
     genes = sorted({s for e in list(top.ligand) + list(top.receptor) for s in e.split(sep)})
-    genes = [g for g in genes if g in vis.var_names]
-    L = read_c2l_layers(path, vis.var_names.get_indexer(genes), celltypes)
+    genes = [g for g in genes if g in adata_vis.var_names]
+    L = read_c2l_layers(path, adata_vis.var_names.get_indexer(genes), celltypes)
     gpos = {g: i for i, g in enumerate(genes)}
     pool = np.asarray(res.lr.attrs.get("pooled_idx", [res.center]))
     part = np.setdiff1d(res.neighbors.idx.values, pool)
@@ -328,14 +329,14 @@ def niche_celltype_attribution(path, vis, res, n: int = 15, celltypes=None, sep:
     return pd.DataFrame(rows)
 
 
-def niche_composition(vis, res, bg_mask=None, key: str = "c2l_frac", n_background: int = 2000, seed: int = 0) -> pd.DataFrame:
+def niche_composition(adata_vis, res, bg_mask=None, key: str = "c2l_frac", n_background: int = 2000, seed: int = 0) -> pd.DataFrame:
     """c2l cell-type fractions of the niche (center + neighbours) vs random niches of the same
     size (z and percentile)."""
     from scipy.spatial import KDTree
-    F = vis.obsm[key]
-    coords = np.asarray(vis.obsm["spatial"])[:, :2]
+    F = adata_vis.obsm[key]
+    coords = np.asarray(adata_vis.obsm["spatial"])[:, :2]
     niche = np.r_[res.center, res.neighbors.idx.values]
-    pool = np.arange(vis.n_obs) if bg_mask is None else np.where(np.asarray(bg_mask, bool))[0]
+    pool = np.arange(adata_vis.n_obs) if bg_mask is None else np.where(np.asarray(bg_mask, bool))[0]
     rng = np.random.default_rng(seed)
     bg = rng.choice(pool, size=min(n_background, len(pool)), replace=False)
     _, iB = KDTree(coords).query(coords[bg], k=len(niche))
@@ -516,7 +517,7 @@ def _rz(M):
     return (R - R.mean(0)) / (R.std(0) + 1e-12)
 
 
-def calc_spearman_correlation(df_inter_sig: pd.DataFrame, adata_lr: sc.AnnData, 
+def calc_liana_spearman_correlation(df_inter_sig: pd.DataFrame, adata_lr: sc.AnnData, 
                               df_frac: pd.DataFrame, celltypes: list,
                               root_liana: Path=Path('.'), force: bool=False, verbose: bool=False) -> pd.DataFrame:
 
@@ -539,7 +540,7 @@ def calc_spearman_correlation(df_inter_sig: pd.DataFrame, adata_lr: sc.AnnData,
     return df_rho
 
 
-def plot_spearman_correlation(df_rho: pd.DataFrame,
+def plot_liana_spearman_correlation(df_rho: pd.DataFrame,
                               cmap: str|LinearSegmentedColormap='RdBu_r', 
                               fontsize:int=12, dpi:int=300,
                               root_fig_liana: Path=Path('.')):
@@ -617,17 +618,200 @@ def save_liana_inflow(adata_pos: ad.AnnData, df_inter: pd.DataFrame, df_frac: pd
 
 
 def plot_liana_inflow(df_inter: pd.DataFrame, df_inf: pd.DataFrame, fontsize: int = 12,
-                      root_fig_liana: Path = Path('.'), dpi: int = 300):
+                      bar_range: tuple = (-1.5, 1.5), root_fig_liana: Path = Path('.'), dpi: int = 300):
     
     lr_inf = df_inter.index[:25]
     E_inf = (df_inf[df_inf.interaction.isin(lr_inf)]
             .pivot(index='interaction', columns='source', values='log2_enrichment').reindex(lr_inf))
 
-    g = sns.clustermap(E_inf.fillna(0), cmap='RdBu_r', center=0, vmin=-1.5, vmax=1.5, figsize=(15, 10),
+    g = sns.clustermap(E_inf.fillna(0), cmap='RdBu_r', center=0, vmin=bar_range[0], vmax=bar_range[1], figsize=(15, 10),
                     row_cluster=False, dendrogram_ratio=(0.06, 0.08), xticklabels=True, yticklabels=True)
+    
     cl.style_clustermap(g, xlabel='source cell type (c2l proportion)', ylabel="LR pair (ordered by Moran's R)",
                         title='LIANA inflow: source enrichment', cbar_label='log2 enrichment', fontsize=fontsize)
     plt.show()
 
     filefig = root_fig_liana / 'liana_inflow_source_enrichment.png'
     g.savefig(filefig, dpi=dpi, bbox_inches='tight')
+
+
+def calc_cell2location_resolved_sender_receiver(file_sp: Path,adata_pos: ad.AnnData, df_inter_sig: pd.DataFrame,
+                                                celltypes: list, root_liana: Path = Path('.'),
+                                                force: bool = False, verbose: bool = False) -> pd.DataFrame:
+
+    fname = 'c2l_celltype_resolved_lr.tsv'
+    filename = root_liana / fname
+    lr100 = df_inter_sig.head(100)[['ligand', 'receptor']]
+
+    if filename.exists() and not force:
+        df_ct = pdreadcsv(fname, root_liana, verbose=verbose)
+        return df_ct
+
+    W = adata_pos.obsp['spatial_connectivities'].tocsr()
+    W.eliminate_zeros()
+
+    t0 = time.time()
+    genes_lr = sorted({s for e in list(lr100.ligand) + list(lr100.receptor) for s in e.split('_')})
+    E, genes_E, _ = celltype_expr(file_sp, adata_pos, genes_lr, celltypes)        # spots x cell types x genes
+    df_ct = celltype_resolved_lr(E, genes_E, celltypes, lr100, W, n_perms=200, seed=0)
+    _ = pdwritecsv(df_ct, fname, root_liana, verbose=verbose)
+    del E
+
+    if verbose: 
+        print(f"{df_ct.interaction.nunique()} LR pairs scored in {time.time() - t0:.0f} s")
+
+    return df_ct
+
+
+def plot_sender_receiver_heatmap(df_ct: pd.DataFrame, lista: list,
+                                 root_fig_liana: Path = Path('.'), 
+                                 cmap: str = "RdBu_r", height:float=5, width:float=17, 
+                                 fontsize_title:int=14, fontsize_label:int=12, 
+                                 fontsize_ticks:int=11, dpi: int = 300):
+
+    lr_panels = [x for x in lista if x in set(df_ct.interaction)]
+
+    if not lr_panels:
+        print("No matching LR pairs found.")
+        return
+
+    n = len(lr_panels)
+    nrows = int(np.ceil(n / 2))
+
+    height *= nrows
+    figsize = (width, height)
+
+    fig, axs = plt.subplots(nrows, 2, figsize=figsize)
+    for ax, lr_id in zip(axs.flat, lr_panels):
+        Mx = cl.lr_matrix(df_ct, lr_id, 'score')
+        s_top = Mx.sum(1).nlargest(10).index
+        r_top = Mx.sum(0).nlargest(10).index
+
+        # cmap 'rocket_r'
+        sns.heatmap(Mx.loc[s_top, r_top], ax=ax, cmap=cmap, cbar_kws={'label': 'score', 'shrink': .7},
+                    xticklabels=True, yticklabels=True)
+
+        # x/y tick label size (and optional rotation)
+        ax.tick_params(axis='x', labelsize=fontsize_ticks, labelrotation=90)
+        ax.tick_params(axis='y', labelsize=fontsize_ticks, labelrotation=0)
+
+        # colorbar ticks + label, optional
+        cbar = ax.collections[0].colorbar
+        cbar.ax.tick_params(labelsize=fontsize_ticks)
+        cbar.set_label('score', fontsize=fontsize_label)
+
+        ax.set_title(lr_id, fontsize=fontsize_title)
+        ax.set_ylabel('sender (ligand)', fontsize=fontsize_label)
+        ax.set_xlabel('receiver (receptor)', fontsize=fontsize_label)
+
+    for ax in axs.flat[len(lr_panels):]:
+        ax.axis('off')
+
+    fig.suptitle('cell2location-resolved CCC: top {n} senders x receivers per LR pair', y=1.0, fontsize=fontsize_title)
+    fig.tight_layout()
+
+    filefig = root_fig_liana / 'c2l_celltype_resolved_lr_panels.png'
+    fig.savefig(filefig, dpi=dpi, bbox_inches='tight')
+
+    plt.show()
+
+
+def dotplot_sender_receiver(df_ct: pd.DataFrame, zmin: float=5, nlargest:int=40,
+                            figsize=(7.5, 10), fontsize:int=6,
+                            cmap: str|LinearSegmentedColormap='viridis',
+                            root_fig_liana: Path=Path('.'), dpi: int=300):
+
+    # strongest sender -> receiver links over all LR pairs (top 40 by score, z > 5)
+    top_ = df_ct[df_ct.z > zmin].nlargest(nlargest, 'score').iloc[::-1]
+
+    lab = top_.sender + ' -> ' + top_.receiver + '   ' + top_.interaction.str.replace('^', ' -> ', regex=False)
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    sc_ = ax.scatter(top_.score, np.arange(len(top_)), c=top_.z, s=40 + 300 * top_.score_share, cmap=cmap)
+    
+    ax.set_yticks(np.arange(len(top_)))
+    ax.set_yticklabels(lab, fontsize=fontsize)
+    
+    ax.set_xlabel('score  (mean of niche ligand x receptor)')
+    ax.set_title('top sender -> receiver links (size = share of LR total)')
+    
+    plt.colorbar(sc_, ax=ax, shrink=.5, label='z vs spot permutation')
+
+    fig.tight_layout()
+
+    filefig = root_fig_liana / 'c2l_celltype_resolved_top_links.png'
+    fig.savefig(filefig, dpi=dpi, bbox_inches='tight')
+    plt.show()
+
+def calc_liana_rank_aggregate_reference(file_ref: Path, root_liana: Path, 
+                                        force: bool=False, verbose: bool=False) -> pd.DataFrame:
+
+    fname = 'liana_rank_aggregate_reference.tsv'
+    filename = root_liana / fname
+
+    if filename.exists() and not force:
+        df_liref = pdreadcsv(fname, root_liana, verbose=verbose)
+        return df_liref
+
+    t0 = time.time()
+    adata_refb = ad.read_h5ad(file_ref, backed='r')
+    df_obs_ref = adata_refb.obs[['Subset', 'Method', 'Sample', 'Tissue']]
+
+    rng = np.random.default_rng(0)
+    keep = np.sort(np.concatenate([rng.choice(ix, size=min(400, len(ix)), replace=False)
+                                for ix in df_obs_ref.groupby('Subset', observed=True).indices.values()]))
+
+    adata_ref = adata_refb[keep].to_memory()
+    adata_refb.file.close()
+
+    cols = ['Subset', 'Method', 'Sample', 'Tissue']
+    adata_ref = ad.AnnData(X=adata_ref.X.astype(np.float32), obs=adata_ref.obs[cols].copy(),
+                    var=pd.DataFrame(index=adata_ref.var_names))          # var_names = symbols in the original file
+
+    sc.pp.normalize_total(adata_ref, target_sum=1e4); sc.pp.log1p(adata_ref)
+    print(adata_ref.shape, adata_ref.obs.Subset.value_counts().min(), 'cells in the smallest type')
+    
+    li.mt.rank_aggregate(adata_ref, groupby='Subset', resource_name='consensus', 
+                            expr_prop=0.1, use_raw=False, n_perms=100, n_jobs=8, verbose=False)
+    
+    df_liref = adata_ref.uns['liana_res'].copy()
+    del adata_ref
+    pdwritecsv(df_liref, fname, root_liana, verbose=verbose)
+
+    print(f"rank_aggregate in {time.time() - t0:.0f} s")
+
+    return df_liref
+
+def save_celltype_colocalisation(adata_pos, df_abund, df_liref: pd.DataFrame, root_liana: Path,
+                                 verbose: bool=False, force: bool=False) -> tuple[pd.DataFrame, pd.DataFrame]:
+
+    fname = 'c2l_celltype_colocalisation.tsv'
+    filename = root_liana / fname
+
+    fname2 = 'liana_rank_aggregate_spatially_supported.tsv'
+    filename2 = root_liana / fname2
+
+    if filename.exists() and filename2. exists() and not force:
+
+        df_coloc = pdreadcsv(fname, root_liana, verbose=verbose)
+        df_liref_sup = pdreadcsv(fname2, root_liana, verbose=verbose)
+
+        return df_coloc, df_liref_sup
+
+    W = adata_pos.obsp['spatial_connectivities'].tocsr()
+    W.eliminate_zeros()
+
+    df_coloc = spatial_colocalisation(df_abund, W)
+
+    pdwritecsv(df_coloc.reset_index(names='cell_type'), fname, root_liana, verbose=verbose)
+
+    df_liref['df_coloc'] = [df_coloc.at[s, t] for s, t in zip(df_liref.source, df_liref.target)]
+
+    df_liref_sel = df_liref[(df_liref.specificity_rank <= 0.05) & (df_liref.magnitude_rank <= 0.05)]
+    df_liref_sup = df_liref_sel[df_liref_sel.df_coloc > 0.2].sort_values('specificity_rank')
+    df_liref_sup = df_liref_sup.sort_values('magnitude_rank')
+
+    pdwritecsv(df_liref_sup, fname2, root_liana, verbose=verbose)
+
+    return df_coloc, df_liref_sup
