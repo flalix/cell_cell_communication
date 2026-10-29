@@ -34,11 +34,13 @@ import numpy as np
 import pandas as pd
 import time
 from pathlib import Path
+from typing import Any, List
 
 import anndata as ad
 import scanpy as sc
 import squidpy as sq
 import liana as li
+import mudata as mu
 
 from scipy import sparse, stats
 import scipy.sparse as sps
@@ -50,6 +52,12 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
 from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.colors import to_hex
+
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from scipy.cluster.hierarchy import linkage, dendrogram
+
 
 rcParams['pdf.fonttype']= 42 # enables correct plotting of text for PDFs
 
@@ -122,19 +130,22 @@ def load_c2l_spots(path, summary: str = "q05", region_labels=None, target_sum: f
 
 def region_names_by_enrichment(adata_pos: ad.AnnData, df_frac: pd.DataFrame, regions: pd.Series, 
                                n: int = 2, min_frac: float = 0.02, root_liana: Path = Path("."),
-                               verbose: bool = False, force: bool = False) -> pd.DataFrame:
+                               verbose: bool = False, force: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Region -> 'typeA, typeB': cell types with the highest log2(mean fraction in region /
     mean fraction overall), among those making up >= min_frac of the region (avoids names
     driven by rare cell types, as happens with a max-scaled ranking).
     """
 
-    fname = 'c2l_region_names.tsv'
+    fname     = 'c2l_region_names.tsv'
+    fname_reg = 'c2l_region_names_all.tsv'
     filename = root_liana / fname
+    filename_reg = root_liana / fname_reg
 
-    if filename.exists() and not force:
+    if filename.exists() and filename_reg.exists() and not force:
          df_reg = pdreadcsv(fname, root_liana, verbose=verbose)
-         return df_reg
+         df_reg_names = pdreadcsv(fname_reg, root_liana, verbose=verbose)
+         return df_reg, df_reg_names
 
 
     regions = pd.Series(np.asarray(regions).astype(str), index=df_frac.index)
@@ -144,6 +155,7 @@ def region_names_by_enrichment(adata_pos: ad.AnnData, df_frac: pd.DataFrame, reg
     df_enr = np.log2((df_mu + 1e-4) / (df_frac.mean() + 1e-4)).where(df_mu >= min_frac)
     
     reg_names = {r: ", ".join(df_enr.loc[r].dropna().nlargest(n).index) for r in df_mu.index}
+    order_reg = sorted(reg_names, key=int)
 
     adata_pos.obs['region_cluster'] = pd.Categorical(adata_pos.obs['region_cluster'].astype(str), categories=order_reg)
     adata_pos.obs['region_name'] = adata_pos.obs['region_cluster'].astype(str).map(lambda r: f"{r}: {reg_names[r]}")
@@ -152,10 +164,12 @@ def region_names_by_enrichment(adata_pos: ad.AnnData, df_frac: pd.DataFrame, reg
                             'n_spots': adata_pos.obs['region_cluster'].value_counts().reindex(order_reg).values,
                             'name_tutorial': adata_pos.obs.groupby('region_cluster', observed=True)['region_name_tutorial'].first().reindex(order_reg).values}
     df_reg = pd.DataFrame(dic)
+    df_reg_names = pd.DataFrame(reg_names.items(), columns=['region_cluster', 'region_name'])
 
     _ = pdwritecsv(df_reg, fname, root_liana, verbose=verbose)
+    _ = pdwritecsv(df_reg_names, fname_reg, root_liana, verbose=verbose)
 
-    return df_reg
+    return df_reg, df_reg_names
 
 
 # --------------------------------------------------------------------------- #
@@ -784,20 +798,26 @@ def calc_liana_rank_aggregate_reference(file_ref: Path, root_liana: Path,
     return df_liref
 
 def save_celltype_colocalisation(adata_pos, df_abund, df_liref: pd.DataFrame, root_liana: Path,
-                                 verbose: bool=False, force: bool=False) -> tuple[pd.DataFrame, pd.DataFrame]:
+                                 verbose: bool=False, force: bool=False) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 
     fname = 'c2l_celltype_colocalisation.tsv'
     filename = root_liana / fname
 
     fname2 = 'liana_rank_aggregate_spatially_supported.tsv'
     filename2 = root_liana / fname2
-
-    if filename.exists() and filename2. exists() and not force:
+ 
+    fname3 = 'liana_rank_aggregate_spatially_sel.tsv'
+    filename3 = root_liana / fname3
+ 
+    if filename.exists() and filename2.exists() and filename3.exists() and not force:
 
         df_coloc = pdreadcsv(fname, root_liana, verbose=verbose)
+        df_coloc.set_index('cell_type', inplace=True)
+
+        df_liref_sel = pdreadcsv(fname3, root_liana, verbose=verbose)
         df_liref_sup = pdreadcsv(fname2, root_liana, verbose=verbose)
 
-        return df_coloc, df_liref_sup
+        return df_coloc, df_liref_sel, df_liref_sup
 
     W = adata_pos.obsp['spatial_connectivities'].tocsr()
     W.eliminate_zeros()
@@ -806,12 +826,278 @@ def save_celltype_colocalisation(adata_pos, df_abund, df_liref: pd.DataFrame, ro
 
     pdwritecsv(df_coloc.reset_index(names='cell_type'), fname, root_liana, verbose=verbose)
 
-    df_liref['df_coloc'] = [df_coloc.at[s, t] for s, t in zip(df_liref.source, df_liref.target)]
+    df_liref['coloc'] = [df_coloc.at[s, t] for s, t in zip(df_liref.source, df_liref.target)]
 
     df_liref_sel = df_liref[(df_liref.specificity_rank <= 0.05) & (df_liref.magnitude_rank <= 0.05)]
-    df_liref_sup = df_liref_sel[df_liref_sel.df_coloc > 0.2].sort_values('specificity_rank')
+    df_liref_sup = df_liref_sel[df_liref_sel.coloc > 0.2].sort_values('specificity_rank')
     df_liref_sup = df_liref_sup.sort_values('magnitude_rank')
 
     pdwritecsv(df_liref_sup, fname2, root_liana, verbose=verbose)
+    pdwritecsv(df_liref_sel, fname3, root_liana, verbose=verbose)
 
-    return df_coloc, df_liref_sup
+    return df_coloc, df_liref_sel, df_liref_sup
+
+
+def plot_cell_type_colocalisation_spot_neighborhood_heatmap(df_coloc: pd.DataFrame, cmap: str|LinearSegmentedColormap ='RdBu_r',
+                                                            vRange:tuple=(-0.8, 0.8), figsize:tuple=(15, 14),
+                                                            fontsize:int = 12, dpi:int = 300, root_fig_liana: Path = Path('.')):
+
+    
+    g = sns.clustermap(df_coloc, cmap=cmap, center=0, vmin=vRange[0], vmax=vRange[1], figsize=figsize,
+                    dendrogram_ratio=(0.06, 0.06), xticklabels=True, yticklabels=True)
+    
+    cl.style_clustermap(g, xlabel='cell type', ylabel='cell type',
+                        title='c2l cell-type co-localisation (spot vs. neighbourhood abundance)',
+                        cbar_label='co-localisation r', fontsize=fontsize)
+    plt.show()
+
+    filefig = root_fig_liana / 'c2l_celltype_colocalisation.png'
+    g.savefig(filefig, dpi=dpi, bbox_inches='tight')
+
+def plot_gc_panels(df_liref_sup: pd.DataFrame, 
+                   gc_types:list = ['FDC', 'T_CD4+_TfH_GC', 'B_GC_LZ', 'B_GC_DZ', 'B_GC_prePB', 'B_Cycling', 'Macrophages_M1'],
+                   dpi:int = 300, root_fig_liana: Path = Path('.')) -> plt.Figure:
+    
+    sup_gc = df_liref_sup[df_liref_sup.source.isin(gc_types) & df_liref_sup.target.isin(gc_types)]
+    print(f"{len(sup_gc)} spatially supported interactions within the GC compartment")
+
+    p = li.pl.dotplot(liana_res=sup_gc, colour='magnitude_rank', size='specificity_rank',
+                    inverse_colour=True, inverse_size=True,
+                    source_labels=[c for c in gc_types if c in set(sup_gc.source)],
+                    target_labels=[c for c in gc_types if c in set(sup_gc.target)],
+                    top_n=30, orderby='magnitude_rank', orderby_ascending=True,
+                    figure_size=(18, 8), return_fig=True)
+    
+    p.save(root_fig_liana / 'liana_rank_aggregate_GC_dotplot.png', dpi=dpi)
+
+    return p
+
+def calc_misty(adata_pos, df_frac, celltypes, 
+               root_liana: Path, force: bool = False, 
+               verbose: bool = False) -> tuple[li.mt.MistyData, pd.DataFrame, pd.DataFrame]:
+
+    fname_metrics = 'misty_c2l_target_metrics.tsv'
+    fname_inter = 'misty_c2l_interactions.tsv'
+    fname_misty = 'misty.h5mu'
+
+    filename_met = root_liana / fname_metrics
+    filename_int = root_liana / fname_inter
+    filename_misty = root_liana / fname_misty
+
+    if filename_met.exists() and filename_int.exists() and filename_misty.exists() and not force:
+
+        misty = li.mt.MistyData(mu.read_h5mu(root_liana / 'misty.h5mu'))  # read, uns included
+        df_metrics = pdreadcsv(fname_metrics, root_liana, verbose=verbose)
+        df_inter = pdreadcsv(fname_inter, root_liana, verbose=verbose)
+
+        return misty, df_metrics, df_inter
+
+    comp = ad.AnnData(X=df_frac.values.astype(np.float32), 
+                    obs=adata_pos.obs[['region_cluster']].copy(),
+                    var=pd.DataFrame(index=celltypes), 
+                    obsm={'spatial': adata_pos.obsm['spatial']})
+
+    misty = li.mt.genericMistyData(intra=comp, set_diag=False, cutoff=0.05, bandwidth=275, n_neighs=6, verbose=False)
+    
+    misty(model=li.mt.sp.RandomForestModel, bypass_intra=True, n_jobs=8, verbose=False)
+
+    df_metrics = misty.uns['target_metrics'].sort_values('gain_R2', ascending=False)
+    df_inter = misty.uns['interactions']
+  
+    misty.write_h5mu(root_liana / fname_misty)  
+    if verbose:
+        print(f"Misty data written to {root_liana / fname_misty}")
+
+    pdwritecsv(df_metrics, fname_metrics, root_liana, verbose=verbose)
+    pdwritecsv(df_inter, fname_inter, root_liana, verbose=verbose)
+
+    return misty, df_metrics, df_inter
+
+
+def plot_misty(misty: li.mt.MistyData, root_fig_liana: Path, dpi:int=300, figure_size:tuple=(10, 8)):
+    
+    fig1 = li.pl.contributions(misty, figure_size=figure_size, return_fig=True)
+
+    filefig = root_fig_liana / 'misty_c2l_contributions.png'
+    fig1.save(filefig, dpi=dpi, verbose=False)      # plotnine figure
+
+    return fig1
+
+
+def plotly_clustermap(imp, cbar_title='importance (juxta)', xlabel='target cell type',
+                      ylabel='predictor (neighbouring spots)', method='average', metric='euclidean',
+                      cmap='mako_r', vmax_q=0.99, width=1100, height=1000, root_fig_liana: Path = Path('.'),font=11):
+    
+    # cluster like sns.clustermap defaults (average linkage, euclidean)
+    dr = dendrogram(linkage(imp.values,   method=method, metric=metric), no_plot=True)
+    dc = dendrogram(linkage(imp.values.T, method=method, metric=metric), no_plot=True)
+
+    M = imp.iloc[dr['leaves'], dc['leaves']]
+
+    rows, cols = M.index.tolist(), M.columns.tolist()
+    cscale = [[i / 10, to_hex(c)] for i, c in enumerate(sns.color_palette(cmap, 11))]
+
+    fig = make_subplots(rows=2, cols=2, shared_xaxes='columns', shared_yaxes='rows',
+                        column_widths=[0.08, 0.92], row_heights=[0.08, 0.92],
+                        horizontal_spacing=0.003, vertical_spacing=0.003)
+    
+    line = dict(color='#444', width=1)
+
+    for xs, ys in zip(dc['icoord'], dc['dcoord']):            # top dendrogram (columns)
+        fig.add_trace(go.Scatter(x=(np.array(xs) - 5) / 10, y=ys, mode='lines', line=line,
+                                 hoverinfo='skip', showlegend=False), row=1, col=2)
+        
+    for xs, ys in zip(dr['icoord'], dr['dcoord']):            # left dendrogram (rows)
+        fig.add_trace(go.Scatter(x=-np.array(ys), y=(np.array(xs) - 5) / 10, mode='lines', line=line,
+                                 hoverinfo='skip', showlegend=False), row=2, col=1)
+
+    # colorbar: right of the row labels, vertically centred on the heatmap
+    margin = dict(l=40, r=120, t=40, b=60)
+    plot_w = width - margin['l'] - margin['r']
+    lab_px = max(map(len, rows)) * font * 0.6 + 25            # approx. row-label width in px
+    y0, y1 = fig.layout.yaxis4.domain
+    fig.add_trace(go.Heatmap(
+        z=M.values, x=list(range(len(cols))), y=list(range(len(rows))),
+        colorscale=cscale, zmin=0, zmax=float(np.quantile(imp.values, vmax_q)),
+        customdata=np.array([[[r, c] for c in cols] for r in rows]),
+        hovertemplate='predictor: %{customdata[0]}<br>target: %{customdata[1]}'
+                      '<br>importance: %{z:.3g}<extra></extra>',
+        colorbar=dict(title=dict(text=cbar_title, side='right'), len=0.4, thickness=15,
+                      y=(y0 + y1) / 2, yanchor='middle', x=1 + lab_px / plot_w, xanchor='left')),
+        row=2, col=2)
+
+    fig.update_xaxes(tickvals=list(range(len(cols))), ticktext=cols, tickangle=-90,
+                     tickfont_size=font, title_text=xlabel, showgrid=False, zeroline=False, row=2, col=2)
+    fig.update_yaxes(tickvals=list(range(len(rows))), ticktext=rows, side='right',
+                     tickfont_size=font, title_text=ylabel, showgrid=False, zeroline=False, row=2, col=2)
+    fig.update_yaxes(autorange='reversed', row=2)             # first leaf on top, as in seaborn
+
+    for ax in ('xaxis', 'yaxis', 'xaxis2', 'yaxis2', 'xaxis3', 'yaxis3'):
+        fig.layout[ax].visible = False
+
+    fig.update_layout(width=width, height=height, template='simple_white', margin=margin)
+
+    fname = 'misty_c2l_juxta_importances'
+    fig.write_html(root_fig_liana / f'{fname}.html')
+    # fig.write_image(root_fig_liana / f'{fname}.png', scale=3)   # needs kaleido + Chrome
+
+    return fig
+
+
+
+def calc_centers_by_group_B_GC_LZ_and_FDC(adata_pos: ad.AnnData, adata_lr: ad.AnnData, df_frac: pd.DataFrame, 
+                          reg_names: dict, file_sp: Path, root_liana: Path, force: bool=False, 
+                          verbose: bool=False) -> tuple[Any, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+
+    spacing = nl.spot_spacing(adata_pos.obsm['spatial'])
+    um_per_px = 100 / spacing
+
+    print(f"Spacing: {spacing:.3f}, um per px: {um_per_px:.3f}")
+
+    gc_score = (df_frac['B_GC_LZ'] + df_frac['FDC']).groupby(adata_pos.obs['region_cluster'].astype(str)).mean()
+    region_gc = gc_score.idxmax()
+
+    fname_comp = f'niche_composition_region{region_gc}.tsv'
+    fname_lr = f'niche_lr_region{region_gc}.tsv'
+    fname_function = f'niche_functions_region{region_gc}.tsv'
+    fname_att = f'att_niche_lr_region{region_gc}_c2l_attribution.tsv'
+    fname_lr_dir = f'lr_direction_region{region_gc}.tsv'
+    fname_states = f'lr_states_region{region_gc}.tsv'
+    fname_check  = f'lr_check_region{region_gc}.tsv'
+
+    filename_cp = root_liana / fname_comp
+    filename_lr = root_liana / fname_lr
+    filename_fu = root_liana / fname_function
+    filename_at = root_liana / fname_att
+    filename_lr_dir = root_liana / fname_lr_dir
+    filename_states = root_liana / fname_states
+    filename_check = root_liana / fname_check
+
+    centers = nl.centers_by_group(adata_pos, groupby='region_cluster')
+    center = centers[region_gc]
+    bg_mask = (adata_pos.obs['region_cluster'].astype(str) != region_gc).values
+    lr_h = nl.load_lr('consensus')
+
+    print(f"GC region: {region_gc} ({reg_names[region_gc]}), center spot {adata_pos.obs_names[center]} (idx {center}); LR resource {lr_h.shape}")
+
+    res = nl.analyze_niche(adata_pos, center, k=20, center_pool=6, lr=lr_h, programs=pg.PROGRAMS,
+                        bg_mask=bg_mask, layer=None, fdr=0.1, n_top_gradients=15, n_line_cells=6,
+                        um_per_unit=um_per_px, n_background=2000)
+
+    if filename_cp.exists() and filename_lr.exists() and filename_fu.exists() and \
+       filename_at.exists() and filename_lr_dir.exists() and \
+       filename_states.exists() and filename_check.exists() and not force:
+        
+        df_comp = pdreadcsv(fname_comp, root_liana, verbose=verbose)
+        df_lr = pdreadcsv(fname_lr, root_liana, verbose=verbose)
+        df_function = pdreadcsv(fname_function, root_liana, verbose=verbose)
+        df_att = pdreadcsv(fname_att, root_liana, verbose=verbose)
+        dfr = pdreadcsv(fname_lr_dir, root_liana, verbose=verbose)
+        df_states = pdreadcsv(fname_states, root_liana, verbose=verbose)
+        df_chk = pdreadcsv(fname_check, root_liana, verbose=verbose)
+
+        return res, df_comp, df_lr, df_function, df_att, dfr, df_states, df_chk
+
+    
+    df_lr = res.lr
+    df_function = res.functions
+
+    df_comp = cl.niche_composition(adata_pos, res, bg_mask=bg_mask)
+    df_att = cl.niche_celltype_attribution(file_sp, adata_pos, res, n=15)
+    
+    df_states = nl.niche_program_activity(adata_pos, center, res.neighbors, pg.CELL_STATES, n_background=2000, bg_mask=bg_mask)
+
+    # LIANA cross-check: local cosine at the centre / neighbours and global rank (Moran's R) of the niche LRs
+    df_chk = nl.liana_local_check(adata_lr, res, n=20)
+
+    cols = ['ligand', 'receptor', 'direction', 'score', 'z', 'fdr', 'ligand_sender', 'receptor_receiver',
+            'ligand_programs', 'receptor_programs']
+
+    dfr = _plain(res.lr)[cols].head(12).round(4)
+
+    pdwritecsv(df_comp, fname_comp, root_liana)
+    pdwritecsv(df_lr, fname_lr, root_liana)
+    pdwritecsv(df_function, fname_function, root_liana)
+    pdwritecsv(df_att, fname_att, root_liana)
+    pdwritecsv(dfr, fname_lr_dir, root_liana)
+    pdwritecsv(df_states, fname_states, root_liana)
+    pdwritecsv(df_chk, fname_check, root_liana)
+
+    return res, df_comp, df_lr, df_function, df_att, dfr, df_states, df_chk
+
+
+
+def calc_niche_functions_by_c2l_region(adata_pos: ad.AnnData, regions: pd.Series | List[str], df_frac: pd.DataFrame, 
+                                       min_frac:float = 0.02, n:int = 2, root_liana: Path = Path('.'), 
+                                       force: bool = False, verbose: bool = False) -> pd.DataFrame:
+
+    fname = 'niche_functions_by_c2l_region.tsv'
+    filename = root_liana / fname
+
+    if filename.exists() and not force:
+        return pdreadcsv(fname, root_liana, verbose=verbose)
+
+    spacing = nl.spot_spacing(adata_pos.obsm['spatial'])
+    um_per_px = 100 / spacing
+
+    lr_h = nl.load_lr('consensus')
+
+    centers = nl.centers_by_group(adata_pos, groupby='region_cluster')
+    regions = pd.Series(np.asarray(regions).astype(str), index=df_frac.index)
+    df_mu = df_frac.groupby(regions).mean()
+    df_enr = np.log2((df_mu + 1e-4) / (df_frac.mean() + 1e-4)).where(df_mu >= min_frac)
+    reg_names = {r: ", ".join(df_enr.loc[r].dropna().nlargest(n).index) for r in df_mu.index}
+    order_reg = sorted(reg_names, key=int)
+
+    t0 = time.time()
+    df_mat, niche_results = nl.scan_niches(adata_pos, {r: centers[r] for r in order_reg if r in centers}, value='z',
+                                        exclude_own_group='region_cluster', center_pool=6, lr=lr_h,
+                                        programs=pg.PROGRAMS, um_per_unit=um_per_px, n_background=1000,
+                                        n_top_gradients=5)
+    df_mat.columns = [f"{c}: {reg_names[c]}" for c in df_mat.columns]
+
+    pdwritecsv(df_mat.reset_index(), fname, root_liana)
+    if verbose:
+        print(f"{len(niche_results)} region niches in {time.time() - t0:.0f} s")
+
+    return df_mat
