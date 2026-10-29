@@ -68,7 +68,7 @@ import programs.niche_lr as nl
 import programs.programs as pg
 import programs.c2l_liana as cl
 
-from libs.Basic import pdwritecsv, pdreadcsv
+from libs.Basic import pdwritecsv, pdreadcsv, pddumpdic, pdloaddic
 
 def _plain(df):        # niche_lr keeps numpy arrays in DataFrame.attrs -> breaks repr / pd.concat
     d = df.copy()
@@ -887,10 +887,10 @@ def calc_misty(adata_pos, df_frac, celltypes,
     if filename_met.exists() and filename_int.exists() and filename_misty.exists() and not force:
 
         misty = li.mt.MistyData(mu.read_h5mu(root_liana / 'misty.h5mu'))  # read, uns included
-        df_metrics = pdreadcsv(fname_metrics, root_liana, verbose=verbose)
-        df_inter = pdreadcsv(fname_inter, root_liana, verbose=verbose)
+        df_misty_metrics = pdreadcsv(fname_metrics, root_liana, verbose=verbose)
+        df_misty_inter = pdreadcsv(fname_inter, root_liana, verbose=verbose)
 
-        return misty, df_metrics, df_inter
+        return misty, df_misty_metrics, df_misty_inter
 
     comp = ad.AnnData(X=df_frac.values.astype(np.float32), 
                     obs=adata_pos.obs[['region_cluster']].copy(),
@@ -901,17 +901,17 @@ def calc_misty(adata_pos, df_frac, celltypes,
     
     misty(model=li.mt.sp.RandomForestModel, bypass_intra=True, n_jobs=8, verbose=False)
 
-    df_metrics = misty.uns['target_metrics'].sort_values('gain_R2', ascending=False)
-    df_inter = misty.uns['interactions']
+    df_misty_metrics = misty.uns['target_metrics'].sort_values('gain_R2', ascending=False)
+    df_misty_inter = misty.uns['interactions']
   
     misty.write_h5mu(root_liana / fname_misty)  
     if verbose:
         print(f"Misty data written to {root_liana / fname_misty}")
 
-    pdwritecsv(df_metrics, fname_metrics, root_liana, verbose=verbose)
-    pdwritecsv(df_inter, fname_inter, root_liana, verbose=verbose)
+    pdwritecsv(df_misty_metrics, fname_metrics, root_liana, verbose=verbose)
+    pdwritecsv(df_misty_inter, fname_inter, root_liana, verbose=verbose)
 
-    return misty, df_metrics, df_inter
+    return misty, df_misty_metrics, df_misty_inter
 
 
 def plot_misty(misty: li.mt.MistyData, root_fig_liana: Path, dpi:int=300, figure_size:tuple=(10, 8)):
@@ -982,6 +982,31 @@ def plotly_clustermap(imp, cbar_title='importance (juxta)', xlabel='target cell 
     # fig.write_image(root_fig_liana / f'{fname}.png', scale=3)   # needs kaleido + Chrome
 
     return fig
+
+
+def plot_neighbor_to_center(adata_pos, res, df_frac, reg_names, root_fig_liana:Path, dpi=300):
+    gc_score = (df_frac['B_GC_LZ'] + df_frac['FDC']).groupby(adata_pos.obs['region_cluster'].astype(str)).mean()
+    region_gc = gc_score.idxmax()
+
+    centers = nl.centers_by_group(adata_pos, groupby='region_cluster')
+    center = centers[region_gc]
+
+    lib_id = list(adata_pos.uns['spatial'].keys())[0]
+
+    fig, axs = plt.subplots(1, 2, figsize=(14, 6), gridspec_kw={'width_ratios': [1, 1.1]})
+    nl.plot_niche(adata_pos, res, ax=axs[0])
+    sq.pl.spatial_scatter(adata_pos, color='region_cluster', library_id=lib_id, img_res_key='hires', img_alpha=0.5, size=1.3,
+                        groups=[region_gc], na_color='#e0e0e0', title=f'region {region_gc}: {reg_names[region_gc]}', ax=axs[1])
+    
+    xy = adata_pos.obsm['spatial'][center] * adata_pos.uns['spatial'][lib_id]['scalefactors']['tissue_hires_scalef']
+    axs[1].scatter(*xy, marker='*', s=200, c='crimson', zorder=5)
+    axs[1].set_xlabel(''); axs[1].set_ylabel('')
+
+    fig.tight_layout()
+
+    filefig = root_fig_liana / f'niche_map_region{region_gc}.png'
+    fig.savefig(filefig, dpi=dpi, bbox_inches='tight')
+    return plt
 
 
 
@@ -1069,13 +1094,18 @@ def calc_centers_by_group_B_GC_LZ_and_FDC(adata_pos: ad.AnnData, adata_lr: ad.An
 
 def calc_niche_functions_by_c2l_region(adata_pos: ad.AnnData, regions: pd.Series | List[str], df_frac: pd.DataFrame, 
                                        min_frac:float = 0.02, n:int = 2, root_liana: Path = Path('.'), 
-                                       force: bool = False, verbose: bool = False) -> pd.DataFrame:
+                                       force: bool = False, verbose: bool = False) -> tuple[pd.DataFrame, Any]:
 
     fname = 'niche_functions_by_c2l_region.tsv'
+    fname_niche = 'niche_results_by_c2l_region.pkl'
     filename = root_liana / fname
+    filename_niche = root_liana / fname_niche
 
-    if filename.exists() and not force:
-        return pdreadcsv(fname, root_liana, verbose=verbose)
+    if filename.exists() and filename_niche.exists() and not force:
+        df_mat = pdreadcsv(fname, root_liana, verbose=verbose)
+        df_mat.set_index('program', inplace=True)
+        niche_results = pdloaddic(fname_niche, root_liana, verbose=verbose)
+        return df_mat, niche_results
 
     spacing = nl.spot_spacing(adata_pos.obsm['spatial'])
     um_per_px = 100 / spacing
@@ -1096,8 +1126,134 @@ def calc_niche_functions_by_c2l_region(adata_pos: ad.AnnData, regions: pd.Series
                                         n_top_gradients=5)
     df_mat.columns = [f"{c}: {reg_names[c]}" for c in df_mat.columns]
 
-    pdwritecsv(df_mat.reset_index(), fname, root_liana)
+    pdwritecsv(df_mat.reset_index(), fname, root_liana, verbose=verbose)
+    pddumpdic(niche_results, fname_niche, root_liana, verbose=verbose)
     if verbose:
         print(f"{len(niche_results)} region niches in {time.time() - t0:.0f} s")
 
-    return df_mat
+    return df_mat, niche_results
+
+
+
+def plotly_niche_functions_clustermap(df_mat: pd.DataFrame, cbar_title: str = 'value', xlabel: str = '', ylabel: str = '',
+                      row_name: str = 'row', col_name: str = 'column', value_name: str | None = None,
+                      method: str = 'average', metric: str = 'euclidean', cmap: str = 'mako_r',
+                      zmin: float | None = None, zmax: float | None = None, center: float | None = None,
+                      vmax_q: float = 0.99, width: int = 1100, height: int = 1000, font: int = 11,
+                      cbar_len: float = 0.4, root_fig_liana: Path = Path('.')):
+    """
+    Plotly equivalent of sns.clustermap (average linkage, euclidean by default).
+
+    Colour range:
+      - zmin / zmax given                  -> used as is (like vmin / vmax)
+      - center given, zmin/zmax missing    -> symmetric around center, half-width = vmax_q quantile of |M - center|
+      - neither                            -> zmin = min(M), zmax = vmax_q quantile of M
+    Colorbar sits right of the row labels, vertically centred on the heatmap.
+    If fname is given, writes root_fig_liana / f'{fname}.html'.
+    """
+    vals = df_mat.values.astype(float)
+    if center is not None and (zmin is None or zmax is None):
+        h = float(np.nanquantile(np.abs(vals - center), vmax_q))
+        zmin = center - h if zmin is None else zmin
+        zmax = center + h if zmax is None else zmax
+    else:
+        zmin = float(np.nanmin(vals)) if zmin is None else zmin
+        zmax = float(np.nanquantile(vals, vmax_q)) if zmax is None else zmax
+
+    dr = dendrogram(linkage(vals,   method=method, metric=metric), no_plot=True)
+    dc = dendrogram(linkage(vals.T, method=method, metric=metric), no_plot=True)
+    df_mat2 = df_mat.iloc[dr['leaves'], dc['leaves']]
+    rows, cols = df_mat2.index.astype(str).tolist(), df_mat2.columns.astype(str).tolist()
+    cscale = [[i / 10, to_hex(c)] for i, c in enumerate(sns.color_palette(cmap, 11))]
+
+    fig = make_subplots(rows=2, cols=2, shared_xaxes='columns', shared_yaxes='rows',
+                        column_widths=[0.08, 0.92], row_heights=[0.08, 0.92],
+                        horizontal_spacing=0.003, vertical_spacing=0.003)
+    line = dict(color='#444', width=1)
+    for xs, ys in zip(dc['icoord'], dc['dcoord']):            # top dendrogram (columns)
+        fig.add_trace(go.Scatter(x=(np.array(xs) - 5) / 10, y=ys, mode='lines', line=line,
+                                 hoverinfo='skip', showlegend=False), row=1, col=2)
+    for xs, ys in zip(dr['icoord'], dr['dcoord']):            # left dendrogram (rows)
+        fig.add_trace(go.Scatter(x=-np.array(ys), y=(np.array(xs) - 5) / 10, mode='lines', line=line,
+                                 hoverinfo='skip', showlegend=False), row=2, col=1)
+
+    margin = dict(l=40, r=120, t=40, b=60)
+    plot_w = width - margin['l'] - margin['r']
+    lab_px = max(map(len, rows)) * font * 0.6 + 25            # approx. row-label width in px
+    y0, y1 = fig.layout.yaxis4.domain
+    fig.add_trace(go.Heatmap(
+        z=df_mat2.values, x=list(range(len(cols))), y=list(range(len(rows))),
+        colorscale=cscale, zmin=zmin, zmax=zmax,
+        customdata=np.array([[[r, c] for c in cols] for r in rows]),
+        hovertemplate=f'{row_name}: %{{customdata[0]}}<br>{col_name}: %{{customdata[1]}}'
+                      f'<br>{value_name or cbar_title}: %{{z:.3g}}<extra></extra>',
+        colorbar=dict(title=dict(text=cbar_title, side='right'), len=cbar_len, thickness=15,
+                      y=(y0 + y1) / 2, yanchor='middle', x=1 + lab_px / plot_w, xanchor='left')),
+        row=2, col=2)
+
+    fig.update_xaxes(tickvals=list(range(len(cols))), ticktext=cols, tickangle=-90,
+                     tickfont_size=font, title_text=xlabel, showgrid=False, zeroline=False, row=2, col=2)
+    fig.update_yaxes(tickvals=list(range(len(rows))), ticktext=rows, side='right', showticklabels=True,
+                     tickfont_size=font, title_text=ylabel, showgrid=False, zeroline=False, row=2, col=2)
+    fig.update_yaxes(autorange='reversed', row=2)             # first leaf on top, as in seaborn
+
+
+    for ax in ('xaxis', 'yaxis', 'xaxis2', 'yaxis2', 'xaxis3', 'yaxis3'):
+        fig.layout[ax].visible = False
+    fig.update_layout(width=width, height=height, template='simple_white', margin=margin)
+
+    fname = "clustermap_niche_functions"
+
+    # fig.write_html(root_fig_liana / f'{fname}.html')
+    fig.write_image(root_fig_liana / f'{fname}.png', scale=3)   # needs kaleido (uses /usr/bin/google-chrome)
+
+    return fig
+
+
+def calc_consensus_across_methods(df_inter_sig: pd.DataFrame, df_inter: pd.DataFrame, 
+                                  df_best_ct: pd.DataFrame, df_inf: pd.DataFrame, 
+                                  df_liref_sup: pd.DataFrame, niche_results: dict,
+                                  root_liana: Path, force: bool=False, verbose: bool=False) -> pd.DataFrame:
+
+    fname = 'ccc_consensus_c2l_liana.tsv'
+    filename = root_liana / fname
+
+    if filename.exists() and not force:
+        df_cons = pdreadcsv(fname, root_liana, verbose=verbose)
+        df_cons.set_index('interaction', inplace=True)
+        return df_cons
+
+    ids = [i for i in df_inter_sig.index[:100]]
+    inf_best = df_inf.sort_values('log2_enrichment', ascending=False).groupby('interaction').head(1).set_index('interaction')
+
+    sup = df_liref_sup
+
+    sup_ = sup.assign(interaction=sup.ligand_complex + '^' + sup.receptor_complex).sort_values('magnitude_rank')
+    sup_best = sup_.groupby('interaction').head(1).set_index('interaction')
+
+    niche_sig = pd.concat([_plain(r.lr).assign(region=k)[lambda d: d.fdr <= 0.1] for k, r in niche_results.items()])
+    niche_sig['interaction'] = niche_sig.ligand + '^' + niche_sig.receptor
+    n_niche = niche_sig.groupby('interaction').region.nunique()
+    niche_regions = niche_sig.groupby('interaction').region.apply(lambda s: ','.join(sorted(set(s), key=int)))
+
+    df_cons = pd.DataFrame(index=pd.Index(ids, name='interaction'))
+    df_cons['morans'] = df_inter.morans.reindex(ids)
+    df_cons['morans_fdr'] = df_inter.morans_fdr.reindex(ids)
+    df_cons['c2l_sender_receiver'] = (df_best_ct.sender + ' -> ' + df_best_ct.receiver).reindex(ids)
+    df_cons['c2l_score_share'] = df_best_ct.score_share.reindex(ids)
+    df_cons['c2l_z'] = df_best_ct.z.reindex(ids)
+    df_cons['inflow_top_source'] = inf_best.source.reindex(ids)
+    df_cons['inflow_log2_enrich'] = inf_best.log2_enrichment.reindex(ids)
+    df_cons['ref_source_target'] = (sup_best.source + ' -> ' + sup_best.target).reindex(ids)
+    df_cons['ref_magnitude_rank'] = sup_best.magnitude_rank.reindex(ids)
+    df_cons['ref_coloc'] = sup_best.coloc.reindex(ids)
+    df_cons['n_region_niches'] = n_niche.reindex(ids).fillna(0).astype(int)
+    df_cons['niche_regions'] = niche_regions.reindex(ids).fillna('')
+    df_cons['n_lines_of_evidence'] = (1 + df_cons.ref_source_target.notna().astype(int)
+                                + (df_cons.n_region_niches > 0).astype(int) + (df_cons.inflow_log2_enrich > 0.3).astype(int))
+
+    df_cons = df_cons.sort_values(['n_lines_of_evidence', 'morans'], ascending=False)
+
+    pdwritecsv(df_cons.reset_index(), fname, root_liana)
+
+    return df_cons
