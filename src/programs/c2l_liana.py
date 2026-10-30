@@ -66,7 +66,6 @@ cmap_byr = LinearSegmentedColormap.from_list("blue_yellow_red", list(colors))
 
 import programs.niche_lr as nl
 import programs.programs as pg
-import programs.c2l_liana as cl
 
 from libs.Basic import pdwritecsv, pdreadcsv, pddumpdic, pdloaddic
 
@@ -624,7 +623,7 @@ def save_liana_inflow(adata_pos: ad.AnnData, df_inter: pd.DataFrame, df_frac: pd
         df_inf = pdreadcsv(fname, root_liana, sep='\t', verbose=verbose)
     else:
         inf = li.mt.inflow(adata_pos, obsm_key='c2l_frac', interactions=lr150, use_raw=False)
-        df_inf = cl.inflow_source_enrichment(inf, df_frac)
+        df_inf = inflow_source_enrichment(inf, df_frac)
         pdwritecsv(df_inf, fname, root_liana, verbose=verbose)
         del inf
 
@@ -641,7 +640,7 @@ def plot_liana_inflow(df_inter: pd.DataFrame, df_inf: pd.DataFrame, fontsize: in
     g = sns.clustermap(E_inf.fillna(0), cmap='RdBu_r', center=0, vmin=bar_range[0], vmax=bar_range[1], figsize=(15, 10),
                     row_cluster=False, dendrogram_ratio=(0.06, 0.08), xticklabels=True, yticklabels=True)
     
-    cl.style_clustermap(g, xlabel='source cell type (c2l proportion)', ylabel="LR pair (ordered by Moran's R)",
+    style_clustermap(g, xlabel='source cell type (c2l proportion)', ylabel="LR pair (ordered by Moran's R)",
                         title='LIANA inflow: source enrichment', cbar_label='log2 enrichment', fontsize=fontsize)
     plt.show()
 
@@ -697,7 +696,7 @@ def plot_sender_receiver_heatmap(df_ct: pd.DataFrame, lista: list,
 
     fig, axs = plt.subplots(nrows, 2, figsize=figsize)
     for ax, lr_id in zip(axs.flat, lr_panels):
-        Mx = cl.lr_matrix(df_ct, lr_id, 'score')
+        Mx = lr_matrix(df_ct, lr_id, 'score')
         s_top = Mx.sum(1).nlargest(10).index
         r_top = Mx.sum(0).nlargest(10).index
 
@@ -721,7 +720,7 @@ def plot_sender_receiver_heatmap(df_ct: pd.DataFrame, lista: list,
     for ax in axs.flat[len(lr_panels):]:
         ax.axis('off')
 
-    fig.suptitle('cell2location-resolved CCC: top {n} senders x receivers per LR pair', y=1.0, fontsize=fontsize_title)
+    fig.suptitle(f'cell2location-resolved CCC: top {n} senders x receivers per LR pair', y=1.0, fontsize=fontsize_title)
     fig.tight_layout()
 
     filefig = root_fig_liana / 'c2l_celltype_resolved_lr_panels.png'
@@ -846,9 +845,9 @@ def plot_cell_type_colocalisation_spot_neighborhood_heatmap(df_coloc: pd.DataFra
     g = sns.clustermap(df_coloc, cmap=cmap, center=0, vmin=vRange[0], vmax=vRange[1], figsize=figsize,
                     dendrogram_ratio=(0.06, 0.06), xticklabels=True, yticklabels=True)
     
-    cl.style_clustermap(g, xlabel='cell type', ylabel='cell type',
-                        title='c2l cell-type co-localisation (spot vs. neighbourhood abundance)',
-                        cbar_label='co-localisation r', fontsize=fontsize)
+    style_clustermap(g, xlabel='cell type', ylabel='cell type',
+                     title='c2l cell-type co-localisation (spot vs. neighbourhood abundance)',
+                     cbar_label='co-localisation r', fontsize=fontsize)
     plt.show()
 
     filefig = root_fig_liana / 'c2l_celltype_colocalisation.png'
@@ -968,7 +967,7 @@ def plotly_clustermap(imp, cbar_title='importance (juxta)', xlabel='target cell 
 
     fig.update_xaxes(tickvals=list(range(len(cols))), ticktext=cols, tickangle=-90,
                      tickfont_size=font, title_text=xlabel, showgrid=False, zeroline=False, row=2, col=2)
-    fig.update_yaxes(tickvals=list(range(len(rows))), ticktext=rows, side='right',
+    fig.update_yaxes(tickvals=list(range(len(rows))), ticktext=rows, side='right', showticklabels=True,
                      tickfont_size=font, title_text=ylabel, showgrid=False, zeroline=False, row=2, col=2)
     fig.update_yaxes(autorange='reversed', row=2)             # first leaf on top, as in seaborn
 
@@ -1067,8 +1066,8 @@ def calc_centers_by_group_B_GC_LZ_and_FDC(adata_pos: ad.AnnData, adata_lr: ad.An
     df_lr = res.lr
     df_function = res.functions
 
-    df_comp = cl.niche_composition(adata_pos, res, bg_mask=bg_mask)
-    df_att = cl.niche_celltype_attribution(file_sp, adata_pos, res, n=15)
+    df_comp = niche_composition(adata_pos, res, bg_mask=bg_mask)
+    df_att = niche_celltype_attribution(file_sp, adata_pos, res, n=15)
     
     df_states = nl.niche_program_activity(adata_pos, center, res.neighbors, pg.CELL_STATES, n_background=2000, bg_mask=bg_mask)
 
