@@ -27,7 +27,6 @@ niche_celltype_attribution()   which cell types carry the ligand / receptor of n
                             (center pool vs partners) - links niche_lr results to c2l.
 """
 from __future__ import annotations
-from fileinput import filename
 
 import h5py
 import numpy as np
