@@ -42,7 +42,7 @@ Visium (H&E / IF) ────► Scanpy / Squidpy ──► spatial graphs, nei
 
 ---
 
-## HTML reports
+## Cell-to-Cell Communication (CCC) reports
 
 Rendered via [html-preview](https://html-preview.github.io/):
 
