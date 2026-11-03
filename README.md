@@ -1,91 +1,100 @@
-[![Build](https://github.com/scverse/squidpy/actions/workflows/build.yaml/badge.svg)](https://github.com/scverse/squidpy/actions/workflows/build.yaml)
-[![Test](https://github.com/scverse/squidpy/actions/workflows/test.yaml/badge.svg)](https://github.com/scverse/squidpy/actions/workflows/test.yaml)
-[![codecov](https://codecov.io/gh/scverse/squidpy/graph/badge.svg)](https://codecov.io/gh/scverse/squidpy)
-[![License](https://img.shields.io/github/license/scverse/squidpy)](https://opensource.org/licenses/BSD-3-Clause)
-[![PyPI](https://img.shields.io/pypi/v/squidpy.svg)](https://pypi.org/project/squidpy/)
-[![Python Version](https://img.shields.io/pypi/pyversions/squidpy)](https://pypi.org/project/squidpy/)
-[![Read the Docs](https://img.shields.io/readthedocs/squidpy/latest.svg?label=Read%20the%20Docs)](https://squidpy.readthedocs.io/en/stable)
+<!--
+  NOTE: The original badges pointed at scverse/squidpy's own CI, coverage and PyPI,
+  so they described squidpy, not this repository. Replace OWNER/REPO below with
+  your repo (e.g. flalix/cell_cell_communication) or delete the badges you don't use.
+-->
+[![Python](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
+[![uv](https://img.shields.io/badge/env-uv-6340ac)](https://docs.astral.sh/uv/)
+[![License](https://img.shields.io/github/license/OWNER/REPO)](LICENSE)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
 
-# Squidpy - Spatial Single Cell Analysis in Python (study)
+# Cell–Cell Communication (CCC) and Spatial Single-Cell Analysis in Python
 
-Here, we present a study mixing Scanpy, Squidpy, and Liana - all Python 3.12.12 libs.
+A collection of Jupyter notebooks combining **Scanpy**, **Squidpy**, **cell2location** and **LIANA** to
+go from single-cell / spatial transcriptomics data to cell-type maps and ligand–receptor communication programs.
 
-Squidpy (by [scverse](https://github.com/scverse), the community that develops and maintains foundational tools for single-cell omics) is library to calculate and plot physical single-cell data.
+**Workflow at a glance**
 
-Liana ([Saez lab](https://github.com/saezlab/liana)) is library to calculate ligand-receptor possible interactions given the RNA counts.
-
-### Squidpy
-
-Squidpy is the scverse toolkit for scalable analysis and visualization of spatial molecular data.
-It builds on [scanpy](https://scanpy.readthedocs.io/en/stable/) and [anndata](https://anndata.readthedocs.io/en/stable/), providing streamlined APIs for feature extraction, spatial statistics, and interactive exploration of tissue sections together with microscopy images.
-
-![Squidpy overview](https://raw.githubusercontent.com/scverse/squidpy/main/docs/_static/img/figure1.png)
-
-![Squidpy](https://github.com/scverse/squidpy)
-
-
-### From Saez Lab - Liana
-
-We add liana cell-to-cell communication analysis
-
-https://github.com/saezlab/liana
-
-
-## Documentation
-
-Head over to the [documentation](https://squidpy.readthedocs.io/en/stable/) for installation instructions, tutorials, how-to guides, and reference material.
-
-
-### Notebooks
-
-We review the toml project and add a few notebooks.
-
-### Interactive visualization
-
-For interactive visualization with napari, please use [napari-spatialdata](https://github.com/scverse/napari-spatialdata).
-The original napari plugin from Squidpy has been deprecated and replaced by napari-spatialdata, which offers
-improved functionality and support for the SpatialData ecosystem.
-
-## Key capabilities
-
-- Build and analyze spatial neighbor graphs directly from Visium, Slide-seq, Xenium, and other spatial omics assays.
-- Compute spatial statistics for cell types and genes, including neighborhood enrichment, co-occurrence, and Moran's I.
-- Efficiently store, featurize, and visualize high-resolution tissue microscopy images via [scikit-image](https://scikit-image.org/).
-- Explore annotated datasets interactively with [napari-spatialdata](https://github.com/scverse/napari-spatialdata).
-
-## Contributing
-
-Contributions are welcome! Please read the [contributing guide](CONTRIBUTING.rst) for instructions on setting up your environment, running tests, and submitting pull requests.
-
-## Citation
-
-If you use Squidpy in your research, cite the original publication:
-
-```bibtex
-@article{palla:22,
-    author = {Palla, Giovanni and Spitzer, Hannah and Klein, Michal and Fischer, David and Schaar, Anna Christina
-              and Kuemmerle, Louis Benedikt and Rybakov, Sergei and Ibarra, Ignacio L. and Holmberg, Olle
-              and Virshup, Isaac and Lotfollahi, Mohammad and Richter, Sabrina and Theis, Fabian J.},
-    title = {Squidpy: a scalable framework for spatial omics analysis},
-    journal = {Nature Methods},
-    year = {2022},
-    month = {Feb},
-    volume = {19},
-    number = {2},
-    pages = {171--178},
-    issn = {1548-7105},
-    doi = {10.1038/s41592-021-01358-2},
-}
+```
+scRNA-seq reference ──► cell2location ──► cell-type abundance per spot
+                                                 │
+Visium (H&E / IF) ────► Scanpy / Squidpy ──► spatial graphs, neighborhoods, image features
+                                                 │
+                                                 ▼
+                                   LIANA ──► ligand–receptor interactions & niche programs
 ```
 
 ---
 
-Squidpy is part of the scverse® project ([website](https://scverse.org/), [governance](https://scverse.org/about/roles/)) and is fiscally sponsored by [NumFOCUS](https://numfocus.org/).
-Please consider making a tax-deductible [donation](https://numfocus.org/donate-to-scverse/) to help the project pay for developer time, professional services, travel, workshops, and a variety of other needs.
+## Contents
 
-<div align="center">
-  <a href="https://numfocus.org/project/scverse">
-    <img src="https://raw.githubusercontent.com/numfocus/templates/master/images/numfocus-logo.png" width="200" alt="NumFOCUS">
-  </a>
-</div>
+| Folder | Notebook | Tools | Description |
+|---|---|---|---|
+| `notebooks_ccc_liana/` | `ccc01_tutorial.ipynb` | cell2location | cell2location tutorial (reproduced) |
+| | `ccc02_study.ipynb` | cell2location | cell2location applied study |
+| | `ccc03_liana_study.ipynb` | LIANA | Cell–cell communication analysis |
+| `notebooks_cell2loc/` | — | cell2location | Additional cell2location tutorials and studies |
+| `notebooks_squidpy_mouse_brain/` | `squid01_analyze_visium_HE_data.ipynb` | Squidpy, Scanpy | Mouse brain Visium, H&E image |
+| | `squid02_analyze_visium_fluorescence_data.ipynb` | Squidpy, Scanpy | Mouse brain Visium, fluorescence image |
+| | `squid03_niche_LigRec_programs.ipynb` | LIANA, Squidpy | Spatial niches and ligand–receptor programs |
+
+> If the folder on disk is still named `notebooks_squipy_mouse_brain`, rename it or update the table.
+
+---
+
+## Installation
+
+The environment is managed with [uv](https://docs.astral.sh/uv/) and targets **Python 3.12**.
+
+```bash
+git clone https://github.com/OWNER/REPO.git
+cd REPO
+uv sync                      # creates .venv from pyproject.toml / uv.lock
+uv run jupyter lab           # or open the notebooks in VS Code with the .venv kernel
+```
+
+> cell2location depends on PyTorch / scvi-tools. For GPU training, install the CUDA build of PyTorch
+> that matches your driver before (or instead of) the default CPU wheel.
+
+## Data
+
+Tutorial datasets (e.g. the Squidpy mouse brain Visium sets and the cell2location lymph-node reference)
+are downloaded automatically by the respective `*.datasets` functions on first run. Large files are not
+tracked in git — see `.gitignore`.
+
+---
+
+## Core libraries
+
+| Library | Role here | Source | Docs | Video |
+|---|---|---|---|---|
+| [Scanpy](https://scanpy.readthedocs.io) | QC, normalization, clustering, UMAP | [GitHub](https://github.com/scverse/scanpy) | [Tutorials](https://scanpy.readthedocs.io/en/stable/tutorials/index.html) | [Playlist](https://www.youtube.com/playlist?list=PL4rcQcNPLZxWWCxOpQc5-8Yp0E9MCUHXD) |
+| [AnnData](https://anndata.readthedocs.io) | Core data structure | [GitHub](https://github.com/scverse/anndata) | [Tutorials](https://anndata.scverse.org/en/stable/tutorials/index.html) | [Talk](https://www.youtube.com/watch?v=68ZUcr1rSCU) |
+| [Squidpy](https://squidpy.readthedocs.io) | Spatial graphs, neighborhood enrichment, image features | [GitHub](https://github.com/scverse/squidpy) | [Docs](https://squidpy.readthedocs.io/en/stable/) | [1](https://www.youtube.com/watch?v=uGpNub2yrv0), [2](https://www.youtube.com/watch?v=btqPgui8gpg) |
+| [cell2location](https://cell2location.readthedocs.io) | Spatial deconvolution with a scRNA-seq reference | [GitHub](https://github.com/BayraktarLab/cell2location) | [Tutorial](https://cell2location.readthedocs.io/en/latest/notebooks/cell2location_tutorial.html) | [Talk](https://www.youtube.com/watch?v=_v3m5-O8ouA) |
+| [LIANA+](https://liana-py.readthedocs.io) (Saez Lab) | Ligand–receptor inference, spatial CCC | [GitHub](https://github.com/saezlab/liana-py) | [Docs](https://liana-py.readthedocs.io) | [Talk](https://www.youtube.com/watch?v=5BHZbZE9kEc) |
+
+> The Python package is **liana-py** (`import liana as li`). The original
+> [saezlab/liana](https://github.com/saezlab/liana) repo is the R version.
+
+---
+
+## Citation
+
+If you use these notebooks, please cite the underlying methods:
+
+- **Scanpy** — Wolf, Angerer & Theis. *Genome Biology* 19, 15 (2018).
+- **AnnData** — Virshup et al. *Journal of Open Source Software* 9(101), 4371 (2024).
+- **Squidpy** — Palla et al. *Nature Methods* 19, 171–178 (2022).
+- **cell2location** — Kleshchevnikov et al. *Nature Biotechnology* 40, 661–671 (2022).
+- **LIANA** — Dimitrov et al. *Nature Communications* 13, 3224 (2022);
+  **LIANA+** — Dimitrov et al. *Nature Cell Biology* 26, 1613–1622 (2024).
+
+## Acknowledgements
+
+Scanpy, AnnData and Squidpy are part of [scverse®](https://scverse.org/), a project fiscally sponsored by
+[NumFOCUS](https://numfocus.org/). Several notebooks are adapted from the official tutorials of the libraries above.
+
+## Author
+
+Flavio Lichtenstein, PhD — bioinformatics & systems biology.
