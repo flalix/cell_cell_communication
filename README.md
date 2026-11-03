@@ -44,11 +44,14 @@ Visium (H&E / IF) ────► Scanpy / Squidpy ──► spatial graphs, nei
 
 ## Cell-to-Cell Communication (CCC) reports
 
-Rendered via [html-preview](https://html-preview.github.io/):
+Rendered via **html-preview**:
 
-- [01 — Cell2location Tutorial](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_ccc_liana/docs/ccc01_tutorial.html){:target="_blank"}
-- [02 — Cell2location Study](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_ccc_liana/docs/ccc02_study.html){:target="_blank"}
-- [03 — CCC - LIANA study](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_ccc_liana/docs/ccc03_liana_study.html){:target="_blank"}
+<p><em>(Ctrl+click to open in a new tab)</em></p>
+<ul>
+  <li><a href="https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_ccc_liana/docs/ccc01_tutorial.html" target="_blank" rel="noopener noreferrer">01 — Cell2location Tutorial</a></li>
+  <li><a href="https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_ccc_liana/docs/ccc02_study.html" target="_blank" rel="noopener noreferrer">02 — Cell2location Study</a></li>
+  <li><a href="https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_ccc_liana/docs/ccc03_liana_study.html" target="_blank" rel="noopener noreferrer">03 — CCC - LIANA study</a></li>
+</ul>
 
 Open from a Linux terminal:
 
