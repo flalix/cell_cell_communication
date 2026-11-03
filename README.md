@@ -46,7 +46,6 @@ Visium (H&E / IF) ────► Scanpy / Squidpy ──► spatial graphs, nei
 
 Rendered via [html-preview](https://html-preview.github.io/):
 
-- [Index](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_ccc_liana/docs/index.html)
 - [01 — Cell2location Tutorial](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_ccc_liana/docs/ccc01_tutorial.html)
 - [02 — Cell2location Study](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_ccc_liana/docs/ccc02_study.html)
 - [03 — CCC - LIANA study](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_ccc_liana/docs/ccc03_liana_study.html)
