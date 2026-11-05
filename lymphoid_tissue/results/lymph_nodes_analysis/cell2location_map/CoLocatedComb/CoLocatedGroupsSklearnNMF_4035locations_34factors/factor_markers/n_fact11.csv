@@ -1,0 +1,12 @@
+,top-1,top-2,top-3,top-4,top-5,top-6,top-7,top-8,top-9,top-10
+mean_cell_type_factorsfact_0,T_CD4+_naive: 0.88,T_CD8+_naive: 0.82,T_Treg: 0.72,T_TfR: 0.47,DC_CCR7+: 0.41,T_CD4+_TfH: 0.34,T_CD8+_CD161+: 0.33,T_CD8+_cytotoxic: 0.23,Macrophages_M2: 0.2,T_CD4+: 0.2
+mean_cell_type_factorsfact_1,B_mem: 0.85,B_naive: 0.46,T_CD4+: 0.33,B_preGC: 0.25,FDC: 0.19,DC_cDC1: 0.14,T_CD4+_TfH_GC: 0.13,NKT: 0.13,VSMC: 0.11,B_activated: 0.11
+mean_cell_type_factorsfact_2,B_naive: 0.54,B_activated: 0.5,ILC: 0.38,T_CD8+_cytotoxic: 0.34,T_CD4+_TfH: 0.32,NK: 0.31,Mast: 0.31,T_Treg: 0.26,T_TIM3+: 0.24,T_CD4+_TfH_GC: 0.23
+mean_cell_type_factorsfact_3,B_Cycling: 0.71,B_GC_DZ: 0.69,B_GC_prePB: 0.28,FDC: 0.26,B_GC_LZ: 0.18,T_CD4+_TfH_GC: 0.17,DC_cDC1: 0.13,T_CD4+: 0.12,Macrophages_M1: 0.11,NKT: 0.055
+mean_cell_type_factorsfact_4,DC_cDC1: 0.57,B_preGC: 0.16,DC_cDC2: 0.14,T_CD4+: 0.098,T_CD4+_naive: 0.056,B_Cycling: 0.054,B_plasma: 0.036,Macrophages_M1: 0.022,B_GC_DZ: 0.0,B_activated: 0.0
+mean_cell_type_factorsfact_5,Macrophages_M1: 0.46,DC_CCR7+: 0.084,B_plasma: 0.078,T_CD4+: 0.075,T_TfR: 0.07,DC_cDC2: 0.066,FDC: 0.056,Monocytes: 0.055,DC_cDC1: 0.026,B_Cycling: 0.0
+mean_cell_type_factorsfact_6,B_plasma: 0.75,Macrophages_M2: 0.59,Mast: 0.32,Monocytes: 0.29,NKT: 0.29,B_activated: 0.29,NK: 0.27,DC_pDC: 0.26,T_CD8+_CD161+: 0.23,ILC: 0.23
+mean_cell_type_factorsfact_7,B_GC_LZ: 0.61,B_GC_prePB: 0.44,FDC: 0.44,T_CD4+_TfH_GC: 0.42,B_GC_DZ: 0.12,Macrophages_M1: 0.074,T_TIM3+: 0.049,T_TfR: 0.042,T_CD4+_TfH: 0.032,T_CD8+_cytotoxic: 0.021
+mean_cell_type_factorsfact_8,B_preGC: 0.47,T_TIM3+: 0.28,B_Cycling: 0.13,DC_pDC: 0.11,T_TfR: 0.11,DC_cDC2: 0.063,DC_CCR7+: 0.041,NK: 0.038,T_CD8+_naive: 0.036,VSMC: 0.026
+mean_cell_type_factorsfact_9,B_IFN: 0.85,T_TIM3+: 0.12,T_CD4+_TfH: 0.11,T_TfR: 0.1,DC_CCR7+: 0.097,T_CD8+_CD161+: 0.08,NK: 0.077,T_CD8+_cytotoxic: 0.07,FDC: 0.048,Monocytes: 0.04
+mean_cell_type_factorsfact_10,Endo: 0.64,DC_cDC2: 0.6,Monocytes: 0.55,VSMC: 0.42,Mast: 0.35,NKT: 0.33,DC_pDC: 0.31,ILC: 0.3,DC_CCR7+: 0.26,Macrophages_M2: 0.2

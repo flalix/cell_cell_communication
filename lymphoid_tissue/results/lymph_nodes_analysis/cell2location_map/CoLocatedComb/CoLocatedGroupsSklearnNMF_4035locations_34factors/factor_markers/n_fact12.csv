@@ -1,0 +1,13 @@
+,top-1,top-2,top-3,top-4,top-5,top-6,top-7,top-8,top-9,top-10
+mean_cell_type_factorsfact_0,DC_cDC1: 0.54,DC_cDC2: 0.12,T_CD4+: 0.044,T_CD4+_naive: 0.01,B_Cycling: 0.0099,B_GC_DZ: 0.0,B_mem: 0.0,B_naive: 0.0,B_GC_LZ: 0.0,B_GC_prePB: 0.0
+mean_cell_type_factorsfact_1,T_CD4+_naive: 0.92,T_CD8+_naive: 0.81,T_Treg: 0.56,T_TfR: 0.39,DC_CCR7+: 0.31,T_CD8+_CD161+: 0.3,T_CD4+_TfH: 0.28,T_CD4+: 0.21,Macrophages_M2: 0.21,T_CD8+_cytotoxic: 0.19
+mean_cell_type_factorsfact_2,B_IFN: 0.8,T_TIM3+: 0.07,T_CD4+_TfH: 0.064,T_CD8+_CD161+: 0.055,FDC: 0.05,T_TfR: 0.05,Monocytes: 0.039,NK: 0.034,B_preGC: 0.032,T_CD4+: 0.03
+mean_cell_type_factorsfact_3,B_naive: 0.56,B_activated: 0.5,ILC: 0.31,Mast: 0.29,T_CD8+_cytotoxic: 0.27,T_CD4+_TfH: 0.25,NK: 0.24,T_CD4+_TfH_GC: 0.21,B_GC_LZ: 0.2,DC_pDC: 0.19
+mean_cell_type_factorsfact_4,B_mem: 0.85,B_naive: 0.43,T_CD4+: 0.35,B_preGC: 0.24,FDC: 0.19,DC_cDC1: 0.13,NKT: 0.13,T_CD4+_TfH_GC: 0.12,VSMC: 0.11,Macrophages_M1: 0.092
+mean_cell_type_factorsfact_5,B_Cycling: 0.73,B_GC_DZ: 0.69,B_GC_prePB: 0.28,FDC: 0.27,B_GC_LZ: 0.18,T_CD4+_TfH_GC: 0.16,T_CD4+: 0.12,DC_cDC1: 0.11,Macrophages_M1: 0.11,NKT: 0.055
+mean_cell_type_factorsfact_6,T_TIM3+: 0.4,DC_CCR7+: 0.39,T_TfR: 0.35,T_Treg: 0.3,NK: 0.27,T_CD8+_cytotoxic: 0.24,T_CD4+_TfH: 0.23,ILC: 0.2,DC_pDC: 0.17,T_CD8+_CD161+: 0.15
+mean_cell_type_factorsfact_7,Endo: 0.63,Monocytes: 0.53,DC_cDC2: 0.52,VSMC: 0.39,Mast: 0.32,NKT: 0.3,DC_pDC: 0.27,ILC: 0.24,Macrophages_M2: 0.21,DC_CCR7+: 0.16
+mean_cell_type_factorsfact_8,Macrophages_M1: 0.47,DC_cDC2: 0.11,T_CD4+: 0.096,DC_CCR7+: 0.094,B_plasma: 0.085,Monocytes: 0.073,DC_cDC1: 0.052,FDC: 0.046,T_TfR: 0.043,B_preGC: 0.016
+mean_cell_type_factorsfact_9,B_plasma: 0.76,Macrophages_M2: 0.57,Mast: 0.3,Monocytes: 0.29,NKT: 0.28,B_activated: 0.28,NK: 0.25,DC_pDC: 0.24,T_CD8+_CD161+: 0.22,ILC: 0.2
+mean_cell_type_factorsfact_10,B_preGC: 0.54,B_Cycling: 0.14,T_TIM3+: 0.13,DC_cDC1: 0.048,DC_pDC: 0.043,DC_cDC2: 0.041,B_plasma: 0.025,T_CD8+_naive: 0.013,T_CD4+: 0.007,B_IFN: 0.0044
+mean_cell_type_factorsfact_11,B_GC_LZ: 0.62,B_GC_prePB: 0.45,FDC: 0.44,T_CD4+_TfH_GC: 0.41,B_GC_DZ: 0.12,Macrophages_M1: 0.076,T_TfR: 0.031,T_TIM3+: 0.025,T_CD4+_TfH: 0.025,B_plasma: 0.017

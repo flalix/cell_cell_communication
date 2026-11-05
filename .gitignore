@@ -162,8 +162,7 @@ pixi.lock
 _version.py
 
 *.h5ad
-results/*.h5ad
-results/*
+*.npz
 
 figures/c2l_liana
 
