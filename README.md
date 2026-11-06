@@ -8,10 +8,10 @@
 [![License](https://img.shields.io/github/license/OWNER/REPO)](LICENSE)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
 
-# Multi-projects Cell–Cell Communication (CCC) and Spatial Single-Cell Analysis in Python
+# Multi-projects framework: Cell–Cell Communication (CCC) and Spatial Single-Cell Analysis in Python
 
 A collection of Jupyter notebooks combining **Scanpy**, **Squidpy**, **cell2location** and **LIANA** to
-go from single-cell / spatial transcriptomics data to cell-type maps and ligand–receptor communication programs.
+go from single-cell / spatial transcriptomics data to cell-type maps and ligand–receptor communication programs to support different studies, see below.
 
 **Workflow at a glance**
 
