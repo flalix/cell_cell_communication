@@ -1,0 +1,53 @@
+{
+  "version": 3,
+  "created_at": "2026-11-05T18:06:39.493Z",
+  "task_summary": "SingleCell class library + mouse brain Fig 2 notebook (cell2location paper)",
+  "agents": [],
+  "phases": [
+    {
+      "name": "Plan",
+      "delegations": [
+        {
+          "steps": [
+            {
+              "title": "Refactor library into SingleCell class hierarchy",
+              "description": "Create src/libs/single_cell_lib.py with class SingleCell(adata, root_data, root_figure, root_result). It holds the generic Scanpy/Squidpy/cell2location/LIANA methods: read/summary (components, obs/var/obsm/uns, X sparsity, raw-count check), filter_cells_genes, qc_metrics + qc_plots (n_genes, total_counts, pct mt, per-sample violins), normalize/log1p/hvg/pca/neighbors/umap/leiden, spatial_scatter/spatial_neighbors/moran (squidpy), c2l setup/train/export (RegressionModel + Cell2location, accelerator switch, cache-or-train), get_reference_signatures, ensure_posterior_samples, region_names, legend_figure_bottom, plot_spatial_visium/plotly_spatial_visium, plot_genes_per_cell_type, plot_slide_loc_cell_types, liana rank_aggregate/bivariate wrappers. These are moved from cell2location_lib (feature lookup, clipping, region naming, signatures, posterior) and become methods. Create src/libs/lymphoid_lib.py with SingleCellLymphoid(SingleCell) for the lymph-node-specific functions (tissue × age, panel UMAP, B-cell plots, ISG hotspot, donor_consistency, spatial_plot_cell_abundance). Create src/libs/neuro_lib.py with SingleCellNeuro(SingleCell) for the Fig 2 methods (step 3). No heart-muscle methods exist, so no heart file is created. cell2location_lib.py is left untouched so ccc01/ccc02 keep working. Smoke test: import all three modules in the project .venv and instantiate each class on a small AnnData. Save the three .py files as artifacts."
+            },
+            {
+              "title": "Download paper snRNA reference and cell2location maps",
+              "description": "Into mouse_brain/data/ from cell2location.cog.sanger.ac.uk (already approved): all_cells_20200625.h5ad (raw counts, 40,532 nuclei), snRNA_annotation_astro_subtypes_refined59_20200823.csv (59 types), cellxgene/mouse_brain_snRNA_with_UMAP_cellxgene.h5ad (paper UMAP; read backed to pull obs + X_umap only, then write a small mouse_brain_snRNA_umap_obs.h5ad), regression_model/.../sc.h5ad (trained 59-type signatures), and the precomputed map LocationModel..._59clusters_5396locations_12809genes/sp_with_clusters.h5ad plus region_cluster29_*.csv (2 sections, 29 region clusters). Print shapes and keys of each; report sizes."
+            },
+            {
+              "title": "Neuro methods: broad classes, UMAP and regions",
+              "description": "In SingleCellNeuro: a broad_class() map from the 59 annotation_1 labels (Ext_*, Inh_*, Astro_*, Oligo/OPC, Micro, Endo, Other) to Fig 2B classes; plot_umap_broad_subtypes() (two-panel UMAP: broad class with on-data labels, 59 subtypes); name_regions() (region clusters → anatomical labels CTX layers/HPC/THA/HYP/STR/WM/AMY by top enriched cell types); plot_regions_he() (H&E + region overlay, Fig 2C); plot_density_panels() (multi-cell-type density overlays on H&E for Fig 2D major regional subtypes, 2E sparse inhibitory Sst/Lamp5/Vip, 2F cortical excitatory layers), styled like the paper (black background, one colour per cell type, 99.2% clip). Figures: fig2B_umap.png, fig2C_regions.png, fig2D_major.png, fig2E_sparse.png, fig2F_cortical.png in mouse_brain/figures."
+            },
+            {
+              "title": "Slide-seq V2 mapping (Fig 2H)",
+              "description": "Request ndownloader.figshare.com; load squidpy's slideseqv2 (Stickels 2021 hippocampus puck; a substitute for the paper's 53,208-bead section). Check whether X holds raw counts; if not, abort this panel and report. Then run Cell2location with the paper's 59 signatures, N_cells_per_location=1 and detection_alpha=20, on CPU with reduced epochs as a background job. The cached model and sp.h5ad go to mouse_brain/results/slideseq_c2l; the notebook has a GPU/30k-epoch switch. Output: fig2H_slideseq.png showing Hpc_CA1/CA2/CA3/DG1 + Inh_6 (left) and Ext_L23/L4/L5_2/L56/L6B (right)."
+            },
+            {
+              "title": "Allen layer validation (Fig 2I, 2J)",
+              "description": "Request idk-etl-prod-download-bucket.s3.amazonaws.com; get the Allen mouse cortex + hippocampus Smart-seq metadata.csv and stream matrix.csv, keeping only SSp and PAR-POST-PRE cells. Count cells per cluster × cortical layer; keep cell types with ≥3 cells; compute per-cluster mean signatures (the paper's 121 types). Define cortical-layer Visium spots from named region clusters (L1/L2-3/L4/L5/L6). This substitutes for the unpublished manual Loupe annotation. Map the Allen signatures with Cell2location (N=8, cells-per-type prior 7) on CPU. Average and normalise density per layer, then pick the 23 most prevalent SSp-exclusive types. Fig 2I: a schematic-style panel (layer spots on H&E + layer bar). Fig 2J: two log10 heatmaps (Allen vs cell2location) plus Pearson R² and the table fig2J_layer_proportions.tsv."
+            },
+            {
+              "title": "Build and execute notebook mb01",
+              "description": "Create notebooks_mouse_brain/mb01_fig2_mouse_brain.ipynb in the style of ccc01–ccc03: ROOT0, create_dir, root_project = mouse_brain, markdown citing the paper. Sections: 1 open h5ad (Visium 5 sections + snRNA), 2 components/attributes, 3 filter (paper criteria: genes<5000, mt<0.10; Visium MT removal), 4 QC plots per sample, 5 Fig 2B, 6 Fig 2C–F, 7 Fig 2H, 8 Fig 2I, 9 Fig 2J. All logic lives in single_cell_lib/neuro_lib; heavy cells are cache-or-train. Execute it with nbconvert in the project .venv, check every cell runs, and save the notebook, an HTML export and the key figures as artifacts."
+            }
+          ]
+        }
+      ],
+      "id": "phase-0"
+    }
+  ],
+  "desired_outputs": [
+    "src/libs/single_cell_lib.py (SingleCell base)",
+    "src/libs/neuro_lib.py (SingleCellNeuro)",
+    "src/libs/lymphoid_lib.py (SingleCellLymphoid)",
+    "notebooks_mouse_brain/mb01_fig2_mouse_brain.ipynb (+ HTML)",
+    "mouse_brain/figures/fig2B–fig2J PNGs"
+  ],
+  "feasibility": {
+    "rationale": "\n<parameter name=\"confidence\">medium",
+    "confidence": "high"
+  }
+}

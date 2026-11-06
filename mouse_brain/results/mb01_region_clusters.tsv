@@ -1,0 +1,28 @@
+region_cluster	n_spots	label	top_types	top_enrich	label_votes	label_final	mean_frac_edge
+0	421	WM	Oligo_2 / OPC_2 / Astro_WM	6.0 / 5.6 / 5.0	WM:15.1	WM	0.011
+1	365	CTX_L5	Ext_L5_2 / LowQ_2 / Ext_Med	12.1 / 9.7 / 6.6	CTX_L5:16.8; HAB:6.6	CTX_L5	0.043
+2	358	CTX_L5/6	Ext_L56 / Ext_ClauPyr / Ext_L6	11.0 / 10.5 / 8.3	CTX_L5/6:11.0; CLA:10.5; CTX_L6:8.3	CTX_L5/6	0.0
+3	327	CTX_L2/3	Ext_L23 / Inh_Vip / Ext_Med	12.4 / 4.4 / 3.6	CTX_L2/3:12.4; HAB:3.6; CTX_L4:3.4	CTX_L2/3	0.085
+4	296	AMY	Ext_Amy_2 / Inh_Sst / Inh_Vip	14.1 / 4.1 / 3.1	AMY:16.6; STR:2.3	AMY	0.014
+5	294	THAL	Ext_Thal_2 / Ext_Unk_3 / Astro_THAL_med	14.8 / 11.1 / 6.6	THAL:24.5	THAL	0.104
+6	289	STR	Inh_Meis2_2 / Inh_Meis2_3 / Astro_STR	16.9 / 16.5 / 4.4	STR:37.8	STR	0.0
+7	279	PIR	Ext_Pir / Astro_AMY_CTX / Ext_Unk_1	14.5 / 2.3 / 2.0	PIR:14.5; AMY:1.6	PIR	0.089
+8	258	STR	Inh_1 / Inh_Meis2_1 / Inh_4	14.5 / 13.1 / 5.9	STR:13.1; AMY:4.2; HYPO:3.9	STR	0.01
+9	231	THAL	Ext_Thal_1 / Astro_THAL_lat / Astro_THAL_med	8.1 / 5.6 / 5.0	THAL:18.7	THAL	0.0
+10	225	HYPO	Ext_Unk_2 / Astro_HYPO / Inh_3	16.3 / 4.7 / 3.4	HYPO:4.7; HAB:1.5	HYPO	0.25
+11	210	HPC	Astro_HPC / Astro_AMY_CTX / Inh_Lamp5	3.0 / 2.6 / 2.6	HPC:3.0; CTX_L2/3:2.5	CTX_L1	0.638
+12	202	HPC_DG	Ext_Hpc_DG1 / Ext_Hpc_DG2 / Nb_1	23.6 / 22.8 / 9.0	HPC_DG:46.4; HPC:7.3	HPC_DG	0.312
+13	171	HAB	Inh_5 / Inh_2 / Astro_THAL_hab	12.5 / 2.3 / 2.2	HAB:2.2; WM:1.8; THAL:1.6	HAB	0.175
+14	166	HAB	Inh_2 / Inh_6 / Astro_HYPO	22.5 / 6.2 / 3.4	HAB:6.2; HYPO:3.4; THAL:2.8	HAB	0.038
+15	160	THAL	Astro_THAL_lat / Ext_Thal_1 / Astro_THAL_med	4.5 / 4.2 / 3.6	THAL:12.3	THAL	0.0
+16	159	HYPO	Inh_3 / Inh_4 / Astro_HYPO	14.8 / 13.5 / 7.9	HYPO:7.9; HAB:1.9	HYPO	0.034
+17	144	CTX_L6b	Ext_L6B / Ext_L5_3 / Ext_ClauPyr	27.3 / 22.3 / 5.3	CTX_L6b:27.3; CTX_L5:22.3; CLA:5.3	CTX_L6b	0.0
+18	143	CTX_L4	Ext_L25 / Astro_CTX / Inh_Pvalb	15.7 / 5.4 / 4.2	CTX_L4:15.7; CTX:5.4; HAB:3.2	CTX_L4	0.0
+19	131	CTX_L5	Ext_L5_1 / Ext_L25 / Astro_CTX	18.3 / 5.0 / 3.8	CTX_L5:18.3; CTX_L4:5.0; CTX:3.8	CTX_L5	0.0
+20	129	HPC_CA3	Ext_Hpc_CA3 / Ext_Hpc_CA2 / Astro_HPC	35.1 / 29.9 / 6.0	HPC_CA3:35.1; HPC_CA2:29.9; HPC:6.0	HPC_CA3	0.007
+21	119	WM	LowQ_1 / Astro_WM / Endo	30.5 / 4.2 / 2.9	WM:4.2; HAB:2.4	edge_LowQ	0.781
+22	111	THAL	Ext_Thal_1 / Astro_THAL_lat / Astro_THAL_med	15.6 / 8.4 / 7.1	THAL:31.1	THAL	0.0
+23	75	STR	Inh_Meis2_4 / Astro_THAL_lat / Astro_THAL_hab	51.3 / 4.3 / 3.6	STR:51.3; THAL:4.3; HAB:3.6	STR	0.0
+24	68	HPC_CA1	Ext_Hpc_CA1 / Ext_Hpc_CA2 / Astro_HPC	66.4 / 5.1 / 3.9	HPC_CA1:66.4; HPC_CA2:5.1; HPC:3.9	HPC_CA1	0.0
+25	42	AMY	Ext_Amy_1 / Ext_Unk_1 / Astro_AMY	86.2 / 46.5 / 8.8	AMY:95.1; PIR:2.8	AMY	0.0
+26	23	HAB	Inh_6 / Astro_THAL_hab / Astro_WM	169.8 / 30.9 / 7.5	HAB:200.7; WM:7.5	HAB	0.421

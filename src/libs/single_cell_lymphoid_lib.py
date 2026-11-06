@@ -38,6 +38,7 @@ from matplotlib.lines import Line2D
 
 import scanpy as sc
 
+from libs.Basic import pdwritecsv
 from libs.single_cell_lib import DEFAULT_PARAMS, SingleCell, cmap_byr
 from libs.matplotlib_figure_style import apply_figure_style
 
@@ -92,7 +93,7 @@ class SingleCellLymphoid(SingleCell):
 
     def add_tissue_age_group(self, adata=None):
         """obs['age_group'] (in place); returns ordered (tissue, age_group) pairs that contain cells."""
-        a = self._ad(adata)
+        a = self._check_adata(adata)
         obs = a.obs
         tcol = self.params["tissue_col"]
         obs["age_group"] = obs[self.params["age_col"]].map(self.age_group)
@@ -101,17 +102,17 @@ class SingleCellLymphoid(SingleCell):
 
     def panel_lognorm(self, genes: Sequence[str], adata=None, libsize_col: Optional[str] = None):
         """Raw counts and log1p(CP10k) for the panel genes only. Returns (found, counts, log1p_cp10k)."""
-        a = self._ad(adata)
+        a = self._check_adata(adata)
         found, ids = self.resolve_gene_ids(genes, a)
         X = a[:, ids].X
         X = X.toarray() if sp.issparse(X) else np.asarray(X)
-        lib = a.obs[self._p("libsize_col", libsize_col)].values[:, None]
+        lib = a.obs[self.get_param("libsize_col", libsize_col)].values[:, None]
         E = np.log1p(X / lib * self.params["target_sum"])
         return found, X, E
 
     def calc_df_gene_age_tissue_groups(self, genes: Sequence[str], adata=None) -> pd.DataFrame:
         """Per tissue x age group and gene: n_cells, pct_expr, mean_log1p_cp10k."""
-        a = self._ad(adata)
+        a = self._check_adata(adata)
         order = self.add_tissue_age_group(a)
         found, X, E = self.panel_lognorm(genes, a)
         obs = a.obs
@@ -137,8 +138,8 @@ class SingleCellLymphoid(SingleCell):
                                       q: Optional[float] = None, basis: str = "X_umap",
                                       n_bg: Optional[int] = None, cmap_num: Optional[int] = None, dpi: int = 200):
         """UMAP grid: rows = genes, columns = tissue x age groups; colour = log1p(CP10k) clipped per gene."""
-        a = self._ad(adata)
-        q = self._p("clip_quantile", q)
+        a = self._check_adata(adata)
+        q = self.get_param("clip_quantile", q)
         labels = self.params["gene_labels"]
         order = self.add_tissue_age_group(a)
         found, _, E = self.panel_lognorm(genes, a)
@@ -147,8 +148,8 @@ class SingleCellLymphoid(SingleCell):
         U = a.obsm[basis]
         obs = a.obs
         rng = np.random.default_rng(self.params["seed"])
-        bg = rng.choice(len(U), min(self._p("panel_n_bg", n_bg), len(U)), replace=False)
-        cmap = self._panel_cmap(self._p("panel_cmap_num", cmap_num))
+        bg = rng.choice(len(U), min(self.get_param("panel_n_bg", n_bg), len(U)), replace=False)
+        cmap = self._panel_cmap(self.get_param("panel_cmap_num", cmap_num))
         tcol, dcol = self.params["tissue_col"], self.params["donor_col"]
         nr, nc = len(found), len(order)
         fig, axes = plt.subplots(nr, nc, figsize=(1.35 * nc + 0.9, 1.2 * nr + 0.8), squeeze=False,
@@ -312,7 +313,7 @@ class SingleCellLymphoid(SingleCell):
         self._savefig(fig, fname_fig)
         df_rho = df_rho.round(3)
         if fname_tsv:
-            self.save_df(df_rho, fname_tsv)
+            pdwritecsv(df_rho.reset_index(names='gene'), fname_tsv, self.root_result)
         return df_rho
 
     def dotplot_markers(self, adata_sub, markers: Dict[str, Sequence[str]], groupby: Optional[str] = None,
@@ -339,7 +340,7 @@ class SingleCellLymphoid(SingleCell):
         """Count donors in which `gene` is higher in `group` than in every other group.
         df_cnt: donor x group cell counts; only pairs with >= min_cells cells are used.
         Returns (n_donors_where_group_is_highest, n_donors_tested)."""
-        min_cells = self._p("donor_min_cells", min_cells)
+        min_cells = self.get_param("donor_min_cells", min_cells)
         j = adata_sub.var_names.get_loc(gene)
         col = np.asarray(Xn[:, j].todense()).ravel() if sp.issparse(Xn) else Xn[:, j]
         ok = tot = 0
@@ -369,8 +370,8 @@ class SingleCellLymphoid(SingleCell):
                     link_factor: Optional[float] = None) -> Tuple[pd.Series, np.ndarray]:
         """ISG score per spot (mean z-score of log1p CP10k) and the largest spatially connected cluster of spots
         above the q quantile. Returns (score Series, hotspot bool array)."""
-        q = self._p("isg_quantile", q)
-        link_factor = self._p("isg_link_factor", link_factor)
+        q = self.get_param("isg_quantile", q)
+        link_factor = self.get_param("isg_link_factor", link_factor)
         sym = self.symbols(adata_vis).values
         tot = np.asarray(adata_vis.X.sum(1)).ravel()
         cols = {}
@@ -458,5 +459,5 @@ class SingleCellLymphoid(SingleCell):
         fig.text(0.1, 0.03, f"Dashed cyan = hull of the hotspot ({hs.sum()} of {adata_vis.n_obs:,} spots).", fontsize=7)
         self._savefig(fig, fname_fig, dpi=200)
         if fname_tsv:
-            self.save_df(df_hot.round(4), fname_tsv, index=False)
+            pdwritecsv(df_hot.round(4), fname_tsv, self.root_result)
         return df_hot
