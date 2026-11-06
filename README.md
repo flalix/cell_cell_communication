@@ -8,7 +8,7 @@
 [![License](https://img.shields.io/github/license/OWNER/REPO)](LICENSE)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
 
-# Cell–Cell Communication (CCC) and Spatial Single-Cell Analysis in Python
+# Multi-projects Cell–Cell Communication (CCC) and Spatial Single-Cell Analysis in Python
 
 A collection of Jupyter notebooks combining **Scanpy**, **Squidpy**, **cell2location** and **LIANA** to
 go from single-cell / spatial transcriptomics data to cell-type maps and ligand–receptor communication programs.
@@ -26,7 +26,7 @@ Visium (H&E / IF) ────► Scanpy / Squidpy ──► spatial graphs, nei
 
 ---
 
-## Contents
+## Projects
 
 | Folder | Notebook | Tools | Description |
 |---|---|---|---|
@@ -39,6 +39,15 @@ Visium (H&E / IF) ────► Scanpy / Squidpy ──► spatial graphs, nei
 | | `squid03_niche_LigRec_programs.ipynb` | LIANA, Squidpy | Spatial niches and ligand–receptor programs |
 
 > If the folder on disk is still named `notebooks_squipy_mouse_brain`, rename it or update the table.
+
+
+| Project | Organism | Description |
+|---|---|---|
+| mouse_brain | mouse | brain study |
+| lymphoid_tissue | human | secondary lymphoid tissue study |
+| heart | human | embrionic heart study - Univ. Sweden |
+| pancreas_cancer | human | my study --> support AI Agent project |
+
 
 ---
 
