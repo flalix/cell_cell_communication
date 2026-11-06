@@ -28,15 +28,16 @@ Visium (H&E / IF) ────► Scanpy / Squidpy ──► spatial graphs, nei
 
 ## Projects
 
-| Folder | Notebook | Tools | Description |
-|---|---|---|---|
-| `notebooks_ccc_liana/` | `ccc01_tutorial.ipynb` | cell2location | cell2location tutorial (reproduced) |
-| | `ccc02_study.ipynb` | cell2location | cell2location applied study |
-| | `ccc03_liana_study.ipynb` | LIANA | Cell–cell communication analysis |
-| `notebooks_cell2loc/` | — | cell2location | Additional cell2location tutorials and studies |
-| `notebooks_squidpy_mouse_brain/` | `squid01_analyze_visium_HE_data.ipynb` | Squidpy, Scanpy | Mouse brain Visium, H&E image |
-| | `squid02_analyze_visium_fluorescence_data.ipynb` | Squidpy, Scanpy | Mouse brain Visium, fluorescence image |
-| | `squid03_niche_LigRec_programs.ipynb` | LIANA, Squidpy | Spatial niches and ligand–receptor programs |
+| Status | Folder | Notebook | Tools | Description |
+|---|---|---|---|---|
+| new | `notebooks_multiproject/` | `mccc01_mouse_brain.ipynb` | all | complete study, new structure |
+| Old | `notebooks_ccc_liana/` | `ccc01_tutorial.ipynb` | cell2location | cell2location tutorial (reproduced) |
+| Old | | `ccc02_study.ipynb` | cell2location | cell2location applied study |
+| Old | | `ccc03_liana_study.ipynb` | LIANA | Cell–cell communication analysis |
+| Old | `notebooks_cell2loc/` | — | cell2location | Additional cell2location tutorials and studies |
+| Old | `notebooks_squidpy_mouse_brain/` | `squid01_analyze_visium_HE_data.ipynb` | Squidpy, Scanpy | Mouse brain Visium, H&E image |
+| Old | | `squid02_analyze_visium_fluorescence_data.ipynb` | Squidpy, Scanpy | Mouse brain Visium, fluorescence image |
+| Old | | `squid03_niche_LigRec_programs.ipynb` | LIANA, Squidpy | Spatial niches and ligand–receptor programs |
 
 > If the folder on disk is still named `notebooks_squipy_mouse_brain`, rename it or update the table.
 
