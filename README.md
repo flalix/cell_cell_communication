@@ -39,10 +39,9 @@ Visium (H&E / IF) ────► Scanpy / Squidpy ──► spatial graphs, nei
 | Old | | `squid02_analyze_visium_fluorescence_data.ipynb` | Squidpy, Scanpy | Mouse brain Visium, fluorescence image |
 | Old | | `squid03_niche_LigRec_programs.ipynb` | LIANA, Squidpy | Spatial niches and ligand–receptor programs |
 
-> If the folder on disk is still named `notebooks_squipy_mouse_brain`, rename it or update the table.
+### Multi-projects
 
-
-| Project | Organism | Description |
+| Project/Subdir | Organism | Description |
 |---|---|---|
 | mouse_brain | mouse | brain study |
 | lymphoid_tissue | human | secondary lymphoid tissue study |
