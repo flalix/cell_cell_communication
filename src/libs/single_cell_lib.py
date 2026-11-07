@@ -622,18 +622,18 @@ class SingleCell(object):
         sc.tl.umap(a, min_dist=self.get_param("umap_min_dist", min_dist), random_state=seed)
         return a
 
-    def leiden(self, adata=None, resolution: Optional[float] = None, key_check_adataded: str = "leiden"):
+    def leiden(self, adata=None, resolution: Optional[float] = None, key_added: str = "leiden"):
         a = self._check_adata(adata)
-        sc.tl.leiden(a, resolution=self.get_param("leiden_resolution", resolution), key_check_adataded=key_check_adataded,
+        sc.tl.leiden(a, resolution=self.get_param("leiden_resolution", resolution), key_added=key_added,
                      random_state=self.params["seed"], flavor="igraph", n_iterations=2, directed=False)
-        return a.obs[key_check_adataded]
+        return a.obs[key_added]
 
     def rank_genes(self, groupby: str, adata=None, method: Optional[str] = None, n_genes: Optional[int] = None,
-                   key_check_adataded: str = "rank_genes_groups") -> pd.DataFrame:
+                   key_added: str = "rank_genes_groups") -> pd.DataFrame:
         a = self._check_adata(adata)
         sc.tl.rank_genes_groups(a, groupby=groupby, method=self.get_param("rank_method", method),
-                                n_genes=self.get_param("rank_n_genes", n_genes), key_check_adataded=key_check_adataded)
-        df_rank = sc.get.rank_genes_groups_df(a, group=None, key=key_check_adataded)
+                                n_genes=self.get_param("rank_n_genes", n_genes), key_added=key_added)
+        df_rank = sc.get.rank_genes_groups_df(a, group=None, key=key_added)
         return df_rank
 
     # =====================================================================================================
@@ -800,18 +800,18 @@ class SingleCell(object):
         return df_abund
 
     def cluster_regions(self, adata=None, df_abund: Optional[pd.DataFrame] = None, n_neighbors: Optional[int] = None,
-                        resolution: Optional[float] = None, key_check_adataded: Optional[str] = None) -> pd.Series:
+                        resolution: Optional[float] = None, key_added: Optional[str] = None) -> pd.Series:
         """Leiden clusters of spots on cell-abundance space (paper: kNN 38, resolution 1.3)."""
         a = self._check_adata(adata)
-        key_check_adataded = self.get_param("region_key", key_check_adataded)
+        key_added = self.get_param("region_key", key_added)
         df_abund = df_abund if df_abund is not None else self.calc_df_abundance(a)
         a.obsm["_abund"] = df_abund.loc[a.obs_names].values
         seed = self.params["seed"]
         sc.pp.neighbors(a, use_rep="_abund", n_neighbors=self.get_param("region_n_neighbors", n_neighbors),
-                        key_check_adataded="abund", random_state=seed)
+                        key_added="abund", random_state=seed)
         sc.tl.leiden(a, resolution=self.get_param("region_resolution", resolution), neighbors_key="abund",
-                     key_check_adataded=key_check_adataded, random_state=seed, flavor="igraph", n_iterations=2, directed=False)
-        return a.obs[key_check_adataded]
+                     key_added=key_added, random_state=seed, flavor="igraph", n_iterations=2, directed=False)
+        return a.obs[key_added]
 
     def region_names(self, adata=None, key: Optional[str] = None, df_abund: Optional[pd.DataFrame] = None,
                      top_n: Optional[int] = None, method: Optional[str] = None,
@@ -987,19 +987,151 @@ class SingleCell(object):
             sp_.set_visible(False)
         return dict(zip(names, cap))
 
+    def calc_df_dotplot(self, genes: Sequence[str], groupby: str, adata=None, order: Optional[Sequence[str]] = None,
+                        target_sum: Optional[float] = None) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """Marker table per group from raw counts in X (paper Fig 3B style).
+
+        Genes are symbols (or var_names); repeated genes are allowed and kept in order.
+        Returns (df_frac: fraction of cells with count > 0, df_mean: mean log1p(CP<target_sum>),
+                 df_rel: df_mean / max over groups per gene, 0-1); rows = groups, columns = genes."""
+        a = self._check_adata(adata)
+        target_sum = self.get_param("target_sum", target_sum)
+        uniq = list(dict.fromkeys(genes))
+        found, ids = self.resolve_gene_ids(uniq, a)
+        X = a[:, ids].X
+        X = X.toarray() if sp.issparse(X) else np.asarray(X)
+        tot = np.asarray(a.X.sum(1)).ravel()
+        E = np.log1p(X / np.maximum(tot, 1)[:, None] * target_sum)
+        grp = a.obs[groupby].astype(str).values
+        df_frac = pd.DataFrame(X > 0, columns=found).groupby(grp).mean()
+        df_mean = pd.DataFrame(E, columns=found).groupby(grp).mean()
+        cols = [g for g in genes if g in found]
+        rows = [r for r in (order or df_mean.index) if r in df_mean.index]
+        df_frac, df_mean = df_frac.loc[rows, cols], df_mean.loc[rows, cols]
+        df_rel = df_mean / df_mean.max(0).replace(0, np.nan)
+        return df_frac, df_mean, df_rel.fillna(0)
+
+    def plot_dotplot(self, df_frac: pd.DataFrame, df_rel: pd.DataFrame,
+                     gene_groups: Optional[Sequence[Tuple[str, Sequence[str]]]] = None, fname: Optional[str] = None,
+                     row_labels: Optional[Dict[str, str]] = None, cmap: str = "RdPu", size_max: float = 90,
+                     title: str = "", figsize: Optional[Tuple[float, float]] = None,
+                     size_label: str = "fraction of cells\nin group (%)", color_label: str = "relative expression\nin group"):
+        """Dot plot: dot size = df_frac (0-1), dot colour = df_rel (0-1); columns may repeat a gene.
+        gene_groups = [(label, genes), ...] draws brackets above the columns (paper Fig 3B)."""
+        rows, cols = list(df_frac.index), list(df_frac.columns)
+        row_labels = row_labels or {}
+        nr, nc = len(rows), len(cols)
+        figsize = figsize or (0.28 * nc + 3.2, 0.32 * nr + 2.2)
+        fig, ax = plt.subplots(figsize=figsize)
+        yy, xx = np.meshgrid(np.arange(nr), np.arange(nc), indexing="ij")
+        F, R = df_frac.values, df_rel.values
+        sca = ax.scatter(xx.ravel(), yy.ravel(), s=F.ravel() * size_max, c=R.ravel(), cmap=cmap, vmin=0, vmax=1,
+                         lw=0.3, edgecolors="#999999")
+        ax.set_xticks(range(nc)); ax.set_xticklabels(cols, rotation=90, style="italic")
+        ax.set_yticks(range(nr)); ax.set_yticklabels([row_labels.get(r, r) for r in rows])
+        ax.set_xlim(-0.6, nc - 0.4); ax.set_ylim(nr - 0.4, -0.6)
+        for s_ in ("top", "right"):
+            ax.spines[s_].set_visible(True)
+        if gene_groups:
+            x0 = 0
+            for label, gl in gene_groups:
+                n = len([g for g in gl if g in cols])
+                if n == 0:
+                    continue
+                ax.annotate("", xy=(x0 - 0.3, -0.9), xytext=(x0 + n - 0.7, -0.9), annotation_clip=False,
+                            arrowprops=dict(arrowstyle="-", color="#333333", lw=0.8))
+                ax.text(x0 + (n - 1) / 2, -1.2, label, rotation=90, ha="center", va="bottom", fontsize=7)
+                x0 += n
+        cb = fig.colorbar(sca, ax=ax, fraction=0.025, pad=0.02)
+        cb.set_label(color_label, fontsize=7)
+        for p in (0.2, 0.4, 0.6, 0.8, 1.0):
+            ax.scatter([], [], s=p * size_max, c="#777777", label=f"{int(p * 100)}")
+        ax.legend(title=size_label, loc="upper left", bbox_to_anchor=(1.12, 1.0), frameon=False, fontsize=6,
+                  title_fontsize=7, labelspacing=0.9)
+        if title:
+            ax.set_title(title, loc="left", pad=70 if gene_groups else 6)
+        self._savefig(fig, fname)
+        return fig
+
+    @staticmethod
+    def plot_umap_labeled(ax, U: np.ndarray, labels: Sequence[str], colors: Dict[str, str], title: str = "",
+                          point_size: float = 2.0, fontsize: float = 8, seed: int = 0, label_on_data: bool = True):
+        """Scatter of a 2-D embedding coloured by category, with category names at their medians."""
+        labels = np.asarray(labels).astype(str)
+        o = np.random.default_rng(seed).permutation(len(U))
+        ax.scatter(U[o, 0], U[o, 1], s=point_size, c=[colors.get(l, "#cccccc") for l in labels[o]], lw=0,
+                   rasterized=True)
+        if label_on_data:
+            import matplotlib.patheffects as pe
+            for k in colors:
+                m = labels == k
+                if m.any():
+                    x, y = np.median(U[m], 0)
+                    ax.text(x, y, k, fontsize=fontsize, ha="center", va="center", color=colors[k], fontweight="bold",
+                            path_effects=[pe.withStroke(linewidth=2.2, foreground="white")])
+        ax.set_xticks([]); ax.set_yticks([])
+        ax.set_xlabel("UMAP1"); ax.set_ylabel("UMAP2")
+        if title:
+            ax.set_title(title)
+        return ax
+
+    @staticmethod
+    def spot_neighbor_graph(xy: np.ndarray, radius_factor: float = 1.2):
+        """Sparse adjacency of spots closer than radius_factor x median spot spacing (Visium: the 6 neighbours)."""
+        from scipy.spatial import cKDTree
+        tree = cKDTree(xy)
+        step = np.median(tree.query(xy, k=2)[0][:, 1])
+        pairs = np.array(list(tree.query_pairs(r=radius_factor * step)), dtype=int).reshape(-1, 2)
+        n = len(xy)
+        A = sp.coo_matrix((np.ones(len(pairs)), (pairs[:, 0], pairs[:, 1])), shape=(n, n))
+        return (A + A.T).tocsr(), step
+
+    @staticmethod
+    def smooth_on_spots(v: np.ndarray, A) -> np.ndarray:
+        """Mean of v over each spot and its neighbours (A from spot_neighbor_graph)."""
+        v = np.asarray(v, float)
+        deg = np.asarray(A.sum(1)).ravel()
+        return (A @ v + v) / (deg + 1)
+
+    @staticmethod
+    def plot_region_outline(ax, xy: np.ndarray, mask: np.ndarray, color: str = "#FFD400", lw: float = 1.4,
+                            max_edge_factor: float = 1.6, min_spots: int = 15, smooth: bool = True):
+        """Outline of a set of spots (mask): connected groups smaller than min_spots are dropped (scattered spots),
+        the indicator is optionally averaged over each spot's neighbours, and the 0.5 contour is drawn on the Delaunay
+        triangulation of all spots (triangles with an edge > max_edge_factor x spot spacing are masked)."""
+        import matplotlib.tri as mtri
+        from scipy.sparse.csgraph import connected_components
+        mask = np.asarray(mask, bool).copy()
+        A, step = SingleCell.spot_neighbor_graph(xy)
+        if mask.sum() and min_spots > 1:
+            idx = np.where(mask)[0]
+            _, lab = connected_components(A[idx][:, idx], directed=False)
+            big = np.isin(lab, np.where(np.bincount(lab) >= min_spots)[0])
+            mask[:] = False
+            mask[idx[big]] = True
+        if not mask.any():
+            return ax
+        z = SingleCell.smooth_on_spots(mask.astype(float), A) if smooth else mask.astype(float)
+        tri = mtri.Triangulation(xy[:, 0], xy[:, 1])
+        t = tri.triangles
+        e = np.max([np.linalg.norm(xy[t[:, i]] - xy[t[:, (i + 1) % 3]], axis=1) for i in range(3)], axis=0)
+        tri.set_mask(e > max_edge_factor * step)
+        ax.tricontour(tri, z, levels=[0.5], colors=[color], linewidths=lw)
+        return ax
+
     # =====================================================================================================
     # 9. LIANA
     # =====================================================================================================
     def liana_rank_aggregate(self, groupby: str, adata=None, resource_name: Optional[str] = None,
                              expr_prop: Optional[float] = None, n_perms: Optional[int] = None,
-                             use_raw: bool = False, key_check_adataded: str = "liana_res", **kw) -> pd.DataFrame:
+                             use_raw: bool = False, key_added: str = "liana_res", **kw) -> pd.DataFrame:
         """LIANA consensus rank_aggregate on log-normalised X ('mouseconsensus' resource for mouse)."""
         import liana as li
         a = self._check_adata(adata)
         li.mt.rank_aggregate(a, groupby=groupby, resource_name=self.get_param("liana_resource", resource_name),
                              expr_prop=self.get_param("liana_expr_prop", expr_prop), use_raw=use_raw,
-                             n_perms=self.get_param("liana_n_perms", n_perms), key_check_adataded=key_check_adataded, verbose=False, **kw)
-        df_liana = a.uns[key_check_adataded]
+                             n_perms=self.get_param("liana_n_perms", n_perms), key_added=key_added, verbose=False, **kw)
+        df_liana = a.uns[key_added]
         return df_liana
 
     def liana_bivariate(self, adata=None, resource_name: Optional[str] = None, local_name: Optional[str] = None,
@@ -1027,5 +1159,5 @@ class SingleCell(object):
     def wtab(group, rgg) -> pd.DataFrame:
         """One group of a scanpy rank_genes_groups result as a DataFrame indexed by gene."""
         df_wtab = pd.DataFrame({"gene": rgg["names"][group], "lfc": rgg["logfoldchanges"][group],
-                                "padj": rgg["pvals_check_adataj"][group], "score": rgg["scores"][group]}).set_index("gene")
+                                "padj": rgg["pvals_adj"][group], "score": rgg["scores"][group]}).set_index("gene")
         return df_wtab

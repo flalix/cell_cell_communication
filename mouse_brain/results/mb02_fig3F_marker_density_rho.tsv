@@ -1,0 +1,5 @@
+marker	HYPO	THAL_hab	THAL_med	THAL_lat
+Ttll3 (HYPO)	0.103	0.073	-0.038	-0.059
+Angpt1 (THAL_hab)	0.071	0.069	0.041	-0.004
+Lgr6 (THAL_med)	0.017	-0.013	0.148	0.072
+Aldh1a1 (THAL_lat)	-0.357	-0.188	0.321	0.505

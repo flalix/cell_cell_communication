@@ -94,7 +94,11 @@ NEURO_PARAMS: Dict[str, Any] = dict(
     },
     region_label_min_enrich=1.5,    # the labelling type must be at least this enriched in the cluster
     region_label_top_k=3,           # labels voted by the k most enriched mapped types
-    region_colors=None,             # dict label -> colour; None = Kelly / tab20
+    region_colors={                 # label -> colour (same palette as mb01_brain_regions.png); unknown labels: Kelly / tab20
+        "CTX_L1": "#c6dbef", "CTX_L2/3": "#9ecae1", "CTX_L4": "#4292c6", "CTX_L5": "#2171b5", "CTX_L5/6": "#08519c",
+        "CTX_L6b": "#08306b", "PIR": "#9e9ac8", "AMY": "#6a51a3", "HPC_CA1": "#74c476", "HPC_CA3": "#238b45",
+        "HPC_DG": "#00441b", "STR": "#e7298a", "THAL": "#fd8d3c", "HAB": "#d94801", "HYPO": "#fdd0a2",
+        "WM": "#969696", "edge_LowQ": "#f0f0f0"},
     region_label_override={},       # {region_cluster: label}, set after inspecting calc_df_edge_fraction
     edge_radius_factor=1.2,         # neighbours searched within factor x spot spacing
     edge_min_neighbors=6,           # fewer neighbours -> border spot
@@ -123,6 +127,37 @@ NEURO_PARAMS: Dict[str, Any] = dict(
     slideseq_B=1,
     slideseq_alpha=20,
     slideseq_count_tol=0.1,         # max |recovered - round| accepted when recovering counts
+    # --- Fig 3: regional astrocyte subtypes
+    astro_col="annotation_1",                 # 10 merged subtypes (paper)
+    astro_col_premerge="annotation_1_old",    # 13 clusters before the location-based merge
+    astro_order=("Astro_THAL_lat", "Astro_THAL_med", "Astro_HYPO", "Astro_THAL_hab", "Astro_WM", "Astro_AMY",
+                 "Astro_HPC", "Astro_STR", "Astro_AMY_CTX", "Astro_CTX"),          # row order of Fig 3B/3D
+    # Fig 3B marker groups, read from the published figure (Unc13c appears in THAL_med and CTX, as in the paper)
+    fig3B_markers=(("Astro", ("Slc1a3", "Aldoc", "Hepacam")), ("WM", ("Gfap", "Igfbp5", "Cd9")),
+                   ("diencephalic", ("Slc6a11", "Erbb4", "Lrig1", "Agt")), ("HYPO", ("Itih3", "Ttll3", "Sparc")),
+                   ("THAL_hab", ("Slc38a1", "Angpt1", "Pkp4")), ("THAL_lat", ("Aldh1a1", "Esrrg", "Car10")),
+                   ("THAL_med", ("Lgr6", "Unc13c", "Gria1")), ("telencephalic", ("Gldc", "Hapln1", "Slco1c1", "Foxg1")),
+                   ("AMY_CTX", ("Mfge8", "Hes5", "St6galnac5")), ("AMY", ("Tenm4", "Gm29683", "Map3k19")),
+                   ("HPC", ("Thrsp", "Id3", "Pdgfd")), ("STR", ("Efemp1", "Gfra1", "Thbs4")),
+                   ("CTX", ("Zfhx3", "Unc13c", "Chrdl1", "Car8"))),
+    astro_colors={"Astro_AMY": "#006FA6", "Astro_AMY_CTX": "#1E6E00", "Astro_CTX": "#D55E00", "Astro_HPC": "#56B4E9",
+                  "Astro_HYPO": "#F0E442", "Astro_STR": "#6F0062", "Astro_THAL_hab": "#5A14A5",
+                  "Astro_THAL_lat": "#009E73", "Astro_THAL_med": "#A77500", "Astro_WM": "#FF34FF"},  # paper object
+    fig3C_types=("Astro_HYPO", "Astro_CTX", "Astro_HPC", "Astro_THAL_lat", "Astro_THAL_hab"),
+    fig3E_types=("Astro_HYPO", "Astro_THAL_hab", "Astro_THAL_med", "Astro_THAL_lat"),
+    fig3F_markers={"Astro_HYPO": "Ttll3", "Astro_THAL_hab": "Angpt1", "Astro_THAL_med": "Lgr6", "Astro_THAL_lat": "Aldh1a1"},
+    fig3F_smooth=True,                         # Fig 3F display: mean over spot + 6 neighbours (rho uses raw spots)
+    diencephalon_regions=("THAL", "HAB", "HYPO"),
+    fig3E_outlines={"thalamus": ("THAL", "HAB"), "hypothalamus": ("HYPO",)},
+    outline_min_spots=15,                      # region outlines: drop connected groups smaller than this
+    fig3D_areas=(("hypothalamus", ("HYPO",)), ("thalamus", ("THAL", "HAB")), ("white matter", ("WM",)),
+                 ("hippocampus", ("HPC_CA1", "HPC_CA3", "HPC_DG")), ("striatum", ("STR",)), ("amygdala", ("AMY",)),
+                 ("piriform cortex", ("PIR",)),
+                 ("cortex", ("CTX_L1", "CTX_L2/3", "CTX_L4", "CTX_L5", "CTX_L5/6", "CTX_L6b"))),
+    area_colors={"hypothalamus": "#C8A97E", "thalamus": "#A78BCB", "white matter": "#B5651D", "hippocampus": "#7CC46C",
+                 "striatum": "#F39C3C", "amygdala": "#A9D2E8", "piriform cortex": "#F7C46C", "cortex": "#3A8FB7"},
+    density_cmap_he=("#FFFFFF", "#9E9AC8", "#54278F"),   # white -> purple over H&E (Fig 3E)
+    marker_cmap_dark=("#000000", "#1B4F72", "#5DADE2", "#D6EAF8"),   # black -> light blue (Fig 3F style)
 )
 
 
@@ -423,7 +458,7 @@ class SingleCellNeuro(SingleCell):
         self._savefig(fig, fname)
         return fig
 
-    def _density_legend(self, fig, ax, names, colors, caps, ncol: int = 3):
+    def _density_legend(self, fig, ax, names, colors, caps, ncol: int = 3, labels: Optional[Dict[str, str]] = None):
         """Paper-style legend under a density panel: name in its colour + black->colour bar with 0, cap/2, cap."""
         pos = ax.get_position()
         n = len(names)
@@ -440,7 +475,7 @@ class SingleCellNeuro(SingleCell):
             cb.set_ticks([0, caps[nm] / 2, caps[nm]])
             cb.ax.set_xticklabels([f"{t:.2f}" for t in (0, caps[nm] / 2, caps[nm])], fontsize=5, color="white")
             cb.ax.tick_params(length=1.5, colors="white")
-            cax.set_title(self.alias(nm), fontsize=7, color=colors[nm], fontweight="bold", pad=2)
+            cax.set_title((labels or {}).get(nm, self.alias(nm)), fontsize=7, color=colors[nm], fontweight="bold", pad=2)
         return nrow
 
     def plot_density_panels(self, panels: Dict[str, Sequence[str]], adata=None, library_id: Optional[str] = None,
@@ -742,3 +777,275 @@ class SingleCellNeuro(SingleCell):
                  fontsize=8, ha="left", va="top")
         self._savefig(fig, fname)
         return fig, stats
+
+    # =====================================================================================================
+    # Regional astrocyte subtypes (Fig 3)
+    # =====================================================================================================
+    def astro_short(self, ct: str) -> str:
+        """'Astro_THAL_lat' -> 'THAL_lat' (paper labels)."""
+        return str(ct).replace("Astro_", "", 1)
+
+    def load_astro_reference(self, fname_astro: str, fname_snrna: str, root: Optional[Path] = None) -> ad.AnnData:
+        """Astrocyte snRNA-seq object for Fig 3: raw counts of the astrocyte nuclei taken from the full snRNA file
+        (all genes), obs / UMAP / colours from the paper's astrocyte cellxgene object (10 merged subtypes in
+        astro_col, 13 pre-merge clusters in astro_col_premerge)."""
+        root = Path(root or self.root_data)
+        a_umap = ad.read_h5ad(root / fname_astro, backed="r")
+        names = a_umap.obs_names
+        a_raw = ad.read_h5ad(root / fname_snrna, backed="r")
+        keep = np.asarray(a_raw.obs_names.isin(names))
+        adata_astro = a_raw[keep].to_memory()
+        adata_astro = adata_astro[names.intersection(adata_astro.obs_names, sort=False)].copy()
+        for c in (self.params["astro_col"], self.params["astro_col_premerge"], self.sample_col):
+            adata_astro.obs[c] = a_umap.obs.loc[adata_astro.obs_names, c].astype(str).astype("category").values
+        adata_astro.obsm["X_umap"] = np.asarray(a_umap[adata_astro.obs_names].obsm["X_umap"])
+        cats = list(a_umap.obs[self.params["astro_col"]].cat.categories)
+        adata_astro.uns["astro_colors"] = dict(zip(cats, list(a_umap.uns[f"{self.params['astro_col']}_colors"])))
+        a_umap.file.close(); a_raw.file.close()
+        return adata_astro
+
+    def astro_colors(self, adata_astro: Optional[ad.AnnData] = None) -> Dict[str, str]:
+        """Subtype -> colour: from the astrocyte object when given, else params['astro_colors'] (paper palette)."""
+        if adata_astro is not None and "astro_colors" in adata_astro.uns:
+            return dict(adata_astro.uns["astro_colors"])
+        return dict(self.params["astro_colors"])
+
+    def plot_astro_umap(self, adata_astro: ad.AnnData, fname: Optional[str] = "fig3A_astro_umap.png",
+                        figsize=(11, 5), point_size: float = 3):
+        """Fig 3A: UMAP of the 10 astrocyte subtypes (left) and of the 13 clusters before merging (right, Fig S11/S12)."""
+        U = adata_astro.obsm["X_umap"]
+        col_m, col_p = self.params["astro_col"], self.params["astro_col_premerge"]
+        cols_m = {self.astro_short(k): v for k, v in self.astro_colors(adata_astro).items()}
+        lab_m = [self.astro_short(x) for x in adata_astro.obs[col_m].astype(str)]
+        cats_p = sorted(adata_astro.obs[col_p].astype(str).unique())
+        pal = KELLY_COLORS + [mpl.colors.to_hex(c) for c in plt.get_cmap("tab20").colors]
+        cols_p = {self.astro_short(k): pal[i % len(pal)] for i, k in enumerate(cats_p)}
+        lab_p = [self.astro_short(x) for x in adata_astro.obs[col_p].astype(str)]
+        fig, axes = plt.subplots(1, 2, figsize=figsize)
+        self.plot_umap_labeled(axes[0], U, lab_m, cols_m, title=f"{len(cols_m)} regional astrocyte subtypes",
+                               point_size=point_size, seed=self.params["seed"])
+        self.plot_umap_labeled(axes[1], U, lab_p, cols_p, title=f"{len(cols_p)} clusters before merging",
+                               point_size=point_size, fontsize=6.5, seed=self.params["seed"])
+        axes[0].text(0.0, -0.08, f"{adata_astro.n_obs:,} astrocyte nuclei", transform=axes[0].transAxes, fontsize=7)
+        self._savefig(fig, fname)
+        return fig
+
+    def plot_astro_markers(self, adata_astro: ad.AnnData, fname: Optional[str] = "fig3B_astro_markers.png",
+                           markers: Optional[Sequence] = None):
+        """Fig 3B: marker dot plot (size = fraction of nuclei with count > 0, colour = mean log1p CP10k scaled to the
+        maximum subtype per gene). Returns (fig, df_frac, df_rel)."""
+        markers = markers or self.params["fig3B_markers"]
+        genes = [g for _, gl in markers for g in gl]
+        order = list(self.params["astro_order"])
+        df_frac, df_mean, df_rel = self.calc_df_dotplot(genes, self.params["astro_col"], adata=adata_astro, order=order)
+        fig = self.plot_dotplot(df_frac, df_rel, gene_groups=markers, fname=fname,
+                                row_labels={t: self.astro_short(t) for t in order})
+        return fig, df_frac, df_rel
+
+    def _density_he(self, ax, img, xy, v, cap, cmap, s: float = 9, min_alpha: float = 0.04):
+        """Densities over the H&E: white -> colour, opacity proportional to density / cap."""
+        r = np.clip(np.asarray(v, float) / max(cap, 1e-9), 0, 1)
+        rgba = cmap(r)
+        rgba[:, 3] = np.clip(r, min_alpha, 1)
+        o = np.argsort(r)
+        ax.imshow(img)
+        ax.scatter(xy[o, 0], xy[o, 1], c=rgba[o], s=s, lw=0)
+
+    def plot_astro_density_regions(self, adata_map, library_id: Optional[str] = None, types: Optional[Sequence[str]] = None,
+                                   colors: Optional[Dict[str, str]] = None, df_abund: Optional[pd.DataFrame] = None,
+                                   label_col: str = "region_label", fname: Optional[str] = "fig3C_astro_regions.png",
+                                   q: Optional[float] = None, panel_size: float = 5.5):
+        """Fig 3C: selected astrocyte subtype densities (left, black panel, one colour per subtype) and the brain
+        regions from location clustering (right)."""
+        lib = library_id or self.library_id(adata_map)
+        types = list(types or self.params["fig3C_types"])
+        q = self.get_param("density_quantile", q)
+        colors = colors or self.astro_colors()
+        m, xy = self.spot_xy(lib, adata_map)
+        df_abund = (df_abund if df_abund is not None else self.calc_df_abundance(adata_map)).loc[adata_map.obs_names[m]]
+        lab = adata_map.obs[label_col].astype(str).values[m]
+        pal = self._region_palette(np.unique(lab))
+        fig = plt.figure(figsize=(panel_size * 2, panel_size * 1.3), facecolor="black")
+        ax = fig.add_axes([0.01, 0.28, 0.48, 0.64])
+        caps = self.plot_density_overlay(ax, xy, {t: df_abund[t].values for t in types},
+                                         {t: colors[t] for t in types}, q=q, s=self.params["density_spot_size"])
+        self._crop(ax, xy); ax.set_title("astrocyte subtypes", color="white", fontsize=11)
+        names = {t: self.astro_short(t) for t in types}
+        self._density_legend(fig, ax, types, {t: colors[t] for t in types}, caps, labels=names)
+        ax2 = fig.add_axes([0.51, 0.28, 0.48, 0.64])
+        ax2.set_facecolor("black")
+        ax2.scatter(xy[:, 0], xy[:, 1], c=[pal[l] for l in lab], s=self.params["density_spot_size"], lw=0)
+        self._crop(ax2, xy); ax2.set_xticks([]); ax2.set_yticks([]); ax2.set_aspect("equal")
+        for s_ in ax2.spines.values():
+            s_.set_visible(False)
+        ax2.set_title("brain regions", color="white", fontsize=11)
+        for l in np.unique(lab):
+            if l == "edge_LowQ":
+                continue
+            pts = xy[lab == l]; c = np.median(pts, 0); p = pts[np.argmin(((pts - c) ** 2).sum(1))]
+            ax2.text(p[0], p[1], l, fontsize=6, ha="center", va="center", color="white", fontweight="bold",
+                     path_effects=[pe.withStroke(linewidth=1.8, foreground="black")])
+        self._savefig(fig, fname)
+        return fig
+
+    def calc_df_astro_region_density(self, adata_map, types: Optional[Sequence[str]] = None, label_col: str = "region_label",
+                                     df_abund: Optional[pd.DataFrame] = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """Mean density (cells per spot) of each astrocyte subtype in each region (fig3D_areas order, both sections);
+        df_rel = df_mean / max over regions per subtype (Fig 3D scaling). Returns (df_mean, df_rel), rows = subtypes."""
+        types = list(types or self.params["astro_order"])
+        regions = [r for _, rl in self.params["fig3D_areas"] for r in rl]
+        df_abund = df_abund if df_abund is not None else self.calc_df_abundance(adata_map)
+        lab = adata_map.obs.loc[df_abund.index, label_col].astype(str).values
+        df_mean = df_abund[types].groupby(lab).mean().T.reindex(columns=regions)
+        df_rel = df_mean.div(df_mean.max(1), axis=0)
+        return df_mean, df_rel
+
+    def plot_astro_region_dotplot(self, df_rel: pd.DataFrame, fname: Optional[str] = "fig3D_astro_region_dotplot.png",
+                                  size_max: float = 110, cmap: str = "RdPu", figsize=(10, 4.6)):
+        """Fig 3D: dot size and colour = relative density of each astrocyte subtype (rows) across regions (columns),
+        scaled 0-1 per subtype; colour bars = broad areas (top) and regions (bottom)."""
+        areas = self.params["fig3D_areas"]
+        rows, cols = list(df_rel.index), list(df_rel.columns)
+        nr, nc = len(rows), len(cols)
+        fig = plt.figure(figsize=figsize)
+        ax = fig.add_axes([0.14, 0.3, 0.72, 0.52])
+        yy, xx = np.meshgrid(np.arange(nr), np.arange(nc), indexing="ij")
+        R = np.nan_to_num(df_rel.values)
+        sca = ax.scatter(xx.ravel(), yy.ravel(), s=R.ravel() * size_max, c=R.ravel(), cmap=cmap, vmin=0, vmax=1, lw=0)
+        ax.set_xlim(-0.6, nc - 0.4); ax.set_ylim(nr - 0.4, -0.6)
+        ax.set_yticks(range(nr)); ax.set_yticklabels([self.astro_short(r) for r in rows])
+        ax.set_xticks([])
+        for s_ in ax.spines.values():
+            s_.set_visible(True)
+        pal = self._region_palette(cols)
+        axb = fig.add_axes([0.14, 0.25, 0.72, 0.04]); axt = fig.add_axes([0.14, 0.83, 0.72, 0.04])
+        axb.bar(range(nc), 1, width=1, color=[pal[c] for c in cols]); axb.set_xlim(-0.5, nc - 0.5)
+        axb.set_xticks(range(nc)); axb.set_xticklabels(cols, rotation=90, fontsize=7); axb.set_yticks([])
+        x0 = 0
+        for label, rl in areas:
+            n = len([r for r in rl if r in cols])
+            axt.bar(np.arange(x0, x0 + n), 1, width=1, color=self.params["area_colors"].get(label, "#cccccc"))
+            axt.text(x0 + (n - 1) / 2, 1.3, label, rotation=30, ha="left", va="bottom", fontsize=7)
+            x0 += n
+        axt.set_xlim(-0.5, nc - 0.5); axt.set_ylim(0, 1); axt.axis("off")
+        for a_ in (axb,):
+            for s_ in a_.spines.values():
+                s_.set_visible(False)
+        cax = fig.add_axes([0.88, 0.3, 0.012, 0.52])
+        fig.colorbar(sca, cax=cax).set_label("relative cell density in region", fontsize=7)
+        self._savefig(fig, fname)
+        return fig
+
+    def plot_diencephalic_astro(self, adata_map, types: Optional[Sequence[str]] = None, df_abund: Optional[pd.DataFrame] = None,
+                                label_col: str = "region_label", fname: Optional[str] = "fig3E_diencephalic_astro.png",
+                                q: Optional[float] = None, panel_size: float = 3.6):
+        """Fig 3E: densities of the diencephalic astrocyte subtypes (columns) over the H&E of each section (rows);
+        yellow outlines = thalamus (THAL + HAB) and hypothalamus (fig3E_outlines). Colour scale per subtype."""
+        types = list(types or self.params["fig3E_types"])
+        q = self.get_param("density_quantile", q)
+        df_abund = df_abund if df_abund is not None else self.calc_df_abundance(adata_map)
+        libs = self.library_ids(adata_map)
+        cmap = LinearSegmentedColormap.from_list("he_purple", list(self.params["density_cmap_he"]))
+        caps = {t: float(np.quantile(df_abund[t].values, q)) for t in types}
+        fig, axes = plt.subplots(len(libs), len(types), figsize=(panel_size * len(types) + 0.8, panel_size * len(libs)),
+                                 squeeze=False, gridspec_kw=dict(wspace=0.05, hspace=0.12))
+        for i, lib in enumerate(libs):
+            img, _ = self.hires_image(lib, adata_map)
+            m, xy = self.spot_xy(lib, adata_map)
+            lab = adata_map.obs[label_col].astype(str).values[m]
+            for j, t in enumerate(types):
+                ax = axes[i, j]
+                self._density_he(ax, img, xy, df_abund.loc[adata_map.obs_names[m], t].values, caps[t], cmap)
+                for name, regs in self.params["fig3E_outlines"].items():
+                    self.plot_region_outline(ax, xy, np.isin(lab, regs), min_spots=self.params["outline_min_spots"])
+                self._crop(ax, xy); ax.set_xticks([]); ax.set_yticks([])
+                for s_ in ax.spines.values():
+                    s_.set_visible(False)
+                if i == 0:
+                    ax.set_title(self.astro_short(t), fontsize=11, color="#54278F", fontweight="bold")
+                if j == 0:
+                    ax.set_ylabel(lib, fontsize=8)
+        for j, t in enumerate(types):
+            pos = axes[-1, j].get_position()
+            cax = fig.add_axes([pos.x0 + pos.width * 0.15, pos.y0 - 0.035, pos.width * 0.7, 0.012])
+            cb = fig.colorbar(mpl.cm.ScalarMappable(norm=mpl.colors.Normalize(0, caps[t]), cmap=cmap), cax=cax,
+                              orientation="horizontal")
+            cb.set_label("cells per spot", fontsize=6); cb.ax.tick_params(labelsize=6)
+        self._savefig(fig, fname)
+        return fig
+
+    def spot_log1p_cp10k(self, adata_map, genes: Sequence[str]) -> pd.DataFrame:
+        """log1p(CP10k) per spot for genes (symbols) from the raw counts in adata_map.X (spots x genes)."""
+        found, ids = self.resolve_gene_ids(genes, adata_map)
+        X = adata_map[:, ids].X
+        X = X.toarray() if sp.issparse(X) else np.asarray(X)
+        tot = np.asarray(adata_map.X.sum(1)).ravel()
+        df_expr = pd.DataFrame(np.log1p(X / np.maximum(tot, 1)[:, None] * self.params["target_sum"]),
+                               index=adata_map.obs_names, columns=found)
+        return df_expr
+
+    def plot_diencephalic_markers(self, adata_map, markers: Optional[Dict[str, str]] = None, label_col: str = "region_label",
+                                  fname: Optional[str] = "fig3F_diencephalic_markers.png", q: float = 99.0,
+                                  panel_size: float = 3.6, spot_size: float = 14, smooth: Optional[bool] = None):
+        """Fig 3F substitute (the paper's smFISH images are not public): Visium expression (log1p CP10k) of the
+        diencephalic subtype markers, diencephalon spots only (black panels). Spot expression includes every cell
+        type in the spot, so it is not astrocyte-specific. smooth=True (params['fig3F_smooth']) shows the mean over
+        each spot and its 6 neighbours, because single spots detect these genes rarely."""
+        smooth = self.get_param("fig3F_smooth", smooth)
+        markers = markers or self.params["fig3F_markers"]
+        genes = list(markers.values())
+        df_expr = self.spot_log1p_cp10k(adata_map, genes)
+        libs = self.library_ids(adata_map)
+        cmap = LinearSegmentedColormap.from_list("dark_blue", list(self.params["marker_cmap_dark"]))
+        regs = self.params["diencephalon_regions"]
+        fig, axes = plt.subplots(len(libs), len(genes), figsize=(panel_size * len(genes), panel_size * len(libs)),
+                                 squeeze=False, facecolor="black", gridspec_kw=dict(wspace=0.04, hspace=0.1))
+        for i, lib in enumerate(libs):
+            m, xy = self.spot_xy(lib, adata_map)
+            lab = adata_map.obs[label_col].astype(str).values[m]
+            d = np.isin(lab, regs)
+            for j, (t, g) in enumerate(markers.items()):
+                ax = axes[i, j]; ax.set_facecolor("black")
+                v = df_expr.loc[adata_map.obs_names[m], g].values
+                if smooth:
+                    A, _ = self.spot_neighbor_graph(xy)
+                    v = self.smooth_on_spots(v, A)
+                cap = max(np.percentile(v[d], q), 1e-9)
+                o = np.argsort(v[d])
+                ax.scatter(xy[d][o, 0], xy[d][o, 1], c=np.clip(v[d][o], 0, cap), cmap=cmap, vmin=0, vmax=cap,
+                           s=spot_size, lw=0)
+                for name, rr in self.params["fig3E_outlines"].items():
+                    self.plot_region_outline(ax, xy, np.isin(lab, rr), color="#FFD400", lw=1.0, min_spots=self.params["outline_min_spots"])
+                self._crop(ax, xy[d], pad=60); ax.set_xticks([]); ax.set_yticks([]); ax.set_aspect("equal")
+                for s_ in ax.spines.values():
+                    s_.set_visible(False)
+                if i == 0:
+                    ax.set_title(f"{g}  ({self.astro_short(t)})", color="#5DADE2", fontsize=10, style="italic")
+                    if j == 0:
+                        ax.text(0, 1.12, "Visium log1p(CP10k)" + (", mean of spot + 6 neighbours" if smooth else ""),
+                                transform=ax.transAxes, color="white", fontsize=7)
+                if j == 0:
+                    ax.text(-0.02, 0.5, lib, transform=ax.transAxes, rotation=90, color="white", ha="right",
+                            va="center", fontsize=8)
+        self._savefig(fig, fname)
+        return fig
+
+    def calc_df_marker_density_rho(self, adata_map, markers: Optional[Dict[str, str]] = None,
+                                   types: Optional[Sequence[str]] = None, label_col: str = "region_label",
+                                   df_abund: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+        """Spearman rho, over diencephalon spots of both sections, between each marker's Visium expression and each
+        diencephalic astrocyte subtype's density (rows = markers, columns = subtypes). A marker that tracks its own
+        subtype should have its highest rho on the diagonal."""
+        from scipy.stats import spearmanr
+        markers = markers or self.params["fig3F_markers"]
+        types = list(types or self.params["fig3E_types"])
+        df_abund = df_abund if df_abund is not None else self.calc_df_abundance(adata_map)
+        d = adata_map.obs[label_col].astype(str).isin(self.params["diencephalon_regions"]).values
+        df_expr = self.spot_log1p_cp10k(adata_map, list(markers.values()))
+        rows = []
+        for t_m, g in markers.items():
+            rows.append({t: spearmanr(df_expr[g].values[d], df_abund[t].values[d])[0] for t in types})
+        df_rho = pd.DataFrame(rows, index=[f"{g} ({self.astro_short(t)})" for t, g in markers.items()])
+        df_rho.columns = [self.astro_short(t) for t in types]
+        df_rho.attrs["n_spots"] = int(d.sum())
+        return df_rho.round(3)
