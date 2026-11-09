@@ -136,7 +136,22 @@ DEFAULT_PARAMS: Dict[str, Any] = dict(
     liana_local="cosine",
     liana_global="morans",
     liana_nz_prop=0.2,
+    # --- subclustering (subcluster_adaptive)
+    sub_n_hvg=2000,
+    sub_n_pcs=20,
+    sub_n_neighbors=15,
+    sub_batch="combat",            # 'combat' (scanpy, per batch) or None
+    sub_min_gene_frac=0.02,        # genes detected in >= this fraction of the subset's spots / cells
+    sub_resolutions=(0.2, 0.3, 0.4, 0.5, 0.6, 0.8),
+    sub_min_size=20,               # every subcluster must have >= this many spots / cells
+    sub_max_k=6,                   # at most this many subclusters
+    # --- marker tests (calc_df_rank_genes)
+    rank_corr_method="benjamini-hochberg",
+    # --- spatial coherence
+    coherence_radius_factor=1.2,   # spot neighbours within factor x spot spacing (Visium: the 6 neighbours)
     # --- plotting
+    plotly_image_format="jpeg",    # 'jpeg' (small HTML) or 'raw'
+    plotly_jpeg_quality=85,
     clip_quantile=99.2,            # percent, for colour scales
     density_quantile=0.992,        # fraction, for density overlays
     spot_size=1.3,
@@ -892,9 +907,17 @@ class SingleCell(object):
 
     def plotly_spatial_visium(self, names: Dict[str, str], adata=None, key: Optional[str] = None,
                               library_id: Optional[str] = None, set_colors: bool = False,
-                              width: int = 1400, height: int = 900):
-        """Interactive (plotly) spatial map of a categorical key on the hires image."""
+                              width: int = 1400, height: int = 900, image_format: Optional[str] = None,
+                              marker_size: float = 6, hover_extra: Optional[Dict[str, str]] = None):
+        """Interactive (plotly) spatial map of a categorical key on the hires image.
+
+        image_format: 'raw' embeds the pixel array (about 30 MB per HTML file), 'jpeg' an encoded image (about 6 MB);
+        default params['plotly_image_format']. hover_extra: category -> extra hover text (e.g. signature genes)."""
+        import base64
+        import io
         import plotly.graph_objects as go
+        image_format = self.get_param("plotly_image_format", image_format)
+        hover_extra = hover_extra or {}
         a = self._check_adata(adata)
         key = self.get_param("region_key", key)
         cats = a.obs[key].cat.categories
@@ -913,13 +936,24 @@ class SingleCell(object):
         clust = a.obs[key].astype(str).values[m]
         spot_names = a.obs_names[m]
         fig = go.Figure()
-        fig.add_trace(go.Image(z=img, hoverinfo="skip"))
+        if image_format == "jpeg":
+            buf = io.BytesIO()
+            from PIL import Image
+            Image.fromarray(img[..., :3]).save(buf, format="JPEG", quality=self.params["plotly_jpeg_quality"])
+            fig.add_trace(go.Image(source="data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode(),
+                                   hoverinfo="skip"))
+        else:
+            fig.add_trace(go.Image(z=img, hoverinfo="skip"))
         for k, c in zip(cats, cols):
             mk = clust == k
-            label = f"{k} – {names.get(k, '')}"
+            if not mk.any():
+                continue
+            label = f"{k} – {names.get(k, '')}" if names.get(k) else str(k)
+            extra = f"<br>{hover_extra[k]}" if k in hover_extra else ""
             fig.add_trace(go.Scattergl(x=xy[mk, 0], y=xy[mk, 1], mode="markers", name=label, text=spot_names[mk],
-                                       marker=dict(size=6, color=c, opacity=0.9, line=dict(width=0.5, color="black")),
-                                       hovertemplate=f"<b>{label}</b><br>spot: %{{text}}<extra></extra>"))
+                                       marker=dict(size=marker_size, color=c, opacity=0.9,
+                                                   line=dict(width=0.5, color="black")),
+                                       hovertemplate=f"<b>{label}</b>{extra}<br>spot: %{{text}}<extra></extra>"))
         fig.update_layout(title=s, width=width, height=height, plot_bgcolor="black", margin=dict(l=10, r=10, t=40, b=10),
                           legend=dict(font=dict(size=12), itemsizing="constant", x=1.01, y=0.5, yanchor="middle"))
         fig.update_xaxes(visible=False, range=[0, img.shape[1]])
@@ -1118,6 +1152,121 @@ class SingleCell(object):
         tri.set_mask(e > max_edge_factor * step)
         ax.tricontour(tri, z, levels=[0.5], colors=[color], linewidths=lw)
         return ax
+
+    # =====================================================================================================
+    # 8b. Subclustering, marker tests, spatial coherence
+    # =====================================================================================================
+    def subcluster_adaptive(self, adata_sub: ad.AnnData, batch_key: Optional[str] = None, counts_layer: Optional[str] = None,
+                            resolutions: Optional[Sequence[float]] = None, min_size: Optional[int] = None,
+                            max_k: Optional[int] = None, key_added: str = "subcluster") -> Tuple[ad.AnnData, pd.DataFrame]:
+        """Cluster a subset (X = log-normalised, counts in layers[counts_layer]): genes detected in >= sub_min_gene_frac,
+        HVGs (seurat_v3 on counts, per batch when possible), optional ComBat on the HVGs, scale, PCA, kNN, UMAP,
+        Leiden over a resolution grid. The chosen resolution is the highest one at which every cluster has
+        >= min_size members and there are <= max_k clusters (else the lowest resolution).
+
+        Returns (adata_sub with obs[key_added] = '1', '2', ... by decreasing size and obsm['X_umap'],
+                 df_grid: resolution, k, min_size, chosen)."""
+        P = self.params
+        counts_layer = self.get_param("counts_layer", counts_layer)
+        resolutions = list(self.get_param("sub_resolutions", resolutions))
+        min_size = self.get_param("sub_min_size", min_size)
+        max_k = self.get_param("sub_max_k", max_k)
+        seed = P["seed"]
+        a = adata_sub.copy()
+        sc.pp.filter_genes(a, min_cells=max(3, int(P["sub_min_gene_frac"] * a.n_obs)))
+        n_batches = a.obs[batch_key].nunique() if batch_key and batch_key in a.obs else 1
+        layer = counts_layer if counts_layer in a.layers else None
+        try:
+            sc.pp.highly_variable_genes(a, n_top_genes=min(P["sub_n_hvg"], a.n_vars - 1), flavor="seurat_v3", layer=layer,
+                                        batch_key=batch_key if n_batches > 1 else None)
+        except Exception:
+            sc.pp.highly_variable_genes(a, n_top_genes=min(P["sub_n_hvg"], a.n_vars - 1), flavor="seurat_v3", layer=layer)
+        b = a[:, a.var["highly_variable"].values].copy()
+        if P["sub_batch"] == "combat" and n_batches > 1:
+            sc.pp.combat(b, key=batch_key)
+        sc.pp.scale(b, max_value=10)
+        n_pcs = int(min(P["sub_n_pcs"], b.n_obs - 2, b.n_vars - 1))
+        sc.pp.pca(b, n_comps=n_pcs, random_state=seed)
+        sc.pp.neighbors(b, n_neighbors=min(P["sub_n_neighbors"], b.n_obs - 1), random_state=seed)
+        sc.tl.umap(b, random_state=seed)
+        rows, labels = [], {}
+        for r in resolutions:
+            sc.tl.leiden(b, resolution=r, key_added="_l", random_state=seed, flavor="igraph", n_iterations=2,
+                         directed=False)
+            vc = b.obs["_l"].value_counts()
+            labels[r] = b.obs["_l"].astype(str).values.copy()
+            rows.append(dict(resolution=r, k=len(vc), min_size=int(vc.min()), ok=bool(vc.min() >= min_size and len(vc) <= max_k)))
+        df_grid = pd.DataFrame(rows)
+        ok = df_grid[df_grid.ok]
+        chosen = float(ok.resolution.max()) if len(ok) else float(df_grid.resolution.min())
+        df_grid["chosen"] = df_grid.resolution == chosen
+        lab = pd.Series(labels[chosen], index=b.obs_names)
+        rank = {old: str(i + 1) for i, old in enumerate(lab.value_counts().index)}       # '1' = largest
+        adata_sub = adata_sub.copy()
+        adata_sub.obs[key_added] = pd.Categorical(lab.map(rank).loc[adata_sub.obs_names].values,
+                                                  categories=[str(i + 1) for i in range(len(rank))])
+        adata_sub.obsm["X_umap"] = b.obsm["X_umap"]
+        adata_sub.obsm["X_pca_sub"] = b.obsm["X_pca"]
+        adata_sub.uns[f"{key_added}_resolution"] = chosen
+        return adata_sub, df_grid
+
+    def calc_df_rank_genes(self, adata, groupby: str, groups: Any = "all", reference: str = "rest",
+                           method: Optional[str] = None) -> pd.DataFrame:
+        """scanpy rank_genes_groups on log-normalised X (never .raw) with pts=True, as one tidy table:
+        group, names, scores, logfoldchanges, pvals, pvals_adj, pct_in (fraction of the group with expression > 0),
+        pct_out (fraction of the reference)."""
+        a = self._check_adata(adata)
+        sc.tl.rank_genes_groups(a, groupby=groupby, groups=groups, reference=reference, use_raw=False,
+                                method=self.get_param("rank_method", method), pts=True, n_genes=a.n_vars,
+                                corr_method=self.params["rank_corr_method"], key_added="_rg")
+        df_rank = sc.get.rank_genes_groups_df(a, group=None, key="_rg")
+        if "group" not in df_rank.columns:
+            df_rank.insert(0, "group", groups[0] if isinstance(groups, (list, tuple)) else groups)
+        df_rank = df_rank.rename(columns={"pct_nz_group": "pct_in", "pct_nz_reference": "pct_out"})
+        del a.uns["_rg"]
+        return df_rank
+
+    def calc_df_spatial_coherence(self, adata, key: str, within_key: Optional[str] = None,
+                                  library_key: Optional[str] = None, radius_factor: Optional[float] = None) -> pd.DataFrame:
+        """Spatial coherence of each category of obs[key]: for its spots, the fraction of tissue neighbours (same
+        library; optionally only neighbours with the same obs[within_key]) that share the category, divided by the
+        category's share of those neighbourhoods' universe (its fraction of spots in the same library / within group).
+        ratio ~ 1: scattered like random labels; ratio >> 1: a contiguous patch."""
+        from scipy.spatial import cKDTree
+        a = self._check_adata(adata)
+        library_key = library_key or self.sample_col
+        rf = self.get_param("coherence_radius_factor", radius_factor)
+        lab = a.obs[key].astype(str).values
+        grp = a.obs[within_key].astype(str).values if within_key else np.zeros(a.n_obs, dtype=str)
+        libs = a.obs[library_key].astype(str).values if library_key in a.obs else np.zeros(a.n_obs, dtype=str)
+        xy = np.asarray(a.obsm["spatial"], float)
+        same = np.full(a.n_obs, np.nan)
+        n_nb = np.zeros(a.n_obs, int)
+        for lb in np.unique(libs):
+            idx = np.where(libs == lb)[0]
+            tree = cKDTree(xy[idx])
+            step = np.median(tree.query(xy[idx], k=2)[0][:, 1])
+            for i_loc, nb in enumerate(tree.query_ball_point(xy[idx], rf * step)):
+                i = idx[i_loc]
+                nb = [idx[j] for j in nb if idx[j] != i and grp[idx[j]] == grp[i]]
+                n_nb[i] = len(nb)
+                if nb:
+                    same[i] = np.mean(lab[nb] == lab[i])
+        rows = []
+        for (g, c), sub in pd.DataFrame({"g": grp, "c": lab, "lib": libs, "same": same, "n": n_nb}).groupby(["g", "c"]):
+            exp = []
+            for lb, s2 in sub.groupby("lib"):
+                pool = (grp == g) & (libs == lb)
+                exp.append((len(s2), (lab[pool] == c).mean()))
+            expected = np.average([e for _, e in exp], weights=[w for w, _ in exp])
+            obs_ = np.nanmean(sub["same"].values) if np.isfinite(sub["same"].values).any() else np.nan
+            rows.append(dict(group=g, category=c, n=len(sub), frac_same_neighbours=round(float(obs_), 3),
+                             expected=round(float(expected), 3),
+                             coherence_ratio=round(float(obs_ / expected), 2) if expected > 0 else np.nan))
+        df_coh = pd.DataFrame(rows)
+        if not within_key:
+            df_coh = df_coh.drop(columns="group")
+        return df_coh
 
     # =====================================================================================================
     # 9. LIANA
