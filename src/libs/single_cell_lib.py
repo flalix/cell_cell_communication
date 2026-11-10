@@ -19,16 +19,22 @@ Naming: every pandas DataFrame variable starts with 'df_'.
 
 Sections of SingleCell
 ----------------------
-1. I/O and components          read_h5ad, read_visium_samples, write_h5ad, summary, calc_df_components, x_info, is_raw_counts
+1. I/O and components          read_h5ad, read_h5ad_slots, read_visium_samples, write_h5ad, summary, calc_df_components,
+                               x_info, is_raw_counts
 2. Gene lookup and clipping    symbols, values, resolve_gene_ids, percentile_cap, clip_for_plot
 3. Filtering                   flag_mt_genes, remove_mt_genes, filter_cells, filter_genes, filter_genes_c2l
 4. Quality control             calc_qc_metrics, calc_df_qc, plot_qc
 5. Scanpy preprocessing        normalize_log, highly_variable, embed (pca/neighbors/umap), leiden, rank_genes
-6. Squidpy spatial             library_ids, hires_image, spot_xy, spatial_neighbors, spatial_autocorr, nhood_enrichment
+6. Squidpy spatial             library_ids, hires_image, spot_xy, select_slide, spatial_scatter_genes,
+                               spatial_neighbors, spatial_autocorr, nhood_enrichment
 7. cell2location               train_reference, get_reference_signatures, train_mapping, ensure_posterior_samples,
-                               calc_df_abundance, cluster_regions, region_names
+                               calc_df_abundance, cluster_regions, umap_regions, region_names
+7b. cell2location models       fit_or_load_reference, fit_or_load_mapping (return the model), add_expected_layers,
+                               abundance_to_obs, plot_c2l_history, plot_c2l_qc, posterior_samples_cached,
+                               plot_posterior_median_vs_mean, run_colocation_cached, calc_df_coloc_loadings
 8. Plots                       legend_figure_bottom, umap_spatial_3plot, plot_spatial_visium, plotly_spatial_visium,
-                               plot_genes_per_cell_type, plot_slide_loc_cell_types, plot_density_overlay
+                               plot_genes_per_cell_type, plot_slide_loc_cell_types, plot_spatial_features,
+                               plot_density_overlay
 9. LIANA                       liana_rank_aggregate, liana_bivariate
 10. Static helpers             wtab
 
@@ -64,7 +70,7 @@ import scanpy as sc
 
 from libs.Basic import create_dir, pdwritecsv, pdreadcsv
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 colors_byr = ("#57a4e2", "#ebd246", "#f30707")
 cmap_byr = LinearSegmentedColormap.from_list("blue_yellow_red", list(colors_byr))
@@ -128,6 +134,17 @@ DEFAULT_PARAMS: Dict[str, Any] = dict(
     region_top_n=2,
     region_min_enrich=1.2,
     region_method="abundance",
+    region_leiden_flavor="igraph",  # 'igraph' (fast) or 'leidenalg' (scanpy default; gives different clusters)
+    region_umap_min_dist=0.3,      # UMAP of spots on the abundance kNN graph
+    region_umap_spread=1.0,
+    # --- cell2location model objects (fit_or_load_reference / fit_or_load_mapping)
+    c2l_signature_summary="q50",   # signatures used for mapping: 'means', 'q50', 'q05'
+    c2l_expected_quantile="q05",   # posterior summary for compute_expected_per_cell_type (layers)
+    c2l_posterior_sites=("w_sf", "m_g", "z_sr_groups_factors"),
+    # --- NMF co-location (cell2location.run_colocation)
+    coloc_n_facts=(11, 12),
+    coloc_n_restarts=3,
+    coloc_alpha=0.01,
     # --- LIANA
     liana_resource="consensus",    # 'mouseconsensus' for mouse
     liana_expr_prop=0.1,
@@ -233,15 +250,20 @@ class SingleCell(object):
             raise ValueError("no AnnData: pass adata= or set self.adata")
         return a
 
-    def _savefig(self, fig, fname: Optional[str], root_figure: Optional[Path] = None, dpi: Optional[int] = None, verbose: bool = False):
+    def _savefig(self, fig, fname: Optional[str], root_figure: Optional[Path] = None, dpi: Optional[int] = None, 
+                 force: bool = False, verbose: bool = False):
         """Save fig to (root_figure or self.root_figure) / fname; fname=None -> not saved."""
         if fname is None:
             return None
         filename = Path(root_figure or self.root_figure) / fname
-        fig.savefig(filename, dpi=self.get_param("dpi", dpi), bbox_inches="tight")
 
-        if verbose:
-            print(f"Saving figure to {filename}")
+        if filename.exists() and not force:
+            print(f"File already exists: {filename}")
+        else:
+            fig.savefig(filename, dpi=self.get_param("dpi", dpi), bbox_inches="tight")
+            if verbose:
+                print(f"Saving figure to {filename}")
+
         return filename
 
 
@@ -279,6 +301,31 @@ class SingleCell(object):
             print(f"Writing {filename}")
 
         return filename
+
+    def read_h5ad_slots(self, fname: str, root: Optional[Path] = None, skip: Sequence[str] = ("layers",),
+                        set_self: bool = False, verbose: bool = False) -> ad.AnnData:
+        """
+        Read an h5ad without some slots (default: layers). Useful for cell2location maps whose
+        per-cell-type expected-expression layers are dense (e.g. 34 layers x spots x genes, several GB).
+        """
+        import h5py
+        from anndata.io import read_elem
+        filename = Path(root or self.root_data) / fname
+        if not filename.exists():
+            raise FileNotFoundError(filename)
+        slots = ("X", "obs", "var", "obsm", "varm", "obsp", "varp", "layers", "uns")
+        kw = {}
+        with h5py.File(filename, "r") as f:
+            for s in slots:
+                if s in skip or s not in f:
+                    continue
+                kw[s] = read_elem(f[s])
+        a = ad.AnnData(**kw)
+        if set_self:
+            self.adata = a
+        if verbose:
+            print(f"Reading {filename} (skipped: {list(skip)})")
+        return a
 
     def read_visium_samples(self, root_raw: Path, samples: Sequence[str],
                             count_file: str = "filtered_feature_bc_matrix.h5",
@@ -676,6 +723,38 @@ class SingleCell(object):
         _, sf = self.hires_image(lib, a, img_key)
         return m, np.asarray(a.obsm["spatial"])[m] * sf
 
+    def select_slide(self, adata=None, library_id: Optional[str] = None, batch_key: Optional[str] = None) -> ad.AnnData:
+        """One Visium section (cell2location.utils.select_slide); default: the first library."""
+        from cell2location.utils import select_slide
+        a = self._check_adata(adata)
+        lib = library_id or self.library_id(a)
+        return select_slide(a, lib, batch_key=batch_key or self.sample_col)
+
+    def spatial_scatter_genes(self, genes: Sequence[str], adata=None, library_id: Optional[str] = None,
+                              ncols: int = 4, nframe: Optional[int] = None, q: Optional[float] = None,
+                              img_alpha: float = 0.6, size: Optional[float] = None, cmap=None,
+                              fname: Optional[str] = None) -> Tuple[List[str], List[Any]]:
+        """squidpy spatial_scatter of genes (symbols or obs columns), each clipped at its q-th percentile
+        (clip_for_plot), nframe panels per figure. fname may contain '{k}' (figure number, 1-based).
+        Returns (features plotted, figures)."""
+        import squidpy as sq
+        a = self._check_adata(adata)
+        kept, cols = self.clip_for_plot(list(genes), a, q=q)
+        nframe = nframe or len(kept)
+        lib = library_id or self.library_id(a)
+        figs = []
+        for k, i in enumerate(range(0, len(kept), nframe)):
+            sq.pl.spatial_scatter(a, color=cols[i:i + nframe], title=kept[i:i + nframe],
+                                  img_res_key=self.params["img_key"], img_alpha=img_alpha,
+                                  size=self.get_param("spot_size", size), cmap=cmap or cmap_byr, ncols=ncols,
+                                  library_id=lib)
+            fig = plt.gcf()
+            figs.append(fig)
+
+            self._savefig(fig, fname.format(k=k + 1) if "{k}" in fname else fname)
+
+        return kept, figs
+
     def spatial_neighbors(self, adata=None, coord_type: Optional[str] = None, n_rings: Optional[int] = None,
                           library_key: Optional[str] = None, **kw):
         import squidpy as sq
@@ -815,18 +894,39 @@ class SingleCell(object):
         return df_abund
 
     def cluster_regions(self, adata=None, df_abund: Optional[pd.DataFrame] = None, n_neighbors: Optional[int] = None,
-                        resolution: Optional[float] = None, key_added: Optional[str] = None) -> pd.Series:
-        """Leiden clusters of spots on cell-abundance space (paper: kNN 38, resolution 1.3)."""
+                        resolution: Optional[float] = None, key_added: Optional[str] = None,
+                        flavor: Optional[str] = None) -> pd.Series:
+        """Leiden clusters of spots on cell-abundance space (paper: kNN 38, resolution 1.3).
+
+        The kNN graph is stored under neighbors_key='abund' (umap_regions uses it).
+        flavor (params['region_leiden_flavor']): 'igraph' (n_iterations=2, undirected) or 'leidenalg'
+        (scanpy defaults, as in the cell2location tutorial). The two give different clusters."""
         a = self._check_adata(adata)
         key_added = self.get_param("region_key", key_added)
+        flavor = self.get_param("region_leiden_flavor", flavor)
         df_abund = df_abund if df_abund is not None else self.calc_df_abundance(a)
         a.obsm["_abund"] = df_abund.loc[a.obs_names].values
         seed = self.params["seed"]
         sc.pp.neighbors(a, use_rep="_abund", n_neighbors=self.get_param("region_n_neighbors", n_neighbors),
                         key_added="abund", random_state=seed)
-        sc.tl.leiden(a, resolution=self.get_param("region_resolution", resolution), neighbors_key="abund",
-                     key_added=key_added, random_state=seed, flavor="igraph", n_iterations=2, directed=False)
+        resolution = self.get_param("region_resolution", resolution)
+        if flavor == "igraph":
+            sc.tl.leiden(a, resolution=resolution, neighbors_key="abund", key_added=key_added, random_state=seed,
+                         flavor="igraph", n_iterations=2, directed=False)
+        else:
+            sc.tl.leiden(a, resolution=resolution, neighbors_key="abund", key_added=key_added, random_state=seed,
+                         flavor="leidenalg")
+        a.obs[key_added] = a.obs[key_added].astype("category")
         return a.obs[key_added]
+
+    def umap_regions(self, adata=None, min_dist: Optional[float] = None, spread: Optional[float] = None,
+                     neighbors_key: str = "abund") -> np.ndarray:
+        """UMAP of the spots on the abundance kNN graph built by cluster_regions (obsm['X_umap'])."""
+        a = self._check_adata(adata)
+        sc.tl.umap(a, min_dist=self.get_param("region_umap_min_dist", min_dist),
+                   spread=self.get_param("region_umap_spread", spread), neighbors_key=neighbors_key,
+                   random_state=self.params["seed"])
+        return a.obsm["X_umap"]
 
     def region_names(self, adata=None, key: Optional[str] = None, df_abund: Optional[pd.DataFrame] = None,
                      top_n: Optional[int] = None, method: Optional[str] = None,
@@ -853,6 +953,245 @@ class SingleCell(object):
                 top += [c for c in by_ratio if c not in top][:top_n - len(top)]
             names[str(cl)] = " / ".join(top)
         return names
+
+    # =====================================================================================================
+    # 7b. cell2location model objects: cache-or-train returning the model (plot_history, plot_QC, samples)
+    # =====================================================================================================
+    def fit_or_load_reference(self, adata_ref: ad.AnnData, run_dir: Path, labels_key: str,
+                              batch_key: Optional[str] = None, categorical_covariate_keys: Optional[List[str]] = None,
+                              max_epochs: Optional[int] = None, accelerator: Optional[str] = None,
+                              fname: str = "sc.h5ad", quantiles: Optional[Sequence[str]] = None,
+                              force: bool = False, verbose: bool = True):
+        """
+        cell2location RegressionModel (NB regression of reference signatures), tutorial workflow.
+
+        setup_anndata -> if run_dir/fname is missing (or force): train, export the posterior (num_samples draws:
+        means/stds/q05/q95 in varm), save model + h5ad; else load the saved model bound to adata_ref.
+        Then the posterior quantiles (params['c2l_quantiles'], use_quantiles=True) are exported to varm if missing,
+        which also sets mod.samples (needed by mod.plot_QC).
+
+        Returns (mod_reg, adata_ref, trained).
+        """
+        from cell2location.models import RegressionModel
+        run_dir = create_dir(run_dir)
+        fn = run_dir / fname
+        accelerator = self.get_param("accelerator", accelerator)
+        quantiles = list(self.get_param("c2l_quantiles", quantiles))
+        RegressionModel.setup_anndata(adata=adata_ref, batch_key=batch_key, labels_key=labels_key,
+                                      categorical_covariate_keys=categorical_covariate_keys)
+        trained = False
+        if force or not fn.exists():
+            mod = RegressionModel(adata_ref)
+            mod.train(max_epochs=self.get_param("ref_max_epochs", max_epochs), accelerator=accelerator)
+            adata_ref = mod.export_posterior(adata_ref, sample_kwargs={"num_samples": self.params["c2l_num_samples"],
+                                                                       "batch_size": self.params["ref_batch_size"],
+                                                                       "accelerator": accelerator})
+            mod.save(str(run_dir), overwrite=True, save_anndata=True)
+            adata_ref.write_h5ad(fn)
+            trained = True
+            if verbose:
+                print(f"RegressionModel trained and saved to {run_dir}")
+        else:
+            mod = RegressionModel.load(str(run_dir), adata_ref, accelerator=accelerator)
+            adata_ref = mod.adata
+            if verbose:
+                print(f"RegressionModel loaded from {run_dir}")
+        if not all(f"{q}_per_cluster_mu_fg" in adata_ref.varm for q in quantiles):
+            adata_ref = mod.export_posterior(adata_ref, use_quantiles=True, add_to_varm=quantiles,
+                                             sample_kwargs={"batch_size": self.params["ref_batch_size"],
+                                                            "accelerator": accelerator})
+            if verbose:
+                print(f"posterior quantiles exported to varm: {quantiles}")
+        return mod, adata_ref, trained
+
+    def fit_or_load_mapping(self, adata_vis: ad.AnnData, df_inf_aver: pd.DataFrame, run_dir: Path,
+                            N_cells_per_location: Optional[float] = None, detection_alpha: Optional[float] = None,
+                            batch_key: Optional[str] = None, max_epochs: Optional[int] = None,
+                            accelerator: Optional[str] = None, fname: str = "sp.h5ad", expected_layers: bool = True,
+                            read_layers: bool = True, force: bool = False, verbose: bool = True):
+        """
+        cell2location spatial mapping, tutorial workflow.
+
+        Cache missing (or force): genes shared with df_inf_aver, setup_anndata(batch_key), Cell2location(N, alpha),
+        train (full data, batch_size=None, train_size=1), export posterior quantiles to obsm, optional
+        expected expression per cell type in layers (compute_expected_per_cell_type), save model + h5ad.
+        Cache present: read run_dir/fname (read_layers=False skips the dense per-cell-type layers), load the
+        saved model and re-create mod.samples (ensure_posterior_samples).
+        In both cases the q05 abundances are copied to obs (one column per cell type).
+
+        Returns (mod_c2l, adata_vis, trained).
+        """
+        import cell2location
+        run_dir = create_dir(run_dir)
+        fn = run_dir / fname
+        accelerator = self.get_param("accelerator", accelerator)
+        batch_key = batch_key or self.sample_col
+        quantiles = list(self.params["c2l_quantiles"])
+        trained = False
+        if fn.exists() and not force:
+            adata_vis = ad.read_h5ad(fn) if read_layers else self.read_h5ad_slots(fname, root=run_dir)
+            mod = cell2location.models.Cell2location.load(str(run_dir), adata_vis, accelerator=accelerator)
+            adata_vis = self.ensure_posterior_samples(mod, adata_vis, quantiles=quantiles, accelerator=accelerator)
+            if verbose:
+                print(f"Cell2location map read from {fn}; model loaded; posterior samples: {sorted(mod.samples)}")
+        else:
+            genes = np.intersect1d(adata_vis.var_names, df_inf_aver.index)
+            adata_vis = adata_vis[:, genes].copy()
+            df_inf = df_inf_aver.loc[genes, :].copy()
+            cell2location.models.Cell2location.setup_anndata(adata=adata_vis, batch_key=batch_key)
+            mod = cell2location.models.Cell2location(
+                adata_vis, cell_state_df=df_inf,
+                N_cells_per_location=self.get_param("c2l_N_cells_per_location", N_cells_per_location),
+                detection_alpha=self.get_param("c2l_detection_alpha", detection_alpha))
+            mod.train(max_epochs=self.get_param("c2l_max_epochs", max_epochs), batch_size=None, train_size=1,
+                      accelerator=accelerator)
+            adata_vis = mod.export_posterior(adata_vis, use_quantiles=True, add_to_obsm=quantiles,
+                                             sample_kwargs={"batch_size": mod.adata.n_obs, "accelerator": accelerator})
+            if expected_layers:
+                self.add_expected_layers(mod, adata_vis)
+            mod.save(str(run_dir), overwrite=True)
+            self.abundance_to_obs(adata_vis)
+            adata_vis.write_h5ad(fn)
+            trained = True
+            if verbose:
+                print(f"Cell2location trained ({len(genes):,} genes); model and map saved to {run_dir}")
+        self.abundance_to_obs(adata_vis)
+        return mod, adata_vis, trained
+
+    def add_expected_layers(self, mod, adata, quantile: Optional[str] = None) -> List[str]:
+        """Expected expression of every gene per cell type (RCTD-like) -> adata.layers[<cell type>]."""
+        quantile = self.get_param("c2l_expected_quantile", quantile)
+        expected = mod.module.model.compute_expected_per_cell_type(mod.samples[f"post_sample_{quantile}"],
+                                                                   mod.adata_manager)
+        for i, n in enumerate(mod.factor_names_):
+            adata.layers[n] = expected["mu"][i]
+        return list(mod.factor_names_)
+
+    def abundance_to_obs(self, adata=None, obsm_key: Optional[str] = None) -> List[str]:
+        """Copy the abundance table (default q05, 'at least this many cells') to obs, one column per cell type."""
+        a = self._check_adata(adata)
+        df_abund = self.calc_df_abundance(a, obsm_key)
+        for c in df_abund.columns:
+            a.obs[c] = df_abund[c].values
+        return list(df_abund.columns)
+
+    def plot_c2l_history(self, mod, iter_start: int = 0, label: Optional[str] = None, figsize=(5, 3.5),
+                         fname: Optional[str] = None):
+        """ELBO loss history (mod.plot_history) on a new figure, first iter_start epochs omitted."""
+        fig, ax = plt.subplots(figsize=figsize)
+        mod.plot_history(iter_start, ax=ax)
+        if label:
+            ax.legend(labels=[label])
+        self._savefig(fig, fname)
+        return fig
+
+    def plot_c2l_qc(self, mod, summary_name: str = "q50", figsize=(3, 3), use_n_obs: int = 1000,
+                    fname: Optional[str] = None) -> list:
+        """mod.plot_QC(summary_name) with every figure kept (cell2location calls plt.show() internally).
+        fname='x.png' saves x_1.png, x_2.png, ... Returns the figures."""
+        figs = []
+        show = plt.show
+
+        def _show(*a, **k):
+            figs.append(plt.gcf())
+            show(*a, **k)
+
+        plt.show = _show
+        try:
+            with plt.rc_context({"figure.figsize": figsize}):
+                mod.plot_QC(summary_name=summary_name, use_n_obs=use_n_obs)
+        finally:
+            plt.show = show
+        if not figs:
+            figs = [plt.gcf()]
+        if fname:
+            for i, f in enumerate(figs):
+                self._savefig(f, fname.replace(".png", f"_{i + 1}.png"))
+        return figs
+
+    def posterior_samples_cached(self, mod, adata, run_dir: Path, fname: str = "posterior_samples_w_sf.npz",
+                                 sites: Optional[Sequence[str]] = None, num_samples: Optional[int] = None,
+                                 batch_size: Optional[int] = None, accelerator: Optional[str] = None,
+                                 verbose: bool = True) -> Dict[str, np.ndarray]:
+        """Posterior draws of selected sites (default w_sf, m_g, z_sr_groups_factors), cached in an npz with
+        obs/factor/var names (the cache is checked against adata.obs_names). Returns {site: array}."""
+        import scvi
+        filename = Path(run_dir) / fname
+        sites = list(self.get_param("c2l_posterior_sites", sites))
+        meta = {"obs_names", "factor_names", "var_names"}
+        if filename.exists():
+            with np.load(filename, allow_pickle=False) as z:
+                if len(z["obs_names"]) != adata.n_obs or not (z["obs_names"] == np.asarray(adata.obs_names, dtype=str)).all():
+                    raise ValueError(f"{filename}: obs_names differ from adata")
+                ps = {k: z[k] for k in z.files if k not in meta}
+            if verbose:
+                print(f"posterior samples loaded from {filename}: {sorted(ps)}")
+            return ps
+        scvi.settings.seed = self.params["seed"]
+        out = mod.sample_posterior(num_samples=self.get_param("c2l_num_samples", num_samples),
+                                   accelerator=self.get_param("accelerator", accelerator), return_samples=True,
+                                   batch_size=batch_size or adata.n_obs, return_sites=sites)
+        ps = {k: np.asarray(out["posterior_samples"][k], dtype=np.float32) for k in sites}
+        np.savez(filename, **ps, obs_names=np.asarray(adata.obs_names, dtype=str),
+                 factor_names=np.asarray(mod.factor_names_, dtype=str), var_names=np.asarray(adata.var_names, dtype=str))
+        if verbose:
+            print(f"posterior samples saved to {filename}")
+        return ps
+
+    def plot_posterior_median_vs_mean(self, mod, ps: Optional[Dict[str, np.ndarray]] = None, site: str = "w_sf",
+                                      accelerator: Optional[str] = None, figsize=(4, 4), fname: Optional[str] = None):
+        """Posterior median (mod.posterior_quantile q=0.5) vs posterior mean of one site (from mod.samples
+        'post_sample_means' when present, otherwise the mean of the draws in ps)."""
+        medians = mod.posterior_quantile(q=0.5, batch_size=mod.adata.n_obs,
+                                         accelerator=self.get_param("accelerator", accelerator))
+        if "post_sample_means" in getattr(mod, "samples", {}):
+            means = np.asarray(mod.samples["post_sample_means"][site])
+        elif ps is not None:
+            means = ps[site].mean(0)
+        else:
+            raise ValueError("no posterior means: pass ps from posterior_samples_cached")
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.scatter(np.asarray(medians[site]).ravel(), np.asarray(means).ravel(), s=12, color="steelblue",
+                   edgecolors="black", linewidths=0.3, alpha=0.8, rasterized=True)
+        ax.set_xlabel("posterior median"); ax.set_ylabel("posterior mean")
+        ax.set_title(f"{site}: median vs mean", loc="left")
+        self._savefig(fig, fname)
+        return fig
+
+    def run_colocation_cached(self, adata_vis: ad.AnnData, run_dir: Path, n_facts: Optional[Sequence[int]] = None,
+                              n_restarts: Optional[int] = None, alpha: Optional[float] = None,
+                              force: bool = False, verbose: bool = True) -> Tuple[ad.AnnData, Optional[dict], bool]:
+        """NMF of the cell abundances (cell2location.run_colocation, CoLocatedGroupsSklearnNMF) for each number of
+        factors; skipped when adata.uns already holds every 'mod_coloc_n_fact<n>'.
+        Returns (adata_vis, res_dict or None when cached, edited)."""
+        n_facts = list(self.get_param("coloc_n_facts", n_facts))
+        keys = [f"mod_coloc_n_fact{n}" for n in n_facts]
+        if all(k in adata_vis.uns for k in keys) and not force:
+            if verbose:
+                print(f"NMF co-location already in adata.uns: {keys}")
+            return adata_vis, None, False
+        from cell2location import run_colocation
+        res_dict, adata_vis = run_colocation(
+            adata_vis, model_name="CoLocatedGroupsSklearnNMF",
+            train_args={"n_fact": np.asarray(n_facts), "sample_name_col": self.sample_col,
+                        "n_restarts": self.get_param("coloc_n_restarts", n_restarts)},
+            model_kwargs={"alpha": self.get_param("coloc_alpha", alpha), "init": "random",
+                          "nmf_kwd_args": {"tol": 1e-6}},
+            export_args={"path": f"{run_dir}/CoLocatedComb/"})
+        return adata_vis, res_dict, True
+
+    @staticmethod
+    def calc_df_coloc_loadings(adata, n_fact: int, normalize: bool = True) -> pd.DataFrame:
+        """NMF cell-type loadings (cell types x factors) from adata.uns['mod_coloc_n_fact<n>'];
+        normalize=True: each cell type's weights divided by their sum (relative weight across factors,
+        as in plot_cell_type_loadings)."""
+        d = adata.uns[f"mod_coloc_n_fact{n_fact}"]
+        W = np.asarray(d["post_sample_means"]["cell_type_factors"], dtype=float)
+        df_load = pd.DataFrame(W, index=[str(x) for x in d["var_names"]], columns=[str(x) for x in d["fact_names"]])
+        df_load.index = [i.replace("mean_cell_type_factors", "") for i in df_load.index]
+        if normalize:
+            df_load = df_load.div(df_load.sum(1).replace(0, np.nan), axis=0).fillna(0)
+        return df_load
 
     # =====================================================================================================
     # 8. Plots
@@ -992,6 +1331,19 @@ class SingleCell(object):
                            fontsize=10, title_fontsize=11, frameon=False, borderaxespad=0)
         if fname is None:
             fname = "spatial_" + "_".join(str(c).replace("+", "pos").replace("/", "-") for c in clust_labels) + ".png"
+        self._savefig(fig, fname)
+        return fig
+
+    def plot_spatial_features(self, slide, features: Sequence[str], ncols: int = 4, figsize=(4.5, 5),
+                              q: Optional[float] = None, cmap=None, fname: Optional[str] = None):
+        """sc.pl.spatial of several obs features (e.g. cell-type abundances) on a black background, colour scale
+        clipped at the q-th percentile of each feature (cell2location tutorial style)."""
+        q = self.get_param("clip_quantile", q)
+        with mpl.rc_context({"axes.facecolor": "black", "figure.figsize": list(figsize)}):
+            sc.pl.spatial(slide, cmap=cmap or cmap_byr, color=list(features), ncols=ncols,
+                          size=self.params["spot_size"], img_key=self.params["img_key"], vmin=0, vmax=f"p{q:g}",
+                          show=False)
+            fig = plt.gcf()
         self._savefig(fig, fname)
         return fig
 

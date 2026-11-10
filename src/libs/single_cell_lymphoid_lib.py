@@ -5,23 +5,30 @@ single_cell_lymphoid_lib.py - SingleCellLymphoid(SingleCell): human lymph node V
 (Kleshchevnikov et al., Fig 4; lymphoid_organ_sc.h5ad, 73,260 cells; V1_Human_Lymph_Node).
 
 Methods ported from libs/cell2location_lib.py (that file is kept unchanged for ccc01/ccc02):
+    data                  : read_visium, reindex_reference_var, symbol_index, calc_df_sample_stats
     tissue x age groups   : age_group, add_tissue_age_group, panel_lognorm, calc_df_gene_age_tissue_groups,
-                            plot_panel_umap_by_tissue_age
-    B-cell figures        : lineage_colors, umap_cell_type_plot, spatial_plot_cell_types, spatial_plot_cell_abundance,
-                            dotplot_markers, donor_consistency
+                            plot_panel_umap_by_tissue_age, calc_df_tissue_age_expr,
+                            calc_df_panel_celltype_age, plot_dotplot_celltype_age
+    B-cell subsets        : prepare_subset_markers, calc_df_group_pct_mean, calc_df_subset_markers,
+                            print_subset_markers, calc_df_best_vs_next, donor_consistency, calc_gene_by_subset_tissue
+    B-cell figures        : lineage_colors, lineage_order, umap_cell_type_plot, spatial_plot_cell_types,
+                            spatial_plot_cell_abundance, dotplot_markers
+    NMF factors           : plot_factor_dotplot (cell types grouped by lineage x NMF factors)
     ISG hotspot           : spot_expr, isg_hotspot, run_isg_hotspot
 
-Parameters added to DEFAULT_PARAMS: LYMPHOID_PARAMS (age bins, tissue order, ISG cutoffs, donor cutoff, ...).
+Parameters added to DEFAULT_PARAMS: LYMPHOID_PARAMS (age bins, tissue order, model settings, marker cutoffs,
+ISG cutoffs, ...). LYMPHOID_LINEAGE: the 34 reference cell types (Subset) grouped by lineage.
 Every DataFrame variable starts with 'df_'.
 
 @created on 2026/11/05
+@updated on 2026/11/10  (mccc04 / mccc05 lymphoid notebooks)
 @author: Flavio Lichtenstein
 """
 
 import math
 import warnings
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -36,15 +43,54 @@ import matplotlib.patheffects as pe
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.lines import Line2D
 
+import anndata as ad
 import scanpy as sc
 
 from libs.Basic import pdwritecsv
 from libs.single_cell_lib import DEFAULT_PARAMS, SingleCell, cmap_byr
 from libs.matplotlib_figure_style import apply_figure_style
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
+
+# the 34 reference cell types (obs['Subset']) grouped by lineage: row order of the lineage plots
+LYMPHOID_LINEAGE: Dict[str, List[str]] = {
+    "GC B":        ["B_GC_DZ", "B_GC_LZ", "B_GC_prePB", "B_Cycling", "B_preGC"],
+    "naive/mem B": ["B_naive", "B_activated", "B_IFN", "B_mem"],
+    "plasma":      ["B_plasma"],
+    "T":           ["T_CD4+_naive", "T_CD4+", "T_CD4+_TfH", "T_CD4+_TfH_GC", "T_TfR", "T_Treg", "T_TIM3+",
+                    "T_CD8+_naive", "T_CD8+_cytotoxic", "T_CD8+_CD161+"],
+    "NK/ILC":      ["NK", "NKT", "ILC"],
+    "myeloid":     ["Monocytes", "Macrophages_M1", "Macrophages_M2", "DC_cDC1", "DC_cDC2", "DC_pDC", "DC_CCR7+", "Mast"],
+    "stromal":     ["FDC", "Endo", "VSMC"],
+}
 
 LYMPHOID_PARAMS: Dict[str, Any] = dict(
+    # --- reference / Visium layout
+    ref_id_col="GeneID-2",             # var column with Ensembl IDs in lymphoid_organ_sc.h5ad
+    ref_labels_key="Subset",           # RegressionModel labels
+    ref_batch_key="Sample",            # RegressionModel batch
+    ref_covariate_keys=("Method",),    # 3' vs 5' chemistry
+    # --- cell2location mapping (tutorial: N=30, alpha=20, 25000 epochs) and regions (kNN 15, leidenalg 1.1)
+    c2l_N_cells_per_location=30,
+    c2l_max_epochs=25000,
+    region_n_neighbors=15,
+    region_resolution=1.1,
+    region_leiden_flavor="leidenalg",
+    region_top_n=3,
+    # --- tissue x age within one tissue (mLN)
+    age_tissue="mLN",
+    panel_min_cells=20,                # (cell type, age group) shown when it has >= this many cells
+    # --- B-cell subset markers (within-B comparison)
+    bcell_types=("B_GC_DZ", "B_GC_LZ", "B_GC_prePB", "B_Cycling", "B_preGC",
+                 "B_naive", "B_activated", "B_IFN", "B_mem", "B_plasma"),
+    gc_types=("B_GC_DZ", "B_GC_LZ", "B_GC_prePB", "B_Cycling"),
+    marker_min_gene_frac=0.01,         # genes detected in >= 1% of the subset's cells are tested
+    marker_padj=0.05,
+    marker_min_pct_in=0.30,
+    unique_max_pct_other=0.25, unique_min_log2fc=1.0,     # 'unique'
+    shared_max_pct_other=0.50, shared_min_log2fc=0.58,    # 'enriched (shared)'
+    marker_eps=0.05,                   # CP10k pseudocount of log2fc_vs_next
+    # --- plotting
     age_order=("babies", "young", "adult", "old adult", "elder"),
     tissue_order=("Tonsil", "Spleen", "iLN", "tLN", "mLN"),
     age_bins=(5, 14, 34, 55),          # lower bound of Age bin: <5 babies, <14 young, <34 adult, <55 old adult, else elder
@@ -55,7 +101,7 @@ LYMPHOID_PARAMS: Dict[str, Any] = dict(
     libsize_col="n_counts",
     lineage_cmaps={"GC B": "Reds", "naive/mem B": "Blues", "plasma": "Purples", "T": "Greens",
                    "NK/ILC": "GnBu", "myeloid": "Oranges", "stromal": "Greys"},
-    gene_labels={"MS4A1": "MS4A1 (CD20)", "CR2": "CR2 (CD21)"},
+    gene_labels={"MS4A1": "MS4A1 (CD20)", "CR2": "CR2 (CD21)", "FCER2": "FCER2 (CD23)", "HIST1H3B": "HIST1H3B (H3C2)"},
     panel_n_bg=20000,                  # grey background cells in UMAP grids
     panel_cmap_num=3,                  # 1 RdBu_r, 2 blue-yellow-red, 3 grey -> dark red
     donor_min_cells=20,
@@ -77,6 +123,60 @@ class SingleCellLymphoid(SingleCell):
     def __init__(self, ROOT0, project: str = "lymphoid_tissue", symbol_col: str = "symbol",
                  sample_col: str = "sample", mt_prefix: str = "MT-", **kw):
         super().__init__(ROOT0, project, symbol_col=symbol_col, sample_col=sample_col, mt_prefix=mt_prefix, **kw)
+
+    # =====================================================================================================
+    # data: Visium section, reference re-indexing, symbol index, sample table
+    # =====================================================================================================
+    def read_visium(self, root_raw: Path, sample_id: str, count_file: str = "filtered_feature_bc_matrix.h5",
+                    set_self: bool = False, verbose: bool = False) -> ad.AnnData:
+        """One Space Ranger output (root_raw/sample_id/: count_file + spatial/), as sc.datasets.visium_sge reads it:
+        obs_names = barcodes, obs[sample_col] = sample_id, var_names = Ensembl IDs, symbols in var[symbol_col]
+        (Ensembl IDs give a correct match with the reference; symbols may be duplicated)."""
+        path = Path(root_raw) / sample_id
+        a = sc.read_visium(path, count_file=count_file, library_id=sample_id)
+        a.obs[self.sample_col] = sample_id
+        if self.symbol_col not in a.var.columns:
+            a.var.reset_index(inplace=True, names=self.symbol_col)
+        if "gene_ids" in a.var.columns:
+            a.var.set_index("gene_ids", inplace=True)
+        if set_self:
+            self.adata = a
+        if verbose:
+            print(f"Reading {path}: {a.n_obs:,} spots x {a.n_vars:,} genes")
+        return a
+
+    def reindex_reference_var(self, adata=None, id_col: Optional[str] = None, drop_raw: bool = True) -> ad.AnnData:
+        """Reference var: symbols (index) -> var[symbol_col]; index <- var[id_col] (Ensembl IDs, 'GeneID-2').
+        Idempotent (skipped when var[symbol_col] exists). Deletes .raw (not used by cell2location)."""
+        a = self._check_adata(adata)
+        id_col = self.get_param("ref_id_col", id_col)
+        if self.symbol_col not in a.var.columns:
+            a.var[self.symbol_col] = a.var.index.astype(str)
+            a.var.set_index(id_col, drop=True, inplace=True)
+            cols = list(a.var.columns)
+            a.var = a.var[[self.symbol_col] + [c for c in cols if c != self.symbol_col]]
+        if drop_raw and a.raw is not None:
+            del a.raw
+        return a
+
+    def symbol_index(self, adata) -> ad.AnnData:
+        """Copy with var_names = gene symbols (made unique), the Ensembl ID kept in var['gene_id']."""
+        a = adata.copy()
+        if self.symbol_col in a.var.columns:
+            a.var["gene_id"] = a.var_names.astype(str)
+            a.var_names = a.var[self.symbol_col].astype(str).values
+            a.var_names_make_unique()
+        return a
+
+    def calc_df_sample_stats(self, adata=None, by: Sequence[str] = ("Sex", "Tissue", "age_group", "Age", "Sample"),
+                             col: Optional[str] = None) -> pd.DataFrame:
+        """describe() of obs[col] (default library size) per sample, grouped by sex, tissue, age group, age."""
+        a = self._check_adata(adata)
+        if "age_group" in by and "age_group" not in a.obs:
+            self.add_tissue_age_group(a)
+        col = self.get_param("libsize_col", col)
+        df_stats = a.obs.groupby(list(by), observed=True)[col].describe().round(2)
+        return df_stats
 
     # =====================================================================================================
     # tissue x age groups
@@ -332,6 +432,9 @@ class SingleCellLymphoid(SingleCell):
         for ax in fig.axes:
             for t in ax.get_xticklabels():
                 t.set_style("italic")
+        n_groups = adata_sub.obs[groupby].nunique()
+        fig.suptitle(f"Markers separating the {n_groups} subsets (within-subset comparison; {adata_sub.n_obs:,} cells)",
+                     ha="left", fontsize=8, x=0.02, y=1.06)
         self._savefig(fig, fname, dpi=200)
         return dp
 
@@ -461,3 +564,377 @@ class SingleCellLymphoid(SingleCell):
         if fname_tsv:
             pdwritecsv(df_hot.round(4), fname_tsv, self.root_result)
         return df_hot
+
+    # =====================================================================================================
+    # lineage helpers
+    # =====================================================================================================
+    @staticmethod
+    def lineage_order(lineage: Dict[str, Sequence[str]]) -> List[str]:
+        """Cell types in lineage order (rows of the lineage plots)."""
+        return [c for v in lineage.values() for c in v]
+
+    @staticmethod
+    def lineage_of(lineage: Dict[str, Sequence[str]]) -> Dict[str, str]:
+        """cell type -> lineage name."""
+        return {c: k for k, v in lineage.items() for c in v}
+
+    # =====================================================================================================
+    # tissue x age within one tissue (mLN: the only tissue with several age groups)
+    # =====================================================================================================
+    def calc_df_tissue_age_expr(self, genes: Sequence[str], tissue: Optional[str] = None, adata=None,
+                                order: Optional[Sequence[str]] = None
+                                ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """Cells of one tissue: log1p(CP10k) of the panel genes (library size = row sums of X, i.e.
+        sc.pp.normalize_total) and the mean / fraction > 0 per age group.
+        Returns (df_mean, df_frac, df_cells: cells x genes + 'age_group')."""
+        a = self._check_adata(adata)
+        tissue = self.get_param("age_tissue", tissue)
+        m = (a.obs[self.params["tissue_col"]] == tissue).values
+        sub = a[m]
+        found, ids = self.resolve_gene_ids(genes, sub)
+        X = sub[:, ids].X
+        X = X.toarray() if sp.issparse(X) else np.asarray(X)
+        tot = np.asarray(sub.X.sum(1)).ravel()
+        E = np.log1p(X / np.maximum(tot, 1)[:, None] * self.params["target_sum"])
+        df_cells = pd.DataFrame(E, columns=found, index=sub.obs_names)
+        df_cells["age_group"] = sub.obs[self.params["age_col"]].map(self.age_group).values
+        present = set(df_cells.age_group)
+        order = list(order or [g for g in self.params["age_order"] if g in present])
+        df_mean = df_cells.groupby("age_group")[found].mean().reindex(order).round(3)
+        df_frac = (df_cells[found] > 0).groupby(df_cells["age_group"]).mean().reindex(order).round(3)
+        return df_mean, df_frac, df_cells
+
+    def calc_df_panel_celltype_age(self, genes: Sequence[str], tissue: Optional[str] = None, adata=None,
+                                   min_cells: Optional[int] = None, fname: Optional[str] = None
+                                   ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """One tissue: per cell type x age group x gene: n_cells, n_donors, pct_expr, mean_log1p_cp10k
+        (panel_lognorm, library size obs['n_counts']).
+        Returns (df_long: all pairs, df_plot: cell types with >= min_cells in >= 2 age groups and pairs with
+        >= min_cells, df_age: cells and donors per age group). fname -> df_long saved in root_result."""
+        a = self._check_adata(adata)
+        tissue = self.get_param("age_tissue", tissue)
+        min_cells = self.get_param("panel_min_cells", min_cells)
+        ct_col, dcol = self.params["celltype_col"], self.params["donor_col"]
+        sub = a[(a.obs[self.params["tissue_col"]] == tissue).values]
+        sub = sub.to_memory() if sub.isbacked else sub
+        found, X, E = self.panel_lognorm(genes, sub)
+        obs = sub.obs[[ct_col, dcol]].astype(str).copy()
+        obs["age_group"] = sub.obs[self.params["age_col"]].map(self.age_group).values
+        present = set(obs.age_group)
+        age_order = [g for g in self.params["age_order"] if g in present]
+        rows = []
+        for (ct, ag), idx in obs.groupby([ct_col, "age_group"]).indices.items():
+            n_don = obs[dcol].iloc[idx].nunique()
+            for j, g in enumerate(found):
+                rows.append(dict(cell_type=ct, age_group=ag, gene=g, n_cells=len(idx), n_donors=n_don,
+                                 pct_expr=100 * (X[idx, j] > 0).mean(), mean_log1p_cp10k=E[idx, j].mean()))
+        df_long = pd.DataFrame(rows)
+        df_long["age_group"] = pd.Categorical(df_long.age_group, categories=age_order, ordered=True)
+        ok = (df_long.drop_duplicates(["cell_type", "age_group"]).query("n_cells >= @min_cells")
+              .groupby("cell_type").size())
+        keep_ct = ok[ok >= 2].index
+        df_plot = df_long[df_long.cell_type.isin(keep_ct) & (df_long.n_cells >= min_cells)].copy()
+        df_age = pd.DataFrame({"n_cells": obs.age_group.value_counts().reindex(age_order),
+                               "n_donors": obs.groupby("age_group")[dcol].nunique().reindex(age_order)})
+        df_age.attrs["tissue"] = tissue
+        if fname:
+            pdwritecsv(df_long.round(4), fname, self.root_result)
+        return df_long, df_plot, df_age
+
+    def plot_dotplot_celltype_age(self, df_plot: pd.DataFrame, lineage: Optional[Dict[str, Sequence[str]]] = None,
+                                  df_age: Optional[pd.DataFrame] = None, cmaps: Optional[Dict[str, str]] = None,
+                                  cmap: str = "Reds", fname: Optional[str] = None, 
+                                  fontsize_ticks:int=11, fontsize_title:int=14, fontsize_text:int=12,
+                                  fontsize_bar:int=10, fontsize_perc_cells:int=10,
+                                  fontsize_lineage:int=10, figsize: tuple = (12, 9)):
+        """
+        Dot plot: rows = cell types in lineage order (labels coloured by lineage), column blocks = genes,
+        columns inside a block = age groups. Size = % cells > 0; colour = mean log1p(CP10k) / max per gene.
+        """
+
+        lineage = lineage or LYMPHOID_LINEAGE
+        col = self.lineage_colors(lineage, cmaps)
+        lin_of = self.lineage_of(lineage)
+        genes = list(dict.fromkeys(df_plot.gene))
+        age_order = list(df_plot.age_group.cat.categories) if hasattr(df_plot.age_group, "cat") \
+            else list(dict.fromkeys(df_plot.age_group))
+        ct_order = [c for c in self.lineage_order(lineage) if c in set(df_plot.cell_type)]
+        na = len(age_order)
+        fig, ax = plt.subplots(figsize=figsize)
+        for gi, g in enumerate(genes):
+            d = df_plot[df_plot.gene == g]
+            vmax = max(d.mean_log1p_cp10k.max(), 1e-6)                    # one colour scale per gene
+            for ai, ag in enumerate(age_order):
+                s_ = d[d.age_group == ag]
+                x = gi * (na + 1) + ai
+                y = [ct_order.index(c) for c in s_.cell_type]
+                ax.scatter(np.full(len(y), x), y, s=4 + 1.6 * s_.pct_expr, c=s_.mean_log1p_cp10k / vmax,
+                           cmap=cmap, vmin=0, vmax=1, edgecolor="0.4", linewidth=0.3)
+            ax.text(gi * (na + 1) + (na - 1) / 2, -1.3, g, ha="center", va="bottom", fontweight="bold", style="italic", fontsize=fontsize_text)
+        xt = [gi * (na + 1) + ai for gi in range(len(genes)) for ai in range(na)]
+
+        # Change the font size of the labels
+        ax.tick_params(labelsize=fontsize_ticks) 
+        # ax.tick_params(axis='x', labelsize=fontsize_ticks) 
+        # ax.tick_params(axis='y', labelsize=fontsize_ticks) 
+
+        ax.set_xticks(xt)
+        ax.set_xticklabels([a_ for _ in genes for a_ in age_order], rotation=90)
+        ax.set_yticks(range(len(ct_order)))
+        ax.set_yticklabels(ct_order)
+        for t, c in zip(ax.get_yticklabels(), ct_order):
+            t.set_color(col.get(c, "black"))
+        prev = None                                                         # lineage separators
+        for i, c in enumerate(ct_order):
+            if prev is not None and lin_of.get(c) != prev:
+                ax.axhline(i - 0.5, color="0.85", lw=0.8)
+            prev = lin_of.get(c)
+        ax.set_ylim(len(ct_order) - 0.5, -1.6)
+        ax.set_xlim(-0.8, xt[-1] + 0.8)
+        for gi in range(1, len(genes)):
+            ax.axvline(gi * (na + 1) - 1, color="0.85", lw=0.8)
+        ax.tick_params(axis="both", length=0)
+        for sp_ in ax.spines.values():
+            sp_.set_visible(False)
+
+        size_h = [Line2D([], [], marker="o", ls="", color="0.6", markeredgecolor="0.4", markersize=np.sqrt(4 + 1.6 * p),
+                         label=f"{p}%") for p in (10, 30, 60, 90)]
+        lin_h = [Line2D([], [], marker="s", ls="", color=plt.get_cmap((cmaps or self.params["lineage_cmaps"])[k])(0.75),
+                        label=k) for k in lineage if any(lin_of.get(c) == k for c in ct_order)]
+        
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(0, 1))
+        cb = fig.colorbar(sm, ax=ax, shrink=0.3, pad=0.02, anchor=(0, 0.95))
+        cb.set_label("mean log1p(CP10k)\n(scaled to max per gene)", fontsize=fontsize_bar) 
+        cb.ax.tick_params(labelsize=fontsize_ticks)
+        leg = ax.legend(handles=size_h, title="% cells > 0", loc="lower left", bbox_to_anchor=(1.01, 0.0), frameon=False, 
+                        title_fontsize=fontsize_perc_cells , fontsize=fontsize_perc_cells)
+        ax.add_artist(leg)
+        ax.legend(handles=lin_h, title="lineage", loc="lower left", bbox_to_anchor=(1.01, 0.32), frameon=False,
+                  title_fontsize=fontsize_lineage,  fontsize=fontsize_lineage)
+        title = "naive / memory / GC panel by cell type (lineage) and age group"
+        if df_age is not None:
+            title = f"{df_age.attrs.get('tissue', '')}: {title}\n" + "   ".join(
+                f"{a_}: {int(r.n_cells):,} cells, {int(r.n_donors)} donor(s)" for a_, r in df_age.iterrows())
+        ax.set_title(title, pad=28, fontsize=fontsize_title)
+        
+        fig.tight_layout()
+
+        self._savefig(fig, fname)
+
+        return fig
+
+    # =====================================================================================================
+    # B-cell subsets: markers that separate one subset from all the other subsets
+    # =====================================================================================================
+    def prepare_subset_markers(self, adata_ref, groups: Optional[Sequence[str]] = None, groupby: Optional[str] = None,
+                               min_gene_frac: Optional[float] = None, method: Optional[str] = None) -> ad.AnnData:
+        """Cells of the given subsets (default params['bcell_types']), symbol var_names, counts in
+        layers['counts'], X = log1p(CP10k), genes detected in >= min_gene_frac of these cells, then
+        one-vs-rest rank_genes_groups (Wilcoxon, pts=True) within the subsets."""
+        groups = list(groups or self.params["bcell_types"])
+        groupby = groupby or self.params["celltype_col"]
+        min_gene_frac = self.get_param("marker_min_gene_frac", min_gene_frac)
+        a = adata_ref[adata_ref.obs[groupby].isin(groups).values]
+        a = self.symbol_index(a.to_memory() if a.isbacked else a)
+        a.obs[groupby] = pd.Categorical(a.obs[groupby].astype(str), categories=groups)
+        a.layers["counts"] = a.X.copy()
+        sc.pp.normalize_total(a, target_sum=self.params["target_sum"])
+        sc.pp.log1p(a)
+        keep = np.asarray((a.layers["counts"] > 0).mean(0)).ravel() >= min_gene_frac
+        a = a[:, keep].copy()
+        sc.tl.rank_genes_groups(a, groupby, method=self.get_param("rank_method", method), pts=True, use_raw=False)
+        return a
+
+    def calc_df_group_pct_mean(self, adata_sub, groups: Optional[Sequence[str]] = None,
+                               groupby: Optional[str] = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """Genes x groups: fraction of cells with counts > 0 (df_pct) and mean CP10k (df_mean, expm1 of X)."""
+        groups = list(groups or self.params["bcell_types"])
+        grp = adata_sub.obs[groupby or self.params["celltype_col"]].astype(str).values
+        Xb = adata_sub.layers["counts"] > 0
+        df_pct = pd.DataFrame({g: np.asarray(Xb[grp == g].mean(0)).ravel() for g in groups}, index=adata_sub.var_names)
+        cols = {}
+        for g in groups:
+            Xg = adata_sub.X[grp == g]
+            Xg = Xg.expm1() if sp.issparse(Xg) else np.expm1(Xg)
+            cols[g] = np.asarray(Xg.mean(0)).ravel()
+        df_mean = pd.DataFrame(cols, index=adata_sub.var_names)
+        return df_pct, df_mean
+
+    def calc_df_subset_markers(self, adata_sub, df_pct: pd.DataFrame, df_mean: pd.DataFrame,
+                               groups: Optional[Sequence[str]] = None, groupby: Optional[str] = None,
+                               fname: Optional[str] = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """Marker tiers for every subset vs the other subsets:
+        unique            : padj < marker_padj, pct_in >= marker_min_pct_in, max % in every other subset <=
+                            unique_max_pct_other, log2FC vs the next-highest subset (mean CP10k) >= unique_min_log2fc;
+        enriched (shared) : same with shared_max_pct_other / shared_min_log2fc (and not unique).
+        Candidates get donors_top = 'k/n' (donor_consistency: donors where the gene is highest in that subset).
+        Returns (df_all: every gene x subset, df_markers: tiered genes sorted by subset, tier, log2fc).
+        fname -> df_markers saved (csv, root_result)."""
+        P = self.params
+        groups = list(groups or P["bcell_types"])
+        groupby = groupby or P["celltype_col"]
+        rgg = adata_sub.uns["rank_genes_groups"]
+        eps = P["marker_eps"]
+        rows = []
+        for g in groups:
+            others = [o for o in groups if o != g]
+            df_w = self.wtab(g, rgg).rename(columns={"lfc": "lfc_vs_rest"})
+            df = pd.DataFrame({"pct_in": df_pct[g], "max_pct_other": df_pct[others].max(1),
+                               "next_pct_type": df_pct[others].idxmax(1), "mean_cp10k": df_mean[g],
+                               "max_mean_other": df_mean[others].max(1), "next_mean_type": df_mean[others].idxmax(1)})
+            df["log2fc_vs_next"] = np.log2((df.mean_cp10k + eps) / (df.max_mean_other + eps))
+            df = df.join(df_w)
+            df["group"] = g
+            rows.append(df.reset_index().rename(columns={"index": "gene"}))
+        df_all = pd.concat(rows, ignore_index=True)
+        base = (df_all.padj < P["marker_padj"]) & (df_all.pct_in >= P["marker_min_pct_in"])
+        strict = base & (df_all.max_pct_other <= P["unique_max_pct_other"]) & (df_all.log2fc_vs_next >= P["unique_min_log2fc"])
+        relax = base & (df_all.max_pct_other <= P["shared_max_pct_other"]) & (df_all.log2fc_vs_next >= P["shared_min_log2fc"]) & ~strict
+        df_all["tier"] = np.where(strict, "unique", np.where(relax, "enriched (shared)", ""))
+        obs = adata_sub.obs
+        donors = obs[P["donor_col"]].astype(str).values
+        grp = obs[groupby].astype(str).values
+        df_cnt = pd.crosstab(donors, grp)
+        for g in groups:
+            if g not in df_cnt.columns:
+                df_cnt[g] = 0
+        cand = df_all[df_all.tier != ""]
+        dc = [self.donor_consistency(adata_sub, r.gene, r.group, groups, donors, grp, adata_sub.X, df_cnt)
+              for r in cand.itertuples()]
+        df_all["donors_top"] = ""
+        df_all.loc[cand.index, "donors_top"] = [f"{a_}/{b_}" for a_, b_ in dc]
+        df_markers = df_all[df_all.tier != ""].copy()
+        df_markers["group"] = pd.Categorical(df_markers.group, groups)
+        df_markers = df_markers.sort_values(["group", "tier", "log2fc_vs_next"], ascending=[True, False, False])
+        df_all.attrs["df_donor_counts"] = df_cnt.reindex(columns=groups)
+        if fname:
+            cols = ["group", "gene", "tier", "pct_in", "max_pct_other", "next_pct_type", "log2fc_vs_next",
+                    "next_mean_type", "lfc_vs_rest", "padj", "donors_top"]
+            pdwritecsv(df_markers[cols].round(3), fname, self.root_result, sep=",")
+        return df_all, df_markers
+
+    @staticmethod
+    def print_subset_markers(df_markers: pd.DataFrame, groups: Sequence[str], n_unique: int = 12, n_enriched: int = 6):
+        """Per subset: U = unique genes 'gene(% in / max % other, log2FC vs next, donors)', E = best shared genes."""
+        for g in groups:
+            df_u = df_markers[(df_markers.group == g) & (df_markers.tier == "unique")].head(n_unique)
+            df_e = df_markers[(df_markers.group == g) & (df_markers.tier != "unique")].head(n_enriched)
+            print(f"\n## {g}\n U:", ", ".join(f"{r.gene}({r.pct_in * 100:.0f}/{r.max_pct_other * 100:.0f}%,"
+                                               f"{r.log2fc_vs_next:.1f},{r.donors_top})" for r in df_u.itertuples()))
+            print(" E:", ", ".join(f"{r.gene}({r.pct_in * 100:.0f}/{r.max_pct_other * 100:.0f}%,"
+                                   f"{r.log2fc_vs_next:.1f} vs {r.next_mean_type})" for r in df_e.itertuples()))
+
+    def calc_df_best_vs_next(self, df_all: pd.DataFrame, group: str, n: int = 8) -> pd.DataFrame:
+        """Best genes of one subset by log2FC vs the next-highest subset (padj and pct_in filters only):
+        for subsets without unique markers."""
+        P = self.params
+        df_best = df_all[(df_all.group == group) & (df_all.padj < P["marker_padj"]) &
+                         (df_all.pct_in >= P["marker_min_pct_in"])]
+        df_best = df_best.sort_values("log2fc_vs_next", ascending=False).head(n)
+        return df_best[["gene", "pct_in", "max_pct_other", "log2fc_vs_next", "next_mean_type", "lfc_vs_rest", "padj"]]
+
+    def calc_gene_by_subset_tissue(self, gene: str, adata=None, groups: Optional[Sequence[str]] = None,
+                                   gc_types: Optional[Sequence[str]] = None, min_gc: int = 20,
+                                   fname_subset: Optional[str] = None, fname_gc: Optional[str] = None
+                                   ) -> Dict[str, Any]:
+        """Detection of one gene (raw counts > 0) in the B subsets by tissue, and within GC B cells per donor,
+        study and chemistry (AICDA study). Returns dict:
+        df_gc_share (GC B cells per tissue), df_subset (% positive and % single-UMI per subset),
+        chem_tonsil_gc (% positive in tonsil GC B by Method), df_subset_tissue, df_gc_donor (>= min_gc GC cells),
+        n_pos, pct_pos_tonsil."""
+        a = self._check_adata(adata)
+        groups = list(groups or self.params["bcell_types"])
+        gc_types = list(gc_types or self.params["gc_types"])
+        x = self.values(gene, a)                                         # raw UMI counts
+        obs = a.obs
+        P = self.params
+        d = pd.DataFrame({"pos": x > 0, "single_UMI": x == 1, "Subset": obs[P["celltype_col"]].astype(str).values,
+                          "Tissue": obs[P["tissue_col"]].astype(str).values, "Donor": obs[P["donor_col"]].astype(str).values,
+                          "Study": obs["Study"].astype(str).values, "Method": obs["Method"].astype(str).values})
+        out = dict(n_pos=int((x > 0).sum()), pct_pos_tonsil=round(100 * float((d.Tissue[x > 0] == "Tonsil").mean()), 1))
+        d = d[d.Subset.isin(groups)].copy()
+        d["GC"] = d.Subset.isin(gc_types)
+        df_gc_share = d.groupby("Tissue").agg(GC_B=("GC", "sum"), B=("GC", "size"))
+        df_gc_share["pct_GC"] = (100 * df_gc_share.GC_B / df_gc_share.B).round(1)
+        out["df_gc_share"] = df_gc_share.sort_values("GC_B", ascending=False)
+        df_sub = d.groupby("Subset").agg(n=("pos", "size"), n_pos=("pos", "sum"), pct=("pos", "mean"))
+        df_sub["pct"] = (100 * df_sub.pct).round(2)
+        df_sub["pct_single_UMI"] = (100 * d[d.pos].groupby("Subset").single_UMI.mean()).round(0)
+        out["df_subset"] = df_sub.reindex(groups)
+        out["chem_tonsil_gc"] = (100 * d[d.GC & (d.Tissue == "Tonsil")].groupby("Method").pos.mean()).round(1).to_dict()
+        df_st = d.groupby(["Subset", "Tissue"]).agg(n_cells=("pos", "size"), pct_pos=("pos", "mean")).reset_index()
+        df_st["pct_pos"] = (100 * df_st.pct_pos).round(2)
+        df_gc = d[d.GC].groupby(["Tissue", "Donor", "Study", "Method"]).agg(n_gc=("pos", "size"),
+                                                                            pct_pos=("pos", "mean")).reset_index()
+        df_gc["pct_pos"] = (100 * df_gc.pct_pos).round(1)
+        if fname_subset:
+            pdwritecsv(df_st, fname_subset, self.root_result, sep=",")
+        if fname_gc:
+            pdwritecsv(df_gc, fname_gc, self.root_result, sep=",")
+        out["df_subset_tissue"] = df_st
+        out["df_gc_donor"] = df_gc[df_gc.n_gc >= min_gc].sort_values(["Tissue", "Donor"])
+        return out
+
+    # =====================================================================================================
+    # NMF co-location factors: cell types grouped by lineage x factors
+    # =====================================================================================================
+    def plot_factor_dotplot(self, adata_vis, n_fact: int, lineage: Optional[Dict[str, Sequence[str]]] = None,
+                            cmaps: Optional[Dict[str, str]] = None, size_max: float = 140, cmap: str = "RdPu",
+                            min_show: float = 0.02, fname: Optional[str] = None, fname_tsv: Optional[str] = None
+                            ) -> Tuple[Any, pd.DataFrame]:
+        """Dot plot of the NMF cell-type loadings (calc_df_coloc_loadings, each cell type's weights summed to 1 over
+        factors): rows = cell types in lineage order (labels coloured by lineage), columns = factors ordered by the
+        row of their top cell type, labelled with their top-2 cell types. Size and colour = relative weight;
+        weights < min_show are not drawn. Returns (fig, df_load in plotting order)."""
+        lineage = lineage or LYMPHOID_LINEAGE
+        df_load = self.calc_df_coloc_loadings(adata_vis, n_fact, normalize=True)
+        rows = [c for c in self.lineage_order(lineage) if c in df_load.index]
+        rows += [c for c in df_load.index if c not in rows]
+        df_load = df_load.loc[rows]
+        top_row = {f: rows.index(df_load[f].idxmax()) for f in df_load.columns}
+        facts = sorted(df_load.columns, key=lambda f: (top_row[f], -df_load[f].max()))
+        df_load = df_load[facts]
+        top2 = {f: " / ".join(df_load[f].sort_values(ascending=False).index[:2]) for f in facts}
+        col = self.lineage_colors(lineage, cmaps)
+        lin_of = self.lineage_of(lineage)
+        nr, nc = df_load.shape
+        fig, ax = plt.subplots(figsize=(0.55 * nc + 4.2, 0.27 * nr + 2.6))
+        yy, xx = np.meshgrid(np.arange(nr), np.arange(nc), indexing="ij")
+        V = df_load.values
+        m = V.ravel() >= min_show
+        sca = ax.scatter(xx.ravel()[m], yy.ravel()[m], s=V.ravel()[m] * size_max, c=V.ravel()[m], cmap=cmap,
+                         vmin=0, vmax=1, edgecolors="0.4", linewidths=0.3)
+        ax.set_xticks(range(nc))
+        ax.set_xticklabels([f"{f.replace('fact_', 'F')}: {top2[f]}" for f in facts], rotation=90, fontsize=7)
+        ax.set_yticks(range(nr))
+        ax.set_yticklabels(rows)
+        for t, c in zip(ax.get_yticklabels(), rows):
+            t.set_color(col.get(c, "black"))
+        prev = None
+        for i, c in enumerate(rows):
+            if prev is not None and lin_of.get(c) != prev:
+                ax.axhline(i - 0.5, color="0.8", lw=0.8)
+            prev = lin_of.get(c)
+        ax.set_xlim(-0.6, nc - 0.4)
+        ax.set_ylim(nr - 0.5, -0.5)
+        ax.tick_params(length=0)
+        cb = fig.colorbar(sca, ax=ax, fraction=0.03, pad=0.02, anchor=(0, 0.9), shrink=0.5)
+        cb.set_label("relative weight of the cell type\n(sum over factors = 1)", fontsize=7)
+        for p in (0.25, 0.5, 1.0):
+            ax.scatter([], [], s=p * size_max, c="0.6", edgecolors="0.4", linewidths=0.3, label=f"{p:g}")
+        ax.legend(title="weight", loc="lower left", bbox_to_anchor=(1.02, 0.0), frameon=False, fontsize=7,
+                  title_fontsize=7, labelspacing=1.1)
+        ax.set_title(f"NMF co-location: {nr} cell types (by lineage) x {nc} factors", loc="left")
+        self._savefig(fig, fname)
+        if fname_tsv:
+            pdwritecsv(df_load.round(4).reset_index(names="cell_type"), fname_tsv, self.root_result)
+        return fig, df_load
+
+    # aliases with the names used in ccc01 / ccc02 (cell2location_lib)
+    def spatial_plot_bcell_types(self, adata_vis, focus, lineage, cmaps=None, ncols: int = 4,
+                                 fname: Optional[str] = "celltype_spatial_maps.png"):
+        return self.spatial_plot_cell_types(adata_vis, focus, lineage, cmaps=cmaps, ncols=ncols, fname=fname)
+
+    def dotplot_bcell_markers(self, adata_sub, markers: Dict[str, Sequence[str]], groupby: Optional[str] = None,
+                              fname: Optional[str] = "bcell_subset_markers_dotplot.png", figsize=(15, 5)):
+        return self.dotplot_markers(adata_sub, markers, groupby=groupby, fname=fname, figsize=figsize)

@@ -1,0 +1,589 @@
+cell_type	age_group	gene	n_cells	n_donors	pct_expr	mean_log1p_cp10k
+B_Cycling	adult	LEF1	4	1	25.0	0.1924
+B_Cycling	adult	CCR7	4	1	25.0	0.2871
+B_Cycling	adult	SELL	4	1	50.0	0.7817
+B_Cycling	adult	TCF7	4	1	25.0	0.2871
+B_Cycling	adult	CD27	4	1	25.0	0.1655
+B_Cycling	adult	CD28	4	1	0.0	0.0
+B_Cycling	adult	AICDA	4	1	25.0	0.1655
+B_Cycling	elder	LEF1	13	3	15.3846	0.2373
+B_Cycling	elder	CCR7	13	3	15.3846	0.1737
+B_Cycling	elder	SELL	13	3	0.0	0.0
+B_Cycling	elder	TCF7	13	3	15.3846	0.2631
+B_Cycling	elder	CD27	13	3	7.6923	0.102
+B_Cycling	elder	CD28	13	3	7.6923	0.1584
+B_Cycling	elder	AICDA	13	3	15.3846	0.1344
+B_Cycling	old adult	LEF1	2	1	0.0	0.0
+B_Cycling	old adult	CCR7	2	1	0.0	0.0
+B_Cycling	old adult	SELL	2	1	0.0	0.0
+B_Cycling	old adult	TCF7	2	1	50.0	0.8303
+B_Cycling	old adult	CD27	2	1	0.0	0.0
+B_Cycling	old adult	CD28	2	1	0.0	0.0
+B_Cycling	old adult	AICDA	2	1	0.0	0.0
+B_GC_DZ	elder	LEF1	10	2	0.0	0.0
+B_GC_DZ	elder	CCR7	10	2	0.0	0.0
+B_GC_DZ	elder	SELL	10	2	40.0	0.8366
+B_GC_DZ	elder	TCF7	10	2	0.0	0.0
+B_GC_DZ	elder	CD27	10	2	20.0	0.3895
+B_GC_DZ	elder	CD28	10	2	0.0	0.0
+B_GC_DZ	elder	AICDA	10	2	0.0	0.0
+B_GC_DZ	old adult	LEF1	1	1	0.0	0.0
+B_GC_DZ	old adult	CCR7	1	1	0.0	0.0
+B_GC_DZ	old adult	SELL	1	1	0.0	0.0
+B_GC_DZ	old adult	TCF7	1	1	0.0	0.0
+B_GC_DZ	old adult	CD27	1	1	100.0	2.36
+B_GC_DZ	old adult	CD28	1	1	0.0	0.0
+B_GC_DZ	old adult	AICDA	1	1	100.0	1.5762
+B_GC_LZ	adult	LEF1	3	1	0.0	0.0
+B_GC_LZ	adult	CCR7	3	1	0.0	0.0
+B_GC_LZ	adult	SELL	3	1	33.3333	0.6036
+B_GC_LZ	adult	TCF7	3	1	0.0	0.0
+B_GC_LZ	adult	CD27	3	1	33.3333	0.2746
+B_GC_LZ	adult	CD28	3	1	0.0	0.0
+B_GC_LZ	adult	AICDA	3	1	0.0	0.0
+B_GC_LZ	elder	LEF1	1	1	0.0	0.0
+B_GC_LZ	elder	CCR7	1	1	0.0	0.0
+B_GC_LZ	elder	SELL	1	1	0.0	0.0
+B_GC_LZ	elder	TCF7	1	1	0.0	0.0
+B_GC_LZ	elder	CD27	1	1	0.0	0.0
+B_GC_LZ	elder	CD28	1	1	0.0	0.0
+B_GC_LZ	elder	AICDA	1	1	0.0	0.0
+B_GC_LZ	old adult	LEF1	1	1	0.0	0.0
+B_GC_LZ	old adult	CCR7	1	1	0.0	0.0
+B_GC_LZ	old adult	SELL	1	1	0.0	0.0
+B_GC_LZ	old adult	TCF7	1	1	100.0	1.2353
+B_GC_LZ	old adult	CD27	1	1	100.0	1.2353
+B_GC_LZ	old adult	CD28	1	1	0.0	0.0
+B_GC_LZ	old adult	AICDA	1	1	0.0	0.0
+B_IFN	adult	LEF1	37	1	2.7027	0.0403
+B_IFN	adult	CCR7	37	1	24.3243	0.3543
+B_IFN	adult	SELL	37	1	62.1622	1.0609
+B_IFN	adult	TCF7	37	1	16.2162	0.1935
+B_IFN	adult	CD27	37	1	43.2432	0.6512
+B_IFN	adult	CD28	37	1	2.7027	0.0297
+B_IFN	adult	AICDA	37	1	0.0	0.0
+B_IFN	elder	LEF1	1	1	0.0	0.0
+B_IFN	elder	CCR7	1	1	0.0	0.0
+B_IFN	elder	SELL	1	1	0.0	0.0
+B_IFN	elder	TCF7	1	1	0.0	0.0
+B_IFN	elder	CD27	1	1	100.0	1.086
+B_IFN	elder	CD28	1	1	0.0	0.0
+B_IFN	elder	AICDA	1	1	0.0	0.0
+B_activated	adult	LEF1	341	1	1.173	0.0154
+B_activated	adult	CCR7	341	1	43.4018	0.6764
+B_activated	adult	SELL	341	1	79.7654	1.529
+B_activated	adult	TCF7	341	1	3.2258	0.0432
+B_activated	adult	CD27	341	1	7.9179	0.103
+B_activated	adult	CD28	341	1	0.2933	0.0021
+B_activated	adult	AICDA	341	1	0.0	0.0
+B_activated	elder	LEF1	205	4	0.4878	0.0094
+B_activated	elder	CCR7	205	4	35.6098	0.6979
+B_activated	elder	SELL	205	4	58.0488	1.1711
+B_activated	elder	TCF7	205	4	6.8293	0.0931
+B_activated	elder	CD27	205	4	6.3415	0.0924
+B_activated	elder	CD28	205	4	0.9756	0.0166
+B_activated	elder	AICDA	205	4	0.0	0.0
+B_activated	old adult	LEF1	31	1	0.0	0.0
+B_activated	old adult	CCR7	31	1	45.1613	0.7918
+B_activated	old adult	SELL	31	1	70.9677	1.3425
+B_activated	old adult	TCF7	31	1	6.4516	0.082
+B_activated	old adult	CD27	31	1	12.9032	0.2163
+B_activated	old adult	CD28	31	1	0.0	0.0
+B_activated	old adult	AICDA	31	1	0.0	0.0
+B_mem	adult	LEF1	1970	1	1.8782	0.024
+B_mem	adult	CCR7	1970	1	30.4061	0.4454
+B_mem	adult	SELL	1970	1	56.0406	0.8828
+B_mem	adult	TCF7	1970	1	13.5533	0.1751
+B_mem	adult	CD27	1970	1	52.9442	0.7898
+B_mem	adult	CD28	1970	1	1.1168	0.0138
+B_mem	adult	AICDA	1970	1	0.3553	0.0044
+B_mem	elder	LEF1	2112	4	0.3314	0.005
+B_mem	elder	CCR7	2112	4	34.517	0.5245
+B_mem	elder	SELL	2112	4	44.697	0.6733
+B_mem	elder	TCF7	2112	4	13.9205	0.1758
+B_mem	elder	CD27	2112	4	60.3693	0.9443
+B_mem	elder	CD28	2112	4	0.2841	0.0042
+B_mem	elder	AICDA	2112	4	0.0947	0.0009
+B_mem	old adult	LEF1	615	1	0.1626	0.0021
+B_mem	old adult	CCR7	615	1	48.4553	0.6831
+B_mem	old adult	SELL	615	1	55.2846	0.7571
+B_mem	old adult	TCF7	615	1	29.2683	0.3477
+B_mem	old adult	CD27	615	1	67.6423	0.961
+B_mem	old adult	CD28	615	1	0.0	0.0
+B_mem	old adult	AICDA	615	1	0.0	0.0
+B_naive	adult	LEF1	419	1	2.3866	0.0311
+B_naive	adult	CCR7	419	1	36.9928	0.6599
+B_naive	adult	SELL	419	1	77.8043	1.5266
+B_naive	adult	TCF7	419	1	6.2053	0.0924
+B_naive	adult	CD27	419	1	13.1265	0.1896
+B_naive	adult	CD28	419	1	1.432	0.0202
+B_naive	adult	AICDA	419	1	0.0	0.0
+B_naive	elder	LEF1	1715	4	0.2332	0.0029
+B_naive	elder	CCR7	1715	4	49.2128	0.8543
+B_naive	elder	SELL	1715	4	64.2566	1.1963
+B_naive	elder	TCF7	1715	4	6.2974	0.0875
+B_naive	elder	CD27	1715	4	4.9563	0.0691
+B_naive	elder	CD28	1715	4	0.1749	0.0023
+B_naive	elder	AICDA	1715	4	0.0	0.0
+B_naive	old adult	LEF1	92	1	0.0	0.0
+B_naive	old adult	CCR7	92	1	55.4348	0.8797
+B_naive	old adult	SELL	92	1	60.8696	0.9962
+B_naive	old adult	TCF7	92	1	10.8696	0.1324
+B_naive	old adult	CD27	92	1	11.9565	0.1563
+B_naive	old adult	CD28	92	1	0.0	0.0
+B_naive	old adult	AICDA	92	1	0.0	0.0
+B_plasma	adult	LEF1	14	1	7.1429	0.0334
+B_plasma	adult	CCR7	14	1	28.5714	0.2022
+B_plasma	adult	SELL	14	1	7.1429	0.0593
+B_plasma	adult	TCF7	14	1	7.1429	0.0335
+B_plasma	adult	CD27	14	1	100.0	1.4089
+B_plasma	adult	CD28	14	1	0.0	0.0
+B_plasma	adult	AICDA	14	1	0.0	0.0
+B_plasma	elder	LEF1	25	3	4.0	0.0723
+B_plasma	elder	CCR7	25	3	8.0	0.0983
+B_plasma	elder	SELL	25	3	20.0	0.1562
+B_plasma	elder	TCF7	25	3	20.0	0.1176
+B_plasma	elder	CD27	25	3	92.0	1.1625
+B_plasma	elder	CD28	25	3	4.0	0.0263
+B_plasma	elder	AICDA	25	3	0.0	0.0
+B_plasma	old adult	LEF1	3	1	0.0	0.0
+B_plasma	old adult	CCR7	3	1	0.0	0.0
+B_plasma	old adult	SELL	3	1	33.3333	0.1415
+B_plasma	old adult	TCF7	3	1	0.0	0.0
+B_plasma	old adult	CD27	3	1	66.6667	1.0876
+B_plasma	old adult	CD28	3	1	0.0	0.0
+B_plasma	old adult	AICDA	3	1	0.0	0.0
+B_preGC	adult	LEF1	10	1	10.0	0.0855
+B_preGC	adult	CCR7	10	1	50.0	0.856
+B_preGC	adult	SELL	10	1	50.0	0.6348
+B_preGC	adult	TCF7	10	1	30.0	0.2749
+B_preGC	adult	CD27	10	1	30.0	0.5064
+B_preGC	adult	CD28	10	1	10.0	0.1467
+B_preGC	adult	AICDA	10	1	0.0	0.0
+B_preGC	elder	LEF1	7	2	0.0	0.0
+B_preGC	elder	CCR7	7	2	14.2857	0.3043
+B_preGC	elder	SELL	7	2	14.2857	0.1162
+B_preGC	elder	TCF7	7	2	0.0	0.0
+B_preGC	elder	CD27	7	2	28.5714	0.3716
+B_preGC	elder	CD28	7	2	0.0	0.0
+B_preGC	elder	AICDA	7	2	0.0	0.0
+DC_CCR7+	adult	LEF1	1	1	0.0	0.0
+DC_CCR7+	adult	CCR7	1	1	100.0	1.7015
+DC_CCR7+	adult	SELL	1	1	0.0	0.0
+DC_CCR7+	adult	TCF7	1	1	0.0	0.0
+DC_CCR7+	adult	CD27	1	1	0.0	0.0
+DC_CCR7+	adult	CD28	1	1	0.0	0.0
+DC_CCR7+	adult	AICDA	1	1	0.0	0.0
+DC_CCR7+	elder	LEF1	14	4	7.1429	0.0424
+DC_CCR7+	elder	CCR7	14	4	85.7143	2.7647
+DC_CCR7+	elder	SELL	14	4	0.0	0.0
+DC_CCR7+	elder	TCF7	14	4	14.2857	0.092
+DC_CCR7+	elder	CD27	14	4	7.1429	0.0589
+DC_CCR7+	elder	CD28	14	4	0.0	0.0
+DC_CCR7+	elder	AICDA	14	4	0.0	0.0
+DC_cDC1	adult	LEF1	3	1	0.0	0.0
+DC_cDC1	adult	CCR7	3	1	0.0	0.0
+DC_cDC1	adult	SELL	3	1	33.3333	0.4933
+DC_cDC1	adult	TCF7	3	1	0.0	0.0
+DC_cDC1	adult	CD27	3	1	0.0	0.0
+DC_cDC1	adult	CD28	3	1	0.0	0.0
+DC_cDC1	adult	AICDA	3	1	0.0	0.0
+DC_cDC1	elder	LEF1	9	3	0.0	0.0
+DC_cDC1	elder	CCR7	9	3	0.0	0.0
+DC_cDC1	elder	SELL	9	3	11.1111	0.1421
+DC_cDC1	elder	TCF7	9	3	0.0	0.0
+DC_cDC1	elder	CD27	9	3	0.0	0.0
+DC_cDC1	elder	CD28	9	3	0.0	0.0
+DC_cDC1	elder	AICDA	9	3	0.0	0.0
+DC_cDC2	adult	LEF1	3	1	33.3333	0.3275
+DC_cDC2	adult	CCR7	3	1	33.3333	0.4895
+DC_cDC2	adult	SELL	3	1	33.3333	0.5553
+DC_cDC2	adult	TCF7	3	1	33.3333	0.4895
+DC_cDC2	adult	CD27	3	1	66.6667	0.5724
+DC_cDC2	adult	CD28	3	1	0.0	0.0
+DC_cDC2	adult	AICDA	3	1	0.0	0.0
+DC_cDC2	elder	LEF1	15	4	6.6667	0.0288
+DC_cDC2	elder	CCR7	15	4	26.6667	0.3134
+DC_cDC2	elder	SELL	15	4	20.0	0.1676
+DC_cDC2	elder	TCF7	15	4	26.6667	0.2461
+DC_cDC2	elder	CD27	15	4	6.6667	0.0742
+DC_cDC2	elder	CD28	15	4	0.0	0.0
+DC_cDC2	elder	AICDA	15	4	0.0	0.0
+DC_cDC2	old adult	LEF1	1	1	0.0	0.0
+DC_cDC2	old adult	CCR7	1	1	0.0	0.0
+DC_cDC2	old adult	SELL	1	1	100.0	0.541
+DC_cDC2	old adult	TCF7	1	1	0.0	0.0
+DC_cDC2	old adult	CD27	1	1	0.0	0.0
+DC_cDC2	old adult	CD28	1	1	0.0	0.0
+DC_cDC2	old adult	AICDA	1	1	0.0	0.0
+DC_pDC	adult	LEF1	6	1	0.0	0.0
+DC_pDC	adult	CCR7	6	1	0.0	0.0
+DC_pDC	adult	SELL	6	1	100.0	2.2424
+DC_pDC	adult	TCF7	6	1	0.0	0.0
+DC_pDC	adult	CD27	6	1	0.0	0.0
+DC_pDC	adult	CD28	6	1	0.0	0.0
+DC_pDC	adult	AICDA	6	1	0.0	0.0
+DC_pDC	elder	LEF1	13	2	0.0	0.0
+DC_pDC	elder	CCR7	13	2	7.6923	0.0744
+DC_pDC	elder	SELL	13	2	69.2308	1.2548
+DC_pDC	elder	TCF7	13	2	0.0	0.0
+DC_pDC	elder	CD27	13	2	0.0	0.0
+DC_pDC	elder	CD28	13	2	0.0	0.0
+DC_pDC	elder	AICDA	13	2	0.0	0.0
+DC_pDC	old adult	LEF1	1	1	0.0	0.0
+DC_pDC	old adult	CCR7	1	1	100.0	0.6145
+DC_pDC	old adult	SELL	1	1	100.0	1.8071
+DC_pDC	old adult	TCF7	1	1	0.0	0.0
+DC_pDC	old adult	CD27	1	1	0.0	0.0
+DC_pDC	old adult	CD28	1	1	0.0	0.0
+DC_pDC	old adult	AICDA	1	1	0.0	0.0
+Endo	adult	LEF1	27	1	11.1111	0.1251
+Endo	adult	CCR7	27	1	3.7037	0.0182
+Endo	adult	SELL	27	1	29.6296	0.2844
+Endo	adult	TCF7	27	1	18.5185	0.2073
+Endo	adult	CD27	27	1	11.1111	0.1158
+Endo	adult	CD28	27	1	3.7037	0.0359
+Endo	adult	AICDA	27	1	0.0	0.0
+Endo	elder	LEF1	150	3	10.0	0.1165
+Endo	elder	CCR7	150	3	0.6667	0.0183
+Endo	elder	SELL	150	3	1.3333	0.0186
+Endo	elder	TCF7	150	3	0.0	0.0
+Endo	elder	CD27	150	3	1.3333	0.0154
+Endo	elder	CD28	150	3	0.0	0.0
+Endo	elder	AICDA	150	3	0.0	0.0
+FDC	elder	LEF1	2	1	0.0	0.0
+FDC	elder	CCR7	2	1	0.0	0.0
+FDC	elder	SELL	2	1	0.0	0.0
+FDC	elder	TCF7	2	1	0.0	0.0
+FDC	elder	CD27	2	1	0.0	0.0
+FDC	elder	CD28	2	1	0.0	0.0
+FDC	elder	AICDA	2	1	0.0	0.0
+ILC	adult	LEF1	52	1	3.8462	0.0575
+ILC	adult	CCR7	52	1	3.8462	0.059
+ILC	adult	SELL	52	1	13.4615	0.1856
+ILC	adult	TCF7	52	1	44.2308	0.6902
+ILC	adult	CD27	52	1	3.8462	0.0655
+ILC	adult	CD28	52	1	9.6154	0.1246
+ILC	adult	AICDA	52	1	0.0	0.0
+ILC	elder	LEF1	219	4	1.8265	0.0241
+ILC	elder	CCR7	219	4	15.5251	0.2316
+ILC	elder	SELL	219	4	13.242	0.2373
+ILC	elder	TCF7	219	4	48.4018	0.7883
+ILC	elder	CD27	219	4	3.1963	0.045
+ILC	elder	CD28	219	4	1.3699	0.0189
+ILC	elder	AICDA	219	4	0.0	0.0
+ILC	old adult	LEF1	168	1	2.9762	0.0384
+ILC	old adult	CCR7	168	1	3.5714	0.0512
+ILC	old adult	SELL	168	1	2.9762	0.0455
+ILC	old adult	TCF7	168	1	50.5952	0.8239
+ILC	old adult	CD27	168	1	1.1905	0.0177
+ILC	old adult	CD28	168	1	2.381	0.0392
+ILC	old adult	AICDA	168	1	0.5952	0.0083
+Macrophages_M1	adult	LEF1	1	1	0.0	0.0
+Macrophages_M1	adult	CCR7	1	1	0.0	0.0
+Macrophages_M1	adult	SELL	1	1	100.0	1.0962
+Macrophages_M1	adult	TCF7	1	1	0.0	0.0
+Macrophages_M1	adult	CD27	1	1	0.0	0.0
+Macrophages_M1	adult	CD28	1	1	0.0	0.0
+Macrophages_M1	adult	AICDA	1	1	0.0	0.0
+Macrophages_M1	elder	LEF1	12	2	0.0	0.0
+Macrophages_M1	elder	CCR7	12	2	0.0	0.0
+Macrophages_M1	elder	SELL	12	2	0.0	0.0
+Macrophages_M1	elder	TCF7	12	2	0.0	0.0
+Macrophages_M1	elder	CD27	12	2	0.0	0.0
+Macrophages_M1	elder	CD28	12	2	0.0	0.0
+Macrophages_M1	elder	AICDA	12	2	0.0	0.0
+Macrophages_M2	adult	LEF1	5	1	20.0	0.1026
+Macrophages_M2	adult	CCR7	5	1	20.0	0.1701
+Macrophages_M2	adult	SELL	5	1	40.0	0.3707
+Macrophages_M2	adult	TCF7	5	1	0.0	0.0
+Macrophages_M2	adult	CD27	5	1	20.0	0.2205
+Macrophages_M2	adult	CD28	5	1	0.0	0.0
+Macrophages_M2	adult	AICDA	5	1	0.0	0.0
+Macrophages_M2	elder	LEF1	52	3	17.3077	0.2876
+Macrophages_M2	elder	CCR7	52	3	19.2308	0.342
+Macrophages_M2	elder	SELL	52	3	17.3077	0.2981
+Macrophages_M2	elder	TCF7	52	3	19.2308	0.3569
+Macrophages_M2	elder	CD27	52	3	21.1538	0.3989
+Macrophages_M2	elder	CD28	52	3	13.4615	0.1942
+Macrophages_M2	elder	AICDA	52	3	0.0	0.0
+Mast	elder	LEF1	9	2	0.0	0.0
+Mast	elder	CCR7	9	2	0.0	0.0
+Mast	elder	SELL	9	2	0.0	0.0
+Mast	elder	TCF7	9	2	0.0	0.0
+Mast	elder	CD27	9	2	0.0	0.0
+Mast	elder	CD28	9	2	0.0	0.0
+Mast	elder	AICDA	9	2	0.0	0.0
+Monocytes	adult	LEF1	6	1	0.0	0.0
+Monocytes	adult	CCR7	6	1	16.6667	0.1302
+Monocytes	adult	SELL	6	1	33.3333	0.2214
+Monocytes	adult	TCF7	6	1	16.6667	0.1302
+Monocytes	adult	CD27	6	1	16.6667	0.1302
+Monocytes	adult	CD28	6	1	0.0	0.0
+Monocytes	adult	AICDA	6	1	0.0	0.0
+Monocytes	elder	LEF1	30	4	3.3333	0.0232
+Monocytes	elder	CCR7	30	4	3.3333	0.0193
+Monocytes	elder	SELL	30	4	30.0	0.2946
+Monocytes	elder	TCF7	30	4	0.0	0.0
+Monocytes	elder	CD27	30	4	0.0	0.0
+Monocytes	elder	CD28	30	4	0.0	0.0
+Monocytes	elder	AICDA	30	4	0.0	0.0
+Monocytes	old adult	LEF1	1	1	0.0	0.0
+Monocytes	old adult	CCR7	1	1	0.0	0.0
+Monocytes	old adult	SELL	1	1	0.0	0.0
+Monocytes	old adult	TCF7	1	1	0.0	0.0
+Monocytes	old adult	CD27	1	1	0.0	0.0
+Monocytes	old adult	CD28	1	1	0.0	0.0
+Monocytes	old adult	AICDA	1	1	0.0	0.0
+NK	adult	LEF1	75	1	8.0	0.12
+NK	adult	CCR7	75	1	12.0	0.2091
+NK	adult	SELL	75	1	28.0	0.5387
+NK	adult	TCF7	75	1	25.3333	0.3507
+NK	adult	CD27	75	1	5.3333	0.0673
+NK	adult	CD28	75	1	4.0	0.053
+NK	adult	AICDA	75	1	0.0	0.0
+NK	elder	LEF1	209	4	3.3493	0.0422
+NK	elder	CCR7	209	4	3.8278	0.0608
+NK	elder	SELL	209	4	11.9617	0.2202
+NK	elder	TCF7	209	4	20.5742	0.2962
+NK	elder	CD27	209	4	9.0909	0.1172
+NK	elder	CD28	209	4	0.4785	0.0045
+NK	elder	AICDA	209	4	0.4785	0.0086
+NK	old adult	LEF1	72	1	4.1667	0.0594
+NK	old adult	CCR7	72	1	2.7778	0.0411
+NK	old adult	SELL	72	1	4.1667	0.0752
+NK	old adult	TCF7	72	1	22.2222	0.3619
+NK	old adult	CD27	72	1	4.1667	0.0547
+NK	old adult	CD28	72	1	2.7778	0.0377
+NK	old adult	AICDA	72	1	0.0	0.0
+NKT	adult	LEF1	33	1	12.1212	0.1863
+NKT	adult	CCR7	33	1	15.1515	0.2737
+NKT	adult	SELL	33	1	6.0606	0.0994
+NKT	adult	TCF7	33	1	30.303	0.4039
+NKT	adult	CD27	33	1	57.5758	0.8146
+NKT	adult	CD28	33	1	33.3333	0.4572
+NKT	adult	AICDA	33	1	0.0	0.0
+NKT	elder	LEF1	13	4	0.0	0.0
+NKT	elder	CCR7	13	4	15.3846	0.2464
+NKT	elder	SELL	13	4	30.7692	0.533
+NKT	elder	TCF7	13	4	23.0769	0.3522
+NKT	elder	CD27	13	4	38.4615	0.5942
+NKT	elder	CD28	13	4	23.0769	0.4368
+NKT	elder	AICDA	13	4	0.0	0.0
+NKT	old adult	LEF1	2	1	0.0	0.0
+NKT	old adult	CCR7	2	1	0.0	0.0
+NKT	old adult	SELL	2	1	0.0	0.0
+NKT	old adult	TCF7	2	1	50.0	0.7932
+NKT	old adult	CD27	2	1	0.0	0.0
+NKT	old adult	CD28	2	1	0.0	0.0
+NKT	old adult	AICDA	2	1	0.0	0.0
+T_CD4+	adult	LEF1	386	1	45.3368	0.6737
+T_CD4+	adult	CCR7	386	1	55.6995	0.9748
+T_CD4+	adult	SELL	386	1	48.9637	0.8542
+T_CD4+	adult	TCF7	386	1	61.1399	0.9633
+T_CD4+	adult	CD27	386	1	63.2124	0.9249
+T_CD4+	adult	CD28	386	1	48.1865	0.7052
+T_CD4+	adult	AICDA	386	1	0.0	0.0
+T_CD4+	elder	LEF1	285	4	32.6316	0.4574
+T_CD4+	elder	CCR7	285	4	47.3684	0.7644
+T_CD4+	elder	SELL	285	4	34.386	0.5695
+T_CD4+	elder	TCF7	285	4	55.7895	0.9228
+T_CD4+	elder	CD27	285	4	41.7544	0.6231
+T_CD4+	elder	CD28	285	4	35.4386	0.5042
+T_CD4+	elder	AICDA	285	4	0.0	0.0
+T_CD4+_TfH	adult	LEF1	589	1	43.4635	0.72
+T_CD4+_TfH	adult	CCR7	589	1	46.18	0.8438
+T_CD4+_TfH	adult	SELL	589	1	22.4109	0.4009
+T_CD4+_TfH	adult	TCF7	589	1	53.4805	0.9186
+T_CD4+_TfH	adult	CD27	589	1	55.0085	0.8967
+T_CD4+_TfH	adult	CD28	589	1	42.9542	0.7071
+T_CD4+_TfH	adult	AICDA	589	1	0.0	0.0
+T_CD4+_TfH	elder	LEF1	1988	4	34.9598	0.5593
+T_CD4+_TfH	elder	CCR7	1988	4	49.497	0.8914
+T_CD4+_TfH	elder	SELL	1988	4	19.3159	0.3628
+T_CD4+_TfH	elder	TCF7	1988	4	57.1429	1.0045
+T_CD4+_TfH	elder	CD27	1988	4	34.8592	0.5545
+T_CD4+_TfH	elder	CD28	1988	4	32.3441	0.5019
+T_CD4+_TfH	elder	AICDA	1988	4	0.0	0.0
+T_CD4+_TfH	old adult	LEF1	95	1	17.8947	0.282
+T_CD4+_TfH	old adult	CCR7	95	1	37.8947	0.6839
+T_CD4+_TfH	old adult	SELL	95	1	11.5789	0.212
+T_CD4+_TfH	old adult	TCF7	95	1	45.2632	0.8088
+T_CD4+_TfH	old adult	CD27	95	1	18.9474	0.2964
+T_CD4+_TfH	old adult	CD28	95	1	32.6316	0.5703
+T_CD4+_TfH	old adult	AICDA	95	1	0.0	0.0
+T_CD4+_TfH_GC	adult	LEF1	21	1	33.3333	0.5717
+T_CD4+_TfH_GC	adult	CCR7	21	1	9.5238	0.2305
+T_CD4+_TfH_GC	adult	SELL	21	1	42.8571	0.6617
+T_CD4+_TfH_GC	adult	TCF7	21	1	80.9524	1.337
+T_CD4+_TfH_GC	adult	CD27	21	1	85.7143	1.5045
+T_CD4+_TfH_GC	adult	CD28	21	1	47.619	0.8397
+T_CD4+_TfH_GC	adult	AICDA	21	1	0.0	0.0
+T_CD4+_TfH_GC	elder	LEF1	71	4	25.3521	0.3705
+T_CD4+_TfH_GC	elder	CCR7	71	4	40.8451	0.6954
+T_CD4+_TfH_GC	elder	SELL	71	4	30.9859	0.5408
+T_CD4+_TfH_GC	elder	TCF7	71	4	64.7887	1.2407
+T_CD4+_TfH_GC	elder	CD27	71	4	64.7887	1.2465
+T_CD4+_TfH_GC	elder	CD28	71	4	28.169	0.4485
+T_CD4+_TfH_GC	elder	AICDA	71	4	0.0	0.0
+T_CD4+_TfH_GC	old adult	LEF1	4	1	0.0	0.0
+T_CD4+_TfH_GC	old adult	CCR7	4	1	0.0	0.0
+T_CD4+_TfH_GC	old adult	SELL	4	1	0.0	0.0
+T_CD4+_TfH_GC	old adult	TCF7	4	1	50.0	0.7438
+T_CD4+_TfH_GC	old adult	CD27	4	1	50.0	1.1529
+T_CD4+_TfH_GC	old adult	CD28	4	1	75.0	1.2462
+T_CD4+_TfH_GC	old adult	AICDA	4	1	0.0	0.0
+T_CD4+_naive	adult	LEF1	528	1	71.0227	1.2797
+T_CD4+_naive	adult	CCR7	528	1	75.7576	1.5497
+T_CD4+_naive	adult	SELL	528	1	76.5152	1.4714
+T_CD4+_naive	adult	TCF7	528	1	62.6894	1.0762
+T_CD4+_naive	adult	CD27	528	1	63.0682	0.9935
+T_CD4+_naive	adult	CD28	528	1	36.9318	0.5149
+T_CD4+_naive	adult	AICDA	528	1	0.0	0.0
+T_CD4+_naive	elder	LEF1	2174	4	61.9135	0.9965
+T_CD4+_naive	elder	CCR7	2174	4	74.011	1.3867
+T_CD4+_naive	elder	SELL	2174	4	76.4029	1.4826
+T_CD4+_naive	elder	TCF7	2174	4	70.3312	1.2467
+T_CD4+_naive	elder	CD27	2174	4	50.966	0.7835
+T_CD4+_naive	elder	CD28	2174	4	26.127	0.36
+T_CD4+_naive	elder	AICDA	2174	4	0.046	0.0005
+T_CD4+_naive	old adult	LEF1	22	1	45.4545	0.708
+T_CD4+_naive	old adult	CCR7	22	1	54.5455	0.8823
+T_CD4+_naive	old adult	SELL	22	1	45.4545	0.8227
+T_CD4+_naive	old adult	TCF7	22	1	40.9091	0.6236
+T_CD4+_naive	old adult	CD27	22	1	22.7273	0.3908
+T_CD4+_naive	old adult	CD28	22	1	18.1818	0.2465
+T_CD4+_naive	old adult	AICDA	22	1	0.0	0.0
+T_CD8+_CD161+	adult	LEF1	200	1	26.5	0.4053
+T_CD8+_CD161+	adult	CCR7	200	1	32.5	0.5732
+T_CD8+_CD161+	adult	SELL	200	1	30.0	0.5162
+T_CD8+_CD161+	adult	TCF7	200	1	55.0	0.8784
+T_CD8+_CD161+	adult	CD27	200	1	55.5	0.8701
+T_CD8+_CD161+	adult	CD28	200	1	28.5	0.3876
+T_CD8+_CD161+	adult	AICDA	200	1	0.0	0.0
+T_CD8+_CD161+	elder	LEF1	896	4	16.4062	0.2486
+T_CD8+_CD161+	elder	CCR7	896	4	20.8705	0.3459
+T_CD8+_CD161+	elder	SELL	896	4	11.8304	0.2067
+T_CD8+_CD161+	elder	TCF7	896	4	35.9375	0.5569
+T_CD8+_CD161+	elder	CD27	896	4	28.5714	0.4541
+T_CD8+_CD161+	elder	CD28	896	4	15.4018	0.2275
+T_CD8+_CD161+	elder	AICDA	896	4	0.1116	0.001
+T_CD8+_CD161+	old adult	LEF1	507	1	15.1874	0.2374
+T_CD8+_CD161+	old adult	CCR7	507	1	29.783	0.5443
+T_CD8+_CD161+	old adult	SELL	507	1	7.6923	0.1231
+T_CD8+_CD161+	old adult	TCF7	507	1	38.0671	0.6188
+T_CD8+_CD161+	old adult	CD27	507	1	23.2742	0.3596
+T_CD8+_CD161+	old adult	CD28	507	1	21.3018	0.3349
+T_CD8+_CD161+	old adult	AICDA	507	1	0.1972	0.0025
+T_CD8+_cytotoxic	adult	LEF1	504	1	7.3413	0.1105
+T_CD8+_cytotoxic	adult	CCR7	504	1	18.4524	0.3219
+T_CD8+_cytotoxic	adult	SELL	504	1	25.1984	0.4453
+T_CD8+_cytotoxic	adult	TCF7	504	1	33.5317	0.5468
+T_CD8+_cytotoxic	adult	CD27	504	1	65.873	1.237
+T_CD8+_cytotoxic	adult	CD28	504	1	29.3651	0.4565
+T_CD8+_cytotoxic	adult	AICDA	504	1	0.0	0.0
+T_CD8+_cytotoxic	elder	LEF1	861	4	4.9942	0.076
+T_CD8+_cytotoxic	elder	CCR7	861	4	15.5633	0.2725
+T_CD8+_cytotoxic	elder	SELL	861	4	15.6794	0.2873
+T_CD8+_cytotoxic	elder	TCF7	861	4	26.9454	0.451
+T_CD8+_cytotoxic	elder	CD27	861	4	41.4634	0.7635
+T_CD8+_cytotoxic	elder	CD28	861	4	24.158	0.4237
+T_CD8+_cytotoxic	elder	AICDA	861	4	0.0	0.0
+T_CD8+_cytotoxic	old adult	LEF1	5	1	0.0	0.0
+T_CD8+_cytotoxic	old adult	CCR7	5	1	0.0	0.0
+T_CD8+_cytotoxic	old adult	SELL	5	1	0.0	0.0
+T_CD8+_cytotoxic	old adult	TCF7	5	1	0.0	0.0
+T_CD8+_cytotoxic	old adult	CD27	5	1	60.0	1.1506
+T_CD8+_cytotoxic	old adult	CD28	5	1	0.0	0.0
+T_CD8+_cytotoxic	old adult	AICDA	5	1	0.0	0.0
+T_CD8+_naive	adult	LEF1	465	1	78.7097	1.4021
+T_CD8+_naive	adult	CCR7	465	1	76.5591	1.5206
+T_CD8+_naive	adult	SELL	465	1	76.129	1.4064
+T_CD8+_naive	adult	TCF7	465	1	71.1828	1.2143
+T_CD8+_naive	adult	CD27	465	1	69.8925	1.0731
+T_CD8+_naive	adult	CD28	465	1	25.3763	0.3393
+T_CD8+_naive	adult	AICDA	465	1	0.0	0.0
+T_CD8+_naive	elder	LEF1	303	4	68.3168	1.1777
+T_CD8+_naive	elder	CCR7	303	4	74.2574	1.369
+T_CD8+_naive	elder	SELL	303	4	79.538	1.5873
+T_CD8+_naive	elder	TCF7	303	4	78.8779	1.4171
+T_CD8+_naive	elder	CD27	303	4	59.736	0.9387
+T_CD8+_naive	elder	CD28	303	4	19.1419	0.2506
+T_CD8+_naive	elder	AICDA	303	4	0.0	0.0
+T_CD8+_naive	old adult	LEF1	1	1	100.0	1.5868
+T_CD8+_naive	old adult	CCR7	1	1	0.0	0.0
+T_CD8+_naive	old adult	SELL	1	1	100.0	1.5868
+T_CD8+_naive	old adult	TCF7	1	1	0.0	0.0
+T_CD8+_naive	old adult	CD27	1	1	0.0	0.0
+T_CD8+_naive	old adult	CD28	1	1	0.0	0.0
+T_CD8+_naive	old adult	AICDA	1	1	0.0	0.0
+T_TIM3+	adult	LEF1	43	1	62.7907	0.9478
+T_TIM3+	adult	CCR7	43	1	60.4651	0.8473
+T_TIM3+	adult	SELL	43	1	58.1395	1.0351
+T_TIM3+	adult	TCF7	43	1	72.093	1.1292
+T_TIM3+	adult	CD27	43	1	90.6977	1.7743
+T_TIM3+	adult	CD28	43	1	53.4884	0.7386
+T_TIM3+	adult	AICDA	43	1	0.0	0.0
+T_TIM3+	elder	LEF1	28	4	39.2857	0.4192
+T_TIM3+	elder	CCR7	28	4	35.7143	0.4884
+T_TIM3+	elder	SELL	28	4	28.5714	0.4432
+T_TIM3+	elder	TCF7	28	4	53.5714	0.8453
+T_TIM3+	elder	CD27	28	4	89.2857	1.81
+T_TIM3+	elder	CD28	28	4	32.1429	0.4596
+T_TIM3+	elder	AICDA	28	4	0.0	0.0
+T_TIM3+	old adult	LEF1	2	1	100.0	0.7628
+T_TIM3+	old adult	CCR7	2	1	50.0	0.5218
+T_TIM3+	old adult	SELL	2	1	50.0	1.0616
+T_TIM3+	old adult	TCF7	2	1	100.0	0.8622
+T_TIM3+	old adult	CD27	2	1	100.0	2.3194
+T_TIM3+	old adult	CD28	2	1	50.0	0.4029
+T_TIM3+	old adult	AICDA	2	1	0.0	0.0
+T_TfR	adult	LEF1	3	1	66.6667	0.7848
+T_TfR	adult	CCR7	3	1	66.6667	1.533
+T_TfR	adult	SELL	3	1	66.6667	1.1349
+T_TfR	adult	TCF7	3	1	33.3333	0.7595
+T_TfR	adult	CD27	3	1	66.6667	1.057
+T_TfR	adult	CD28	3	1	66.6667	1.1349
+T_TfR	adult	AICDA	3	1	0.0	0.0
+T_TfR	elder	LEF1	33	4	15.1515	0.1525
+T_TfR	elder	CCR7	33	4	45.4545	0.7893
+T_TfR	elder	SELL	33	4	21.2121	0.3664
+T_TfR	elder	TCF7	33	4	36.3636	0.526
+T_TfR	elder	CD27	33	4	66.6667	1.169
+T_TfR	elder	CD28	33	4	54.5455	0.8636
+T_TfR	elder	AICDA	33	4	0.0	0.0
+T_Treg	adult	LEF1	294	1	67.3469	1.2111
+T_Treg	adult	CCR7	294	1	69.3878	1.4404
+T_Treg	adult	SELL	294	1	66.3265	1.2615
+T_Treg	adult	TCF7	294	1	35.3741	0.5374
+T_Treg	adult	CD27	294	1	71.0884	1.3176
+T_Treg	adult	CD28	294	1	35.7143	0.5115
+T_Treg	adult	AICDA	294	1	0.0	0.0
+T_Treg	elder	LEF1	1118	4	51.6995	0.8986
+T_Treg	elder	CCR7	1118	4	60.1968	1.1543
+T_Treg	elder	SELL	1118	4	57.6923	1.1402
+T_Treg	elder	TCF7	1118	4	35.3309	0.5914
+T_Treg	elder	CD27	1118	4	57.5134	1.073
+T_Treg	elder	CD28	1118	4	27.6386	0.4356
+T_Treg	elder	AICDA	1118	4	0.0	0.0
+T_Treg	old adult	LEF1	199	1	45.7286	0.7824
+T_Treg	old adult	CCR7	199	1	57.2864	1.1504
+T_Treg	old adult	SELL	199	1	43.7186	0.7824
+T_Treg	old adult	TCF7	199	1	34.6734	0.5789
+T_Treg	old adult	CD27	199	1	42.7136	0.7511
+T_Treg	old adult	CD28	199	1	28.6432	0.458
+T_Treg	old adult	AICDA	199	1	0.0	0.0
+VSMC	adult	LEF1	3	1	0.0	0.0
+VSMC	adult	CCR7	3	1	33.3333	0.5595
+VSMC	adult	SELL	3	1	33.3333	0.4541
+VSMC	adult	TCF7	3	1	0.0	0.0
+VSMC	adult	CD27	3	1	33.3333	0.2991
+VSMC	adult	CD28	3	1	0.0	0.0
+VSMC	adult	AICDA	3	1	0.0	0.0
+VSMC	elder	LEF1	16	2	6.25	0.1145
+VSMC	elder	CCR7	16	2	0.0	0.0
+VSMC	elder	SELL	16	2	12.5	0.0837
+VSMC	elder	TCF7	16	2	6.25	0.0524
+VSMC	elder	CD27	16	2	0.0	0.0
+VSMC	elder	CD28	16	2	6.25	0.0524
+VSMC	elder	AICDA	16	2	0.0	0.0
