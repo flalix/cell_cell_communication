@@ -30,7 +30,7 @@ Visium (H&E / IF) ────► Scanpy / Squidpy ──► spatial graphs, nei
 
 | Status | Folder | Notebook | Tools | Description |
 |---|---|---|---|---|
-| new | `notebooks_multiproject/` | `mccc01_mouse_brain.ipynb` | all | complete study, new structure |
+| new | `notebooks_multiproject/` | `mp_mouse_brain01_prepare.ipynb` | all | complete study, new structure |
 | Old | `notebooks_ccc_liana/` | `ccc01_tutorial.ipynb` | cell2location | cell2location tutorial (reproduced) |
 | Old | | `ccc02_study.ipynb` | cell2location | cell2location applied study |
 | Old | | `ccc03_liana_study.ipynb` | LIANA | Cell–cell communication analysis |

@@ -1,4 +1,4 @@
-"""Generates mccc05_lymphoid_study.ipynb (rewrite of notebooks_ccc_lymphoid_liana/ccc02_study.ipynb with
+"""Generates mp_lymphoid02_regions.ipynb (rewrite of notebooks_ccc_lymphoid_liana/ccc02_study.ipynb with
 SingleCellLymphoid). Run once; then edit the notebook freely. --force overwrites."""
 import sys
 import nbformat as nbf
@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from _make_lymphoid_common import old_md
 
-out = Path(__file__).parent / "mccc05_lymphoid_study.ipynb"
+out = Path(__file__).parent / "mp_lymphoid02_regions.ipynb"
 if out.exists() and "--force" not in sys.argv:
     raise SystemExit(f"{out} exists: not overwritten (use --force)")
 o2 = old_md("ccc02_study")
@@ -15,9 +15,9 @@ nb = nbf.v4.new_notebook(); C = []
 md = lambda s: C.append(nbf.v4.new_markdown_cell(s))
 code = lambda s: C.append(nbf.v4.new_code_cell(s))
 
-md("""### Human lymph node - cell2location study: B cells, mesenteric LN, ISG hotspot (mccc05)
+md("""### Human lymph node - cell2location study: B cells, mesenteric LN, ISG hotspot (mp_lymphoid02)
 
-Rewrite of **notebooks_ccc_lymphoid_liana/ccc02_study.ipynb** with the class libraries. It continues **mccc04_lymphoid_tutorial.ipynb**: the cell2location map (**sp.h5ad**), the models and the region labels computed there are read, not recomputed.
+Rewrite of **notebooks_ccc_lymphoid_liana/ccc02_study.ipynb** with the class libraries. It continues **mp_lymphoid01_prepare.ipynb**: the cell2location map (**sp.h5ad**), the models and the region labels computed there are read, not recomputed.
 
 #### Libs: **src/libs**
 
@@ -26,7 +26,7 @@ Rewrite of **notebooks_ccc_lymphoid_liana/ccc02_study.ipynb** with the class lib
 
 | section | content |
 |---|---|
-| 1 | read the previous calculations (cell2location map + mccc04 regions) and the scRNA reference |
+| 1 | read the previous calculations (cell2location map + mp_lymphoid01 regions) and the scRNA reference |
 | 2 | mLN = mesenteric lymph node: naive / memory / GC genes by age group |
 | 3 | B-cell study: signatures that separate the 10 B-cell subsets; marker dot plot |
 | 4 | larger gene panel on the Visium section |
@@ -39,8 +39,8 @@ Rewrite of **notebooks_ccc_lymphoid_liana/ccc02_study.ipynb** with the class lib
 | 11 | Figure 1 (UMAP + dot plot), Figure 2 (spatial maps), Figure 3 (gene vs abundance correlation) |
 | 12 | dot plot lineage x NMF factors |
 
-Figures and tables of this notebook have the prefix **mccc05_**.""")
-md(o2(0, drop_first_line=True).replace("ccc01_tutorial.ipynb", "ccc01_tutorial.ipynb (here: mccc04_lymphoid_tutorial.ipynb)"))
+Figures and tables of this notebook have the prefix **mp_lymphoid02_**.""")
+md(o2(0, drop_first_line=True).replace("ccc01_tutorial.ipynb", "ccc01_tutorial.ipynb (here: mp_lymphoid01_prepare.ipynb)"))
 
 md("## Loading packages")
 code("""import os, sys
@@ -85,12 +85,12 @@ fname_ref      = 'lymphoid_organ_sc.h5ad'                # root_data
 c2l_dir        = 'lymph_nodes_analysis'                  # root_result / c2l_dir
 ref_subdir     = 'reference_signatures'
 map_subdir     = 'cell2location_map'
-fname_map      = 'sp.h5ad'                               # previous calculation: cell2location map (mccc04 / ccc01)
-tsv_regions_04 = 'mccc04_region_labels.tsv'              # regions of mccc04 (root_result)
+fname_map      = 'sp.h5ad'                               # previous calculation: cell2location map (mp_lymphoid01 / ccc01)
+tsv_regions_prev = 'mp_lymphoid01_region_labels.tsv'              # regions of mp_lymphoid01 (root_result)
 visium_id      = 'V1_Human_Lymph_Node'
 
 # ---- output files
-prefix = 'mccc05_'
+prefix = 'mp_lymphoid02_'
 fig_bcell_dotplot  = prefix + 'bcell_subset_markers_dotplot.png'
 fig_genes_visium   = prefix + 'visium_genes_{k}.png'
 fig_mln_dotplot    = prefix + 'mln_panel_by_celltype_age.png'
@@ -138,13 +138,13 @@ print((run_name / fname_map).exists(), run_name / fname_map)""")
 
 md(f"""### 1. Read the previous calculations
 
-{o2(7, drop_first_line=True).replace("ccc01_tutorial.ipynb (results/lymph_nodes_analysis/cell2location_map/sp.h5ad)", "ccc01 / mccc04 (results/lymph_nodes_analysis/cell2location_map/sp.h5ad)")}
+{o2(7, drop_first_line=True).replace("ccc01_tutorial.ipynb (results/lymph_nodes_analysis/cell2location_map/sp.h5ad)", "ccc01 / mp_lymphoid01 (results/lymph_nodes_analysis/cell2location_map/sp.h5ad)")}
 
-The map is read **without** its 34 per-cell-type expected-expression layers (dense, about 5.6 GB; not used here): **scl.read_h5ad_slots**. The region labels are those of mccc04.""")
+The map is read **without** its 34 per-cell-type expected-expression layers (dense, about 5.6 GB; not used here): **scl.read_h5ad_slots**. The region labels are those of mp_lymphoid01.""")
 code("""adata_vis = scl.read_h5ad_slots(fname_map, root=run_name, skip=('layers',), verbose=True)
 scl.abundance_to_obs(adata_vis)                       # q05 abundance per cell type -> obs
 
-df_regions = pdreadcsv(tsv_regions_04, root_result).set_index('barcode')
+df_regions = pdreadcsv(tsv_regions_prev, root_result).set_index('barcode')
 adata_vis.obs['region_cluster'] = df_regions.loc[adata_vis.obs_names, 'region_cluster'].astype(str).astype('category')
 adata_vis.obs['region_name'] = df_regions.loc[adata_vis.obs_names, 'region_name'].astype('category')
 scl.summary(adata_vis)""")
@@ -226,8 +226,8 @@ code("""markers = {
 dp = scl.dotplot_bcell_markers(adata_bcell, markers, fname=fig_bcell_dotplot)
 plt.show()""")
 md(o2(35).replace("### ![Markers separating the 10 B-cell subsets]  (../figures/bcell_subset_markers_dotplot.png)", "")
-          .replace("`figures/bcell_subset_markers_dotplot.png`", "`figures/mccc05_bcell_subset_markers_dotplot.png`")
-          .replace("`results/bcell_subset_unique_markers.csv`", "`results/mccc05_bcell_subset_unique_markers.csv`"))
+          .replace("`figures/bcell_subset_markers_dotplot.png`", "`figures/mp_lymphoid02_bcell_subset_markers_dotplot.png`")
+          .replace("`results/bcell_subset_unique_markers.csv`", "`results/mp_lymphoid02_bcell_subset_unique_markers.csv`"))
 code("""del adata_bcell, df_all
 import gc; gc.collect();""")
 
@@ -281,8 +281,8 @@ code("""apply_figure_style(sizes=(8, 7, 6))
 fig = scl.plot_panel_umap_by_tissue_age(genes_plot, adata_ref, fname=fig_panel_umap, cmap_num=2)
 plt.show()""")
 
-md("### 6. " + o2(76).lstrip("# ").replace("results/aicda_by_subset_tissue.csv", "results/mccc05_aicda_by_subset_tissue.csv")
-                                       .replace("results/aicda_gc_by_donor.csv", "results/mccc05_aicda_gc_by_donor.csv"))
+md("### 6. " + o2(76).lstrip("# ").replace("results/aicda_by_subset_tissue.csv", "results/mp_lymphoid02_aicda_by_subset_tissue.csv")
+                                       .replace("results/aicda_gc_by_donor.csv", "results/mp_lymphoid02_aicda_gc_by_donor.csv"))
 code("""aicda = scl.calc_gene_by_subset_tissue("AICDA", adata_ref, groups=bcell_types,
                                        fname_subset=csv_aicda_subset, fname_gc=csv_aicda_gc)
 print(f"AICDA+ cells: {aicda['n_pos']:,}, of which in tonsil: {aicda['pct_pos_tonsil']}%")
@@ -375,7 +375,7 @@ df_rho.head(6)""")
 
 md("""### 12. Dot plot lineage x NMF factors
 
-The NMF co-location of mccc04 / ccc01 (12 factors, stored in **adata_vis.uns['mod_coloc_n_fact12']**). Relative weight of every cell type over the factors (rows sum to 1); rows grouped by lineage; factors ordered by the row of their top cell type and labelled with their top-2 cell types.""")
+The NMF co-location of mp_lymphoid01 / ccc01 (12 factors, stored in **adata_vis.uns['mod_coloc_n_fact12']**). Relative weight of every cell type over the factors (rows sum to 1); rows grouped by lineage; factors ordered by the row of their top cell type and labelled with their top-2 cell types.""")
 code("""adata_vis, res_dict, coloc_edited = scl.run_colocation_cached(adata_vis, run_name)    # cached: no NMF training
 for n in scl.params['coloc_n_facts']:
     fig, df_load = scl.plot_factor_dotplot(adata_vis, n, lineage=lineage, cmaps=cmaps,

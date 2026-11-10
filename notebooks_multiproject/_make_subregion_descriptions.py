@@ -1,5 +1,5 @@
 """Writes mouse_brain/data/mouse_brain_subregion_descriptions.tsv: curated functional descriptions of the subregions of
-mccc03 (default parameters), with the subregion's top-3 signature genes at curation time (signature_check).
+mp_mouse_brain03 (default parameters), with the subregion's top-3 signature genes at curation time (signature_check).
 Descriptions are interpretations of signature genes, enriched cell types, bordering region and QC flags."""
 import sys
 from pathlib import Path

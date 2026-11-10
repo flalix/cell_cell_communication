@@ -1,4 +1,4 @@
-"""Generates mccc04_lymphoid_tutorial.ipynb (rewrite of notebooks_ccc_lymphoid_liana/ccc01_tutorial.ipynb with
+"""Generates mp_lymphoid01_prepare.ipynb (rewrite of notebooks_ccc_lymphoid_liana/ccc01_tutorial.ipynb with
 SingleCellLymphoid). Run once; then edit the notebook freely. --force overwrites."""
 import sys
 import nbformat as nbf
@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from _make_lymphoid_common import old_md
 
-out = Path(__file__).parent / "mccc04_lymphoid_tutorial.ipynb"
+out = Path(__file__).parent / "mp_lymphoid01_prepare.ipynb"
 if out.exists() and "--force" not in sys.argv:
     raise SystemExit(f"{out} exists: not overwritten (use --force)")
 o1 = old_md("ccc01_tutorial")
@@ -14,7 +14,7 @@ nb = nbf.v4.new_notebook(); C = []
 md = lambda s: C.append(nbf.v4.new_markdown_cell(s))
 code = lambda s: C.append(nbf.v4.new_code_cell(s))
 
-md("""### Human lymph node - cell2location tutorial review (mccc04)
+md("""### Human lymph node - cell2location tutorial review (mp_lymphoid01)
 
 Rewrite of **notebooks_ccc_lymphoid_liana/ccc01_tutorial.ipynb** with the class libraries; every calculation and plot of ccc01 is kept.
 
@@ -39,7 +39,7 @@ Rewrite of **notebooks_ccc_lymphoid_liana/ccc01_tutorial.ipynb** with the class 
 
 **Data**: **lymphoid_tissue/data/lymphoid_organ_sc.h5ad** (73,260 cells, King / James / Park 2020) and the 10x Visium section **V1_Human_Lymph_Node**. The models of ccc01 (results/lymph_nodes_analysis) are re-used: training runs only when a cache file is missing (GPU recommended: **params['accelerator']**).
 
-Figures and tables of this notebook have the prefix **mccc04_** (ccc01 outputs are not overwritten).""")
+Figures and tables of this notebook have the prefix **mp_lymphoid01_** (ccc01 outputs are not overwritten).""")
 md(o1(0).replace("### Mapping human lymph node cell types to 10X Visium with Cell2location - tutorial review",
                  "#### Background (from ccc01)"))
 md(o1(1))
@@ -99,7 +99,7 @@ ref_subdir = 'reference_signatures'          # sc.h5ad + model.pt
 map_subdir = 'cell2location_map'             # sp.h5ad + model.pt + posterior_samples_w_sf.npz
 
 # ---- output files (figures in root_figure, tables in root_result)
-prefix = 'mccc04_'
+prefix = 'mp_lymphoid01_'
 fig_genes_visium   = prefix + 'visium_genes.png'
 fig_mln_dotplot    = prefix + 'mln_panel_by_celltype_age.png'
 fig_panel_umap     = prefix + 'bcell_genes_umap_by_tissue_age.png'

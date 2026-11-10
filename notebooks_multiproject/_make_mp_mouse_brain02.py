@@ -1,15 +1,15 @@
-"""Generates mccc02_mouse_brain.ipynb (Fig 3, regional astrocyte subtypes). Run once; then edit the notebook freely."""
+"""Generates mp_mouse_brain02_region_astrocytes.ipynb (Fig 3, regional astrocyte subtypes). Run once; then edit the notebook freely."""
 import nbformat as nbf
 from pathlib import Path
 
-out = Path(__file__).parent / "mccc02_mouse_brain.ipynb"
+out = Path(__file__).parent / "mp_mouse_brain02_region_astrocytes.ipynb"
 if out.exists():
     raise SystemExit(f"{out} exists: not overwritten")
 nb = nbf.v4.new_notebook(); C = []
 md = lambda s: C.append(nbf.v4.new_markdown_cell(s))
 code = lambda s: C.append(nbf.v4.new_code_cell(s))
 
-md("""### Mouse brain - cell2location paper, Figure 3: regional astrocyte subtypes (mccc02)
+md("""### Mouse brain - cell2location paper, Figure 3: regional astrocyte subtypes (mp_mouse_brain02)
 
 **Paper**: Kleshchevnikov V. *et al.* *Comprehensive mapping of tissue cell architecture via integrated single cell and spatial transcriptomics.* bioRxiv 2020.11.15.378125 (Nat Biotechnol 40, 661-671, 2022).
 
@@ -92,7 +92,7 @@ tsv_rho         = 'mb02_fig3F_marker_density_rho.tsv'
 
 # ---- settings (override NEURO_PARAMS)
 params = dict(
-    region_label_override={'11': 'CTX_L1', '21': 'edge_LowQ'},   # as in mccc01 (edge fraction evidence)
+    region_label_override={'11': 'CTX_L1', '21': 'edge_LowQ'},   # as in mp_mouse_brain01 (edge fraction evidence)
     density_quantile=0.992,         # colour cap of density panels
     fig3F_smooth=True,              # Fig 3F display: mean over spot + 6 neighbours
     outline_min_spots=15,           # region outlines ignore groups of fewer spots
@@ -145,7 +145,7 @@ df_marker_check""")
 
 md("""### 4. Visium map and brain regions
 
-The paper's cell2location map (cells per spot for the 59 types, including the 10 astrocyte subtypes) and the region labels of mccc01.""")
+The paper's cell2location map (cells per spot for the 59 types, including the 10 astrocyte subtypes) and the region labels of mp_mouse_brain01.""")
 code("""adata_map = scn.load_paper_map(fname_map)
 df_abund = scn.calc_df_abundance(adata_map)
 df_regions = scn.calc_df_regions(adata_map)

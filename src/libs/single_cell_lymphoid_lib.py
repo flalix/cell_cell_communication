@@ -21,7 +21,7 @@ ISG cutoffs, ...). LYMPHOID_LINEAGE: the 34 reference cell types (Subset) groupe
 Every DataFrame variable starts with 'df_'.
 
 @created on 2026/11/05
-@updated on 2026/11/10  (mccc04 / mccc05 lymphoid notebooks)
+@updated on 2026/11/10  (mp_lymphoid01 / mp_lymphoid02 lymphoid notebooks)
 @author: Flavio Lichtenstein
 """
 

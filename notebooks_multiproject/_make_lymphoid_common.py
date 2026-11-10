@@ -1,4 +1,4 @@
-"""Helpers shared by _make_mccc04.py / _make_mccc05.py: copy markdown cells of the ccc01/ccc02 notebooks."""
+"""Helpers shared by _make_mp_lymphoid01.py / _make_mp_lymphoid02.py: copy markdown cells of the ccc01/ccc02 notebooks."""
 import json
 from pathlib import Path
 

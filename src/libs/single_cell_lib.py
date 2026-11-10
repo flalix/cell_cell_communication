@@ -1207,12 +1207,13 @@ class SingleCell(object):
         fig.legend(handles=handles, loc="outside lower center", ncol=min(ncol, len(handles)), frameon=False,
                    fontsize=fontsize, handletextpad=0.3, columnspacing=1.5)
 
-    def umap_spatial_3plot(self, adata=None, names: Optional[Dict[str, str]] = None, key: Optional[str] = None,
+    def umap_spatial_3plot(self, adata=None, names: Optional[Dict[str, str]] = None, 
+                           figsize: Tuple[float, float] = (15, 6.5), key: Optional[str] = None,
                            fname: Optional[str] = "umap_region_sample.png", library_id: Optional[str] = None):
         """UMAP by region, UMAP by sample, spatial map by region (one library) with a shared legend."""
         a = self._check_adata(adata)
         key = self.get_param("region_key", key)
-        fig, axes = plt.subplots(1, 3, figsize=(15, 6.5), layout="constrained")
+        fig, axes = plt.subplots(1, 3, figsize=figsize, layout="constrained")
         sc.pl.umap(a, color=key, size=30, legend_loc="on data", legend_fontsize=12, ax=axes[0], show=False, title=key)
         sc.pl.umap(a, color=self.sample_col, size=30, legend_loc="none", ax=axes[1], show=False, title=self.sample_col)
         lib = library_id or self.library_id(a)

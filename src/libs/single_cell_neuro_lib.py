@@ -158,7 +158,7 @@ NEURO_PARAMS: Dict[str, Any] = dict(
                  "striatum": "#F39C3C", "amygdala": "#A9D2E8", "piriform cortex": "#F7C46C", "cortex": "#3A8FB7"},
     density_cmap_he=("#FFFFFF", "#9E9AC8", "#54278F"),   # white -> purple over H&E (Fig 3E)
     marker_cmap_dark=("#000000", "#1B4F72", "#5DADE2", "#D6EAF8"),   # black -> light blue (Fig 3F style)
-    # --- subregions (mccc03): clustering of the spots of each region on gene expression
+    # --- subregions (mp_mouse_brain03): clustering of the spots of each region on gene expression
     subregion_key="sub_region_id",            # obs column, e.g. 'THAL_2'
     subregion_skip=("edge_LowQ",),            # regions not subclustered (artefact)
     # gene sets: region signature (region vs all other regions), subregion signature (subregion vs rest of the region,
@@ -1074,7 +1074,7 @@ class SingleCellNeuro(SingleCell):
         return df_rho.round(3)
 
     # =====================================================================================================
-    # Subregions (mccc03): spots of each region clustered on gene expression; Plotly figures
+    # Subregions (mp_mouse_brain03): spots of each region clustered on gene expression; Plotly figures
     # =====================================================================================================
     def prepare_expression(self, adata_map, label_col: str = "region_label") -> ad.AnnData:
         """Spots x genes for subregion analysis: var_names = unique gene symbols (Ensembl in var['ENSEMBL']),

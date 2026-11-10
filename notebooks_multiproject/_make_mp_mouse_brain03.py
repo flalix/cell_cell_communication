@@ -1,17 +1,17 @@
-"""Generates mccc03_mouse_brain_subregions.ipynb. Run once; then edit the notebook freely."""
+"""Generates mp_mouse_brain03_subregions.ipynb. Run once; then edit the notebook freely."""
 import nbformat as nbf
 from pathlib import Path
 
-out = Path(__file__).parent / "mccc03_mouse_brain_subregions.ipynb"
+out = Path(__file__).parent / "mp_mouse_brain03_subregions.ipynb"
 if out.exists():
     raise SystemExit(f"{out} exists: not overwritten")
 nb = nbf.v4.new_notebook(); C = []
 md = lambda s: C.append(nbf.v4.new_markdown_cell(s))
 code = lambda s: C.append(nbf.v4.new_code_cell(s))
 
-md("""### Mouse brain - subregions of each brain region (mccc03)
+md("""### Mouse brain - subregions of each brain region (mp_mouse_brain03)
 
-For each of the 17 brain regions of mccc01 (**mouse_brain_regions.tsv**), the Visium spots of the region are clustered on **gene expression** (own UMAP per region) to look for **subregions**, which are then **mapped on the tissue** and described.
+For each of the 17 brain regions of mp_mouse_brain01 (**mouse_brain_regions.tsv**), the Visium spots of the region are clustered on **gene expression** (own UMAP per region) to look for **subregions**, which are then **mapped on the tissue** and described.
 
 **Outputs** (all figures are Plotly, interactive here and saved as HTML in **root_figure**)
 
@@ -19,7 +19,7 @@ For each of the 17 brain regions of mccc01 (**mouse_brain_regions.tsv**), the Vi
 - **table subregion**: region_id, sub_region_id, subregion signature genes, other genes, not present genes, functional description (+ diagnostics)
 - long table of the 4 gene sets of every subregion (**.tsv.gz**)
 
-**Data**: the paper's cell2location map (2 sections: ST8059048 mouse 1, ST8059051 mouse 2; 5,396 spots, 31,040 genes, raw counts) with the region labels of mccc01.""")
+**Data**: the paper's cell2location map (2 sections: ST8059048 mouse 1, ST8059051 mouse 2; 5,396 spots, 31,040 genes, raw counts) with the region labels of mp_mouse_brain01.""")
 
 md("""### Critique of the request and how it is handled
 
@@ -82,7 +82,7 @@ tsv_gene_sets      = 'mb03_subregion_gene_sets.tsv.gz'
 tsv_grid           = 'mb03_subcluster_resolution_grid.tsv'
 
 params = dict(
-    region_label_override={'11': 'CTX_L1', '21': 'edge_LowQ'},   # as in mccc01
+    region_label_override={'11': 'CTX_L1', '21': 'edge_LowQ'},   # as in mp_mouse_brain01
     subregion_skip=('edge_LowQ',),
     # subclustering
     sub_n_hvg=2000, sub_n_pcs=20, sub_n_neighbors=15, sub_batch='combat',
