@@ -30,14 +30,17 @@ Visium (H&E / IF) ────► Scanpy / Squidpy ──► spatial graphs, nei
 
 | Status | Folder | Notebook | Tools | Description |
 |---|---|---|---|---|
-| new | `notebooks_multiproject/` | `mp_mouse_brain01_prepare.ipynb` | all | complete study, new structure |
-| Old | `notebooks_ccc_liana/` | `ccc01_tutorial.ipynb` | cell2location | cell2location tutorial (reproduced) |
-| Old | | `ccc02_study.ipynb` | cell2location | cell2location applied study |
-| Old | | `ccc03_liana_study.ipynb` | LIANA | Cell–cell communication analysis |
-| Old | `notebooks_cell2loc/` | — | cell2location | Additional cell2location tutorials and studies |
-| Old | `notebooks_squidpy_mouse_brain/` | `squid01_analyze_visium_HE_data.ipynb` | Squidpy, Scanpy | Mouse brain Visium, H&E image |
-| Old | | `squid02_analyze_visium_fluorescence_data.ipynb` | Squidpy, Scanpy | Mouse brain Visium, fluorescence image |
-| Old | | `squid03_niche_LigRec_programs.ipynb` | LIANA, Squidpy | Spatial niches and ligand–receptor programs |
+| new | notebooks_multiproject/ | mp_lymphoid01_prepare.ipynb | all | complete study, new structure |
+| new | notebooks_multiproject/ | mp_lymphoid02_regions.ipynb | all | deeper study, IFN region |
+| new | notebooks_multiproject/ | mp_lymphoid03_subregions.ipynb | all | subregions |
+| new | notebooks_multiproject/ | mp_lymphoid04_liana.ipynb | all | liana: ligand x receivers |
+| old | notebooks_ccc_liana/ | ccc01_tutorial.ipynb | cell2location | cell2location tutorial (reproduced) |
+| old | | ccc02_study.ipynb | cell2location | cell2location applied study |
+| old | | ccc03_liana_study.ipynb | LIANA | Cell–cell communication analysis |
+| old | notebooks_cell2loc/ | — | cell2location | Additional cell2location tutorials and studies |
+| old | notebooks_squidpy_mouse_brain/ | squid01_analyze_visium_HE_data.ipynb | Squidpy, Scanpy | Mouse brain Visium, H&E image |
+| old | | squid02_analyze_visium_fluorescence_data.ipynb | Squidpy, Scanpy | Mouse brain Visium, fluorescence image |
+| old | | squid03_niche_LigRec_programs.ipynb | LIANA, Squidpy | Spatial niches and ligand–receptor programs |
 
 ### Multi-projects
 
