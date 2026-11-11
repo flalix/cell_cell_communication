@@ -2,7 +2,7 @@
 import nbformat as nbf
 from pathlib import Path
 
-out = Path(__file__).parent / "mp_mouse_brain03_subregions.ipynb"
+out = Path(__file__).resolve().parent.parent / "mp_mouse_brain03_subregions.ipynb"   # notebooks_multiproject/
 if out.exists():
     raise SystemExit(f"{out} exists: not overwritten")
 nb = nbf.v4.new_notebook(); C = []

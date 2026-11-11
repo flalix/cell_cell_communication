@@ -1,0 +1,6 @@
+library	spacing_px	bandwidth_px	ring	n	weight	mean_neighbours_incl_self
+V1_Human_Lymph_Node	137.0	150.7	0.0	1	1.0	18.2
+V1_Human_Lymph_Node	137.0	150.7	1.0	6	0.658	18.2
+V1_Human_Lymph_Node	137.0	150.7	1.7	4	0.285	18.2
+V1_Human_Lymph_Node	137.0	150.7	1.8	2	0.282	18.2
+V1_Human_Lymph_Node	137.0	150.7	2.0	6	0.187	18.2

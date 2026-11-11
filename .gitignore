@@ -171,3 +171,5 @@ figures/c2l_liana/c2l_abundance_maps.png
 figures/celltype_spatial_maps.png
 figures/liana_spatial_LR.png
 figures/visium_hne_image.tiff
+
+mouse_brain/results/mb04_liana_reference_rank_aggregate.tsv

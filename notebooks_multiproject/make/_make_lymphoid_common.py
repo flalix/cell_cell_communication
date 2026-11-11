@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-OLD = Path(__file__).resolve().parent.parent / "notebooks_ccc_lymphoid_liana"
+OLD = Path(__file__).resolve().parent.parent.parent / "notebooks_ccc_lymphoid_liana"   # make/ -> notebooks_multiproject/ -> ROOT0
 
 REPL = [
     ("libs/cell2location_lib.py", "libs/single_cell_lymphoid_lib.py"),

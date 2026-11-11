@@ -14,6 +14,8 @@ Methods ported from libs/cell2location_lib.py (that file is kept unchanged for c
     B-cell figures        : lineage_colors, lineage_order, umap_cell_type_plot, spatial_plot_cell_types,
                             spatial_plot_cell_abundance, dotplot_markers
     NMF factors           : plot_factor_dotplot (cell types grouped by lineage x NMF factors)
+    subregions            : add_region_ids, calc_df_subregion_ref_score, calc_df_ref_top, plotly_subregion_ref_heatmap,
+                            plot_ref_umap_subregion_scores (the subregion pipeline itself is in SingleCell, section 8c)
     ISG hotspot           : spot_expr, isg_hotspot, run_isg_hotspot
 
 Parameters added to DEFAULT_PARAMS: LYMPHOID_PARAMS (age bins, tissue order, model settings, marker cutoffs,
@@ -22,6 +24,7 @@ Every DataFrame variable starts with 'df_'.
 
 @created on 2026/11/05
 @updated on 2026/11/10  (mp_lymphoid01 / mp_lymphoid02 lymphoid notebooks)
+@updated on 2026/11/11  (mp_lymphoid03 subregions)
 @author: Flavio Lichtenstein
 """
 
@@ -50,7 +53,7 @@ from libs.Basic import pdwritecsv
 from libs.single_cell_lib import DEFAULT_PARAMS, SingleCell, cmap_byr
 from libs.matplotlib_figure_style import apply_figure_style
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 # the 34 reference cell types (obs['Subset']) grouped by lineage: row order of the lineage plots
 LYMPHOID_LINEAGE: Dict[str, List[str]] = {
@@ -112,6 +115,15 @@ LYMPHOID_PARAMS: Dict[str, Any] = dict(
     isg_n_top=8, isg_n_bottom=7,       # bars shown in the enrichment panel
     isg_maps=(("B_IFN", "abundance"), ("CXCL10", "gene"), ("DC_CCR7+", "abundance")),
     rho_vmax=0.8,
+    # --- subregions (mp_lymphoid03; pipeline in SingleCell section 8c)
+    region_id_fmt="R{:02d}",           # region_cluster 6 -> 'R06' (names of mp_lymphoid01 are not unique)
+    gene_display_exclude=r"^RP[SL]\d|^MT-|^A[CLP]\d{6}\.\d|^LINC\d|-AS\d$",   # ribosomal / unnamed clones / lncRNA: not listed
+    border_min_rel=1.25,               # regions are interleaved patches: 'border' only when the subregion is more on the
+                                       # region edge than the region itself (border_frac / region_border_frac)
+    subregion_map_title="{lib}: subregions of each lymph node region",
+    ref_sig_n_genes=25,                # top subregion signature genes scored on the scRNA reference
+    ref_sig_min_genes=3,               # subregions with fewer signature genes (found in the reference) are not scored
+    ref_score_clip=99.0,               # percentile cap of the cell scores in the UMAP grid
 )
 
 
@@ -935,6 +947,142 @@ class SingleCellLymphoid(SingleCell):
         if fname_tsv:
             pdwritecsv(df_load.round(4).reset_index(names="cell_type"), fname_tsv, self.root_result)
         return fig, df_load
+
+    # =====================================================================================================
+    # subregions (mp_lymphoid03): region ids; subregion signatures scored on the scRNA reference
+    # =====================================================================================================
+    def add_region_ids(self, df_regions: pd.DataFrame, adata=None, label_col: str = "region_label",
+                       cluster_col: str = "region_cluster", name_col: str = "region_name") -> pd.Series:
+        """obs[label_col] = region id ('R06', params['region_id_fmt']) and obs[name_col] from df_regions (index = barcode,
+        columns region_cluster, region_name: lymph01_region_labels.tsv). Returns the id -> name map."""
+        a = self._check_adata(adata)
+        d = df_regions.loc[a.obs_names]
+        ids = d[cluster_col].astype(int).map(self.params["region_id_fmt"].format)
+        a.obs[label_col] = pd.Categorical(ids.values, categories=sorted(ids.unique()))
+        a.obs[name_col] = d[name_col].astype(str).values
+        return pd.Series(dict(zip(ids.values, d[name_col].astype(str).values))).sort_index()
+
+    def calc_df_subregion_ref_score(self, adata_ref, df_gene_sets: pd.DataFrame, df_sub_table: Optional[pd.DataFrame] = None,
+                                    status: Optional[str] = "supported", n_genes: Optional[int] = None,
+                                    min_genes: Optional[int] = None, groupby: Optional[str] = None
+                                    ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, List[str]]]:
+        """Score the signature of each subregion on the scRNA reference.
+
+        Genes: the top n_genes subregion_signature genes (by Wilcoxon score) found in the reference; subregions with
+        < min_genes are skipped (with df_sub_table, only subregions whose status starts with `status`).
+        Cell score = mean over the genes of the per-gene z-score of log1p(CP10k) (library size obs['n_counts']), so
+        highly expressed genes do not dominate. Returns
+          df_ref_score : subregion x cell type (params['celltype_col']) mean cell score
+          df_cell_score: cells x subregions (for UMAPs)
+          genes_used   : {subregion: genes}."""
+        n_genes = self.get_param("ref_sig_n_genes", n_genes)
+        min_genes = self.get_param("ref_sig_min_genes", min_genes)
+        groupby = groupby or self.params["celltype_col"]
+        d = df_gene_sets[df_gene_sets.gene_set == "subregion_signature"].sort_values("scores", ascending=False)
+        if df_sub_table is not None and status:
+            keep = df_sub_table.loc[df_sub_table.status.str.startswith(status), "sub_region_id"]
+            d = d[d.sub_region_id.isin(set(keep))]
+        sym = set(self.symbols(adata_ref).astype(str))
+        genes_used = {}
+        for s_id, g in d.groupby("sub_region_id", sort=False):
+            gl = [x for x in g.gene if x in sym][:n_genes]
+            if len(gl) >= min_genes:
+                genes_used[s_id] = gl
+        order = [s_id for s_id in df_gene_sets.sub_region_id.unique() if s_id in genes_used]
+        genes_used = {k: genes_used[k] for k in order}
+        union = sorted({x for v in genes_used.values() for x in v})
+        found, _, E = self.panel_lognorm(union, adata_ref)
+        E = E.astype(np.float32)
+        sd = E.std(0)
+        Z = (E - E.mean(0)) / np.where(sd > 0, sd, 1)
+        col = {g: i for i, g in enumerate(found)}
+        S = np.column_stack([Z[:, [col[g] for g in gl]].mean(1) for gl in genes_used.values()])
+        df_cell_score = pd.DataFrame(S, index=adata_ref.obs_names, columns=list(genes_used))
+        ct = adata_ref.obs[groupby].astype(str).values
+        df_ref_score = df_cell_score.groupby(ct).mean().T
+        return df_ref_score, df_cell_score, genes_used
+
+    @staticmethod
+    def calc_df_ref_top(df_ref_score: pd.DataFrame, n: int = 3) -> pd.Series:
+        """Top-n reference cell types per subregion: 'B_GC_LZ (1.42), FDC (1.10), ...'."""
+        return df_ref_score.apply(lambda r: ", ".join(f"{c} ({v:.2f})" for c, v in r.sort_values(ascending=False)
+                                                      .head(n).items()), axis=1).rename("ref_cell_types")
+
+    def plotly_subregion_ref_heatmap(self, df_ref_score: pd.DataFrame, lineage: Optional[Dict[str, Sequence[str]]] = None,
+                                     df_sub_table: Optional[pd.DataFrame] = None, height: Optional[int] = None):
+        """Heatmap subregion (rows, grouped by region) x reference cell type (columns, lineage order): mean cell score
+        of the subregion signature. Hover: signature genes, status."""
+        import plotly.graph_objects as go
+        cols = [c for c in (self.lineage_order(lineage) if lineage else df_ref_score.columns) if c in df_ref_score.columns]
+        Z = df_ref_score[cols]
+        info = {}
+        if df_sub_table is not None:
+            info = {r.sub_region_id: f"{r.status}<br>up: {r.subregion_signature_genes[:70]}" for r in df_sub_table.itertuples()}
+        cd = np.array([[info.get(s_id, "")] * len(cols) for s_id in Z.index])
+        vmax = float(np.nanpercentile(np.abs(Z.values), 99))
+        fig = go.Figure(go.Heatmap(z=Z.values, x=cols, y=list(Z.index), colorscale="RdBu_r", zmid=0, zmin=-vmax, zmax=vmax,
+                                   customdata=cd, colorbar=dict(title="mean<br>score (z)"),
+                                   hovertemplate="%{y} signature in %{x}<br>score %{z:.2f}<br>%{customdata}<extra></extra>"))
+        if lineage:
+            x0 = 0
+            for k, v in lineage.items():
+                n_ = len([c for c in v if c in cols])
+                fig.add_vline(x=x0 + n_ - 0.5, line_color="#444", line_width=1)
+                fig.add_annotation(x=x0 + (n_ - 1) / 2, y=1.0, yref="paper", yanchor="bottom", text=k, showarrow=False,
+                                   font=dict(size=10))
+                x0 += n_
+        fig.update_layout(title="Subregion signatures scored on the scRNA reference (mean per-gene z of log1p CP10k)",
+                          height=height or max(420, 18 * len(Z) + 200), template="plotly_white",
+                          yaxis=dict(autorange="reversed", tickfont=dict(size=9)), xaxis=dict(tickfont=dict(size=9)),
+                          margin=dict(t=110))
+        return fig
+
+    def plot_ref_umap_subregion_scores(self, adata_ref, df_cell_score: pd.DataFrame, subregions: Sequence[str],
+                                       df_ref_score: Optional[pd.DataFrame] = None, ncols: int = 4, q: Optional[float] = None,
+                                       panel_size: float = 3.2, fname: Optional[str] = "ref_umap_subregion_scores.png"):
+        """Reference UMAP (obsm['X_umap']) coloured by the signature score of each subregion (one panel per subregion,
+        own scale clipped at the q-th percentile, values < 0 grey). Title: subregion + top reference cell type."""
+        q = self.get_param("ref_score_clip", q)
+        U = adata_ref.obsm["X_umap"]
+        subregions = [s_id for s_id in subregions if s_id in df_cell_score.columns]
+        nrows = int(math.ceil(len(subregions) / ncols))
+        fig, axes = plt.subplots(nrows, ncols, figsize=(panel_size * ncols, panel_size * nrows), squeeze=False)
+        o = np.random.default_rng(self.params["seed"]).permutation(len(U))
+        cmap = LinearSegmentedColormap.from_list("grey_red", ["#e6e6e6", "#fdbb84", "#d7301f", "#7f0000"])
+        for ax, s_id in zip(axes.ravel(), subregions):
+            v = df_cell_score[s_id].values
+            cap = np.nanpercentile(v, q)
+            vv = np.clip(v, 0, cap)
+            oo = o[np.argsort(vv[o], kind="stable")]           # high scores on top
+            sca = ax.scatter(U[oo, 0], U[oo, 1], s=0.3, c=vv[oo], cmap=cmap, vmin=0, vmax=cap, lw=0, rasterized=True)
+            top = ""
+            if df_ref_score is not None and s_id in df_ref_score.index:
+                top = df_ref_score.loc[s_id].idxmax()
+            ax.set_title(f"{s_id}" + (f" - {top}" if top else ""), fontsize=8, loc="left")
+            ax.set_xticks([]); ax.set_yticks([])
+            for sp_ in ax.spines.values():
+                sp_.set_visible(False)
+            fig.colorbar(sca, ax=ax, fraction=0.04, pad=0.01).ax.tick_params(labelsize=6)
+        for ax in axes.ravel()[len(subregions):]:
+            ax.set_visible(False)
+        fig.tight_layout()
+        fig.suptitle("Reference UMAP coloured by subregion signature score (mean per-gene z; < 0 grey)", fontsize=9, x=0.01,
+                     y=1.0, ha="left", va="bottom")
+        self._savefig(fig, fname)
+        return fig
+
+    def reference_signatures_symbols(self, fname: str = "sc.h5ad", root: Optional[Path] = None,
+                                     summary: str = "means") -> pd.DataFrame:
+        """Reference signatures used by the cell2location map (genes x 34 cell types) from the trained reference
+        (results/lymph_nodes_analysis/reference_signatures/sc.h5ad, varm '<summary>_per_cluster_mu_fg'), indexed
+        by gene symbol (var[symbol_col]; duplicated symbols: first kept). With 'means' and q05 abundances,
+        calc_celltype_expr reproduces the per-cell-type layers of sp.h5ad."""
+        path = Path(root or self.root_result) / fname
+        a = ad.read_h5ad(path, backed="r")
+        df_sig, _ = self.get_reference_signatures(a, prefer=(summary,))
+        df_sig.index = a.var.loc[df_sig.index, self.symbol_col].astype(str).values
+        a.file.close()
+        return df_sig[~df_sig.index.duplicated()]
 
     # aliases with the names used in ccc01 / ccc02 (cell2location_lib)
     def spatial_plot_bcell_types(self, adata_vis, focus, lineage, cmaps=None, ncols: int = 4,

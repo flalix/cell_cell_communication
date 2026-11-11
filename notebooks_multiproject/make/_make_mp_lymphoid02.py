@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from _make_lymphoid_common import old_md
 
-out = Path(__file__).parent / "mp_lymphoid02_regions.ipynb"
+out = Path(__file__).resolve().parent.parent / "mp_lymphoid02_regions.ipynb"   # notebooks_multiproject/
 if out.exists() and "--force" not in sys.argv:
     raise SystemExit(f"{out} exists: not overwritten (use --force)")
 o2 = old_md("ccc02_study")

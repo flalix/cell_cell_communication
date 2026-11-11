@@ -35,7 +35,15 @@ Sections of SingleCell
 8. Plots                       legend_figure_bottom, umap_spatial_3plot, plot_spatial_visium, plotly_spatial_visium,
                                plot_genes_per_cell_type, plot_slide_loc_cell_types, plot_spatial_features,
                                plot_density_overlay
-9. LIANA                       liana_rank_aggregate, liana_bivariate
+8b. Subclustering              subcluster_adaptive, calc_df_rank_genes, calc_df_spatial_coherence
+8c. Subregions                 prepare_expression, run_subregions, calc_df_region_signature, calc_df_subregion_gene_sets,
+                               calc_df_region_table, calc_df_subregion_table (+ borders, composition), Plotly figures
+9. LIANA                       spatial_weights (per section), liana_bivariate (cached), lr_significant,
+                               calc_df_lr_by_group, calc_celltype_expr (c2l count split), calc_df_celltype_lr,
+                               calc_df_group_celltype_links, liana_rank_aggregate_reference, calc_df_celltype_coloc,
+                               calc_df_ref_lr_support, calc_df_group_ccc; figures plot_lr_spatial,
+                               plotly_lr_group_heatmap, plotly_group_celltype_links, plot_sender_receiver_heatmaps,
+                               plotly_coloc_heatmap
 10. Static helpers             wtab
 
 Usage (notebook)
@@ -52,6 +60,7 @@ libs/cell2location_lib.py (function version, used by ccc01/ccc02) is kept unchan
 """
 
 import copy
+import re
 import warnings
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -70,7 +79,7 @@ import scanpy as sc
 
 from libs.Basic import create_dir, pdwritecsv, pdreadcsv
 
-__version__ = "1.2.0"
+__version__ = "1.4.0"
 
 colors_byr = ("#57a4e2", "#ebd246", "#f30707")
 cmap_byr = LinearSegmentedColormap.from_list("blue_yellow_red", list(colors_byr))
@@ -149,10 +158,31 @@ DEFAULT_PARAMS: Dict[str, Any] = dict(
     liana_resource="consensus",    # 'mouseconsensus' for mouse
     liana_expr_prop=0.1,
     liana_n_perms=100,
-    liana_bandwidth=200,
+    liana_bandwidth_spots=1.1,     # Gaussian kernel bandwidth in spot spacings (lymph node: 150 px / 137 px); one
+                                   # kernel per section; ~18 neighbours incl. self (rings 1-2) with liana_cutoff 0.1
+    liana_cutoff=0.1,              # kernel weights below this are removed
+    liana_fdr=0.05,                # LR pairs with global score > 0 at this FDR are 'significant'
+    liana_n_jobs=8,
     liana_local="cosine",
     liana_global="morans",
-    liana_nz_prop=0.2,
+    liana_nz_prop=0.05,            # ligand and receptor (all subunits) expressed in >= this fraction of spots
+    # --- LR per group (calc_df_lr_by_group), cell-type-resolved LR (calc_df_celltype_lr), reference LIANA
+    lr_group_min_auroc=0.65,       # 'enriched' in a group: AUROC of the local score >= this ...
+    lr_local_p=0.05,               # ... and more high-high spots (local p < this) than elsewhere
+    lr_n_show=5,                   # LR pairs listed per group
+    lr_display_exclude=r"(?i)^(HLA-|H2-)|^(B2M|LCK|GNAS|GNAI2|GNB1|ARF1|CALM[123]|RIMS1|SPTBN2|SHANK1|PTPN6)\^",
+                                   # MHC / B2M and intracellular signalling proteins as 'ligand': computed, not listed
+                                   # nor counted as cell-type links (both species; case-insensitive)
+    lr_top_n=100,                  # significant LR pairs (by global score) scored per sender / receiver cell type
+    c2l_lr_n_perms=200,            # receptor-spot permutations, whole tissue
+    c2l_lr_group_n_perms=50,       # ... within each group
+    c2l_lr_group_top_k=10,         # sender -> receiver links kept per (group, LR pair)
+    c2l_lr_min_z=3.0,              # group link counted when z >= this and score >= the whole-tissue score
+    ref_lr_cells_per_type=400,     # reference cells per type for rank_aggregate
+    ref_lr_spec_rank=0.05, ref_lr_mag_rank=0.2,    # specific and strong reference interactions (~5% of all,
+                                                   # lymph node and brain; canonical chemokine pairs ~0.13-0.16)
+    coloc_min=0.2,                 # spatially supported: tissue co-localisation r >= this ...
+    coloc_group_min=1.0,           # ... or group co-localisation share >= this (~ top 5% of group values)
     # --- subclustering (subcluster_adaptive)
     sub_n_hvg=2000,
     sub_n_pcs=20,
@@ -162,6 +192,30 @@ DEFAULT_PARAMS: Dict[str, Any] = dict(
     sub_resolutions=(0.2, 0.3, 0.4, 0.5, 0.6, 0.8),
     sub_min_size=20,               # every subcluster must have >= this many spots / cells
     sub_max_k=6,                   # at most this many subclusters
+    # --- subregions (section 8c; mp_mouse_brain03 / mp_lymphoid03): gene sets, flags, tables
+    subregion_key="sub_region_id",            # obs column, e.g. 'THAL_2'
+    subregion_skip=(),                        # regions not subclustered (artefacts, e.g. low-quality spots)
+    region_colors={},                         # region -> colour (others: Kelly colours)
+    region_sig_lfc=1.0, region_sig_padj=0.05, region_sig_min_pct=0.25,
+    sub_sig_lfc=0.75, sub_sig_padj=0.05, sub_sig_min_pct=0.20,
+    notpres_max_pct=0.05,                     # 'absent': detected in <= 5% of the subregion's spots
+    notpres_min_pct_rest=0.30,                # ... and in >= 30% of the rest of the region
+    notpres_padj=0.05,
+    gene_universe="detected",                 # 'detected' (in >= universe_min_pct of the region's spots) or 'all'
+    universe_min_pct=0.01,
+    n_genes_show=12,                          # genes listed per set in the summary tables
+    gene_display_exclude=None,                # regex of genes not listed (still counted), e.g. r"^Gm\d+$|Rik$"
+    coherence_min_ratio=1.5,                  # 'supported' subregion: spatial coherence ratio >= this
+    sub_min_sig_genes=3,                      # ... and >= this many subregion signature genes
+    section_min_frac=0.10,                    # below this fraction in one section -> flagged 'single-section'
+    low_depth_ratio=0.6,                      # median UMIs of subregion / region below this -> flagged 'low-depth'
+    high_depth_ratio=2.0,                     # ... above this -> 'high-depth' (signature counts inflated)
+    border_min_frac=0.25,                     # >= this fraction of neighbours in another region -> 'border with X'
+    border_min_rel=0.0,                       # ... and border_frac / region_border_frac >= this (0 = not used)
+    composition_min_mean=0.05,                # cell types with mean density >= this (cells per spot) are ranked
+    composition_top=3,
+    subregion_map_title="{lib}: subregions of each region",
+    plotly_include_js="cdn",                  # write_html: 'cdn' (small files, needs internet to view) or True
     # --- marker tests (calc_df_rank_genes)
     rank_corr_method="benjamini-hochberg",
     # --- spatial coherence
@@ -1565,14 +1619,19 @@ class SingleCell(object):
         sc.pp.filter_genes(a, min_cells=max(3, int(P["sub_min_gene_frac"] * a.n_obs)))
         n_batches = a.obs[batch_key].nunique() if batch_key and batch_key in a.obs else 1
         layer = counts_layer if counts_layer in a.layers else None
+        n_hvg = min(P["sub_n_hvg"], a.n_vars - 1)
         try:
-            sc.pp.highly_variable_genes(a, n_top_genes=min(P["sub_n_hvg"], a.n_vars - 1), flavor="seurat_v3", layer=layer,
+            sc.pp.highly_variable_genes(a, n_top_genes=n_hvg, flavor="seurat_v3", layer=layer,
                                         batch_key=batch_key if n_batches > 1 else None)
         except Exception:
-            sc.pp.highly_variable_genes(a, n_top_genes=min(P["sub_n_hvg"], a.n_vars - 1), flavor="seurat_v3", layer=layer)
+            try:
+                sc.pp.highly_variable_genes(a, n_top_genes=n_hvg, flavor="seurat_v3", layer=layer)
+            except ValueError:      # loess singularity on very small subsets (e.g. 41 low-depth spots): dispersion on X
+                sc.pp.highly_variable_genes(a, n_top_genes=n_hvg, flavor="seurat")
         b = a[:, a.var["highly_variable"].values].copy()
         if P["sub_batch"] == "combat" and n_batches > 1:
             sc.pp.combat(b, key=batch_key)
+            b.X = np.array(b.X, dtype=np.float64, copy=True)   # combat can leave X read-only; sc.pp.scale works in place
         sc.pp.scale(b, max_value=10)
         n_pcs = int(min(P["sub_n_pcs"], b.n_obs - 2, b.n_vars - 1))
         sc.pp.pca(b, n_comps=n_pcs, random_state=seed)
@@ -1658,37 +1717,1049 @@ class SingleCell(object):
         return df_coh
 
     # =====================================================================================================
-    # 9. LIANA
+    # 8c. Subregions: the spots of each region clustered on gene expression (mp_mouse_brain03, mp_lymphoid03)
+    #     prepare_expression, run_subregions, calc_df_region_signature, calc_df_subregion_gene_sets,
+    #     calc_df_composition_enrichment, calc_df_region_table, calc_df_subregion_borders, calc_df_subregion_table;
+    #     Plotly: save_plotly, plotly_region_subregions, plotly_subregion_map, plotly_subregion_diagnostics,
+    #     plotly_region_signature_heatmap
     # =====================================================================================================
-    def liana_rank_aggregate(self, groupby: str, adata=None, resource_name: Optional[str] = None,
-                             expr_prop: Optional[float] = None, n_perms: Optional[int] = None,
-                             use_raw: bool = False, key_added: str = "liana_res", **kw) -> pd.DataFrame:
-        """LIANA consensus rank_aggregate on log-normalised X ('mouseconsensus' resource for mouse)."""
+    def _region_palette(self, labels: Sequence[str]) -> Dict[str, str]:
+        """Region -> colour: params['region_colors'] first, then Kelly colours + tab20 in sorted order."""
+        given = self.params.get("region_colors") or {}
+        pal = KELLY_COLORS + [mpl.colors.to_hex(c) for c in plt.get_cmap("tab20").colors]
+        out, i = {}, 0
+        for l in sorted(labels):
+            if l in given:
+                out[l] = given[l]
+            else:
+                out[l] = pal[i % len(pal)]
+                i += 1
+        return out
+
+
+    def prepare_expression(self, adata_map, label_col: str = "region_label") -> ad.AnnData:
+        """Spots x genes for subregion analysis: var_names = unique gene symbols (Ensembl in var['ENSEMBL']),
+        layers['counts'] = raw counts, X = log1p(CP10k). Needs obs[label_col] (add_region_labels)."""
+        a = adata_map.copy()
+        a.raw = None                       # the paper map carries .raw (Ensembl names); scanpy would test on it
+        a.var["ENSEMBL"] = a.var_names
+        a.var_names = a.var[self.symbol_col].astype(str).values
+        a.var_names_make_unique()
+        a.layers[self.params["counts_layer"]] = a.X.copy()
+        sc.pp.normalize_total(a, target_sum=self.params["target_sum"])
+        sc.pp.log1p(a)
+        a.obs[label_col] = a.obs[label_col].astype(str).astype("category")
+        return a
+
+    def run_subregions(self, adata_expr, label_col: str = "region_label", regions: Optional[Sequence[str]] = None
+                       ) -> Tuple[Dict[str, ad.AnnData], pd.DataFrame]:
+        """subcluster_adaptive on the spots of each region (batch = section). Writes obs[subregion_key] = '<region>_<k>'
+        (k = 1 is the largest; regions in subregion_skip stay NaN). Returns ({region: adata_sub}, df_grid)."""
+        key = self.params["subregion_key"]
+        regions = regions or [r for r in sorted(adata_expr.obs[label_col].unique()) if r not in self.params["subregion_skip"]]
+        adata_expr.obs[key] = pd.Series(np.nan, index=adata_expr.obs_names, dtype=object)
+        subs, grids = {}, []
+        for reg in regions:
+            a_reg = adata_expr[adata_expr.obs[label_col] == reg]
+            a_sub, df_grid = self.subcluster_adaptive(a_reg, batch_key=self.sample_col)
+            a_sub.obs[key] = pd.Categorical([f"{reg}_{k}" for k in a_sub.obs["subcluster"]],
+                                            categories=[f"{reg}_{k}" for k in a_sub.obs["subcluster"].cat.categories])
+            adata_expr.obs.loc[a_sub.obs_names, key] = a_sub.obs[key].astype(str).values
+            df_grid.insert(0, "region_id", reg)
+            subs[reg] = a_sub
+            grids.append(df_grid)
+        return subs, pd.concat(grids, ignore_index=True)
+
+    def _display_genes(self, genes: Sequence[str], n: Optional[int] = None) -> List[str]:
+        rx = re.compile(self.params["gene_display_exclude"]) if self.params["gene_display_exclude"] else None
+        out = [g for g in genes if not (rx and rx.search(g))]
+        return out[: (n or self.params["n_genes_show"])]
+
+    def calc_df_region_signature(self, adata_expr, label_col: str = "region_label") -> Tuple[pd.DataFrame, Dict[str, set]]:
+        """Each region vs all other spots (Wilcoxon). Returns (df_rank of all genes, {region: signature gene set})
+        with signature = logFC >= region_sig_lfc, padj <= region_sig_padj, pct_in >= region_sig_min_pct."""
+        P = self.params
+        df_rank = self.calc_df_rank_genes(adata_expr, groupby=label_col)
+        df_rank = df_rank.rename(columns={"group": "region_id", "names": "gene"})
+        m = (df_rank.logfoldchanges >= P["region_sig_lfc"]) & (df_rank.pvals_adj <= P["region_sig_padj"]) & \
+            (df_rank.pct_in >= P["region_sig_min_pct"])
+        df_rank["region_signature"] = m
+        sig = {r: set(g.gene) for r, g in df_rank[m].groupby("region_id", observed=True)}
+        return df_rank, sig
+
+    def calc_df_subregion_gene_sets(self, adata_expr, region_sig: Dict[str, set], label_col: str = "region_label"
+                                    ) -> pd.DataFrame:
+        """Partition of each subregion's gene universe into 4 disjoint sets (counts add up to the universe):
+          region_signature    - in the region signature (region vs all other regions)
+          subregion_signature - higher in the subregion than in the rest of the region (logFC >= sub_sig_lfc,
+                                padj <= sub_sig_padj, pct >= sub_sig_min_pct), not in the region signature
+          not_present         - detected in >= notpres_min_pct_rest of the rest of the region, in <= notpres_max_pct
+                                of the subregion, significantly lower (padj <= notpres_padj)
+          other               - the remaining genes of the universe
+        Universe: genes detected in >= universe_min_pct of the region's spots ('detected') or all genes ('all').
+        Returns long df_gene_sets: region_id, sub_region_id, gene, gene_set, logfoldchanges, pvals_adj, pct_sub,
+        pct_rest, scores, mean_log1p_sub."""
+        P = self.params
+        key = P["subregion_key"]
+        rows = []
+        for reg in [r for r in adata_expr.obs[label_col].cat.categories if r not in P["subregion_skip"]]:
+            a = adata_expr[adata_expr.obs[label_col] == reg].copy()
+            a.obs[key] = a.obs[key].astype(str).astype("category")
+            subs = list(a.obs[key].cat.categories)
+            X = a.X
+            pct_reg = np.asarray((X > 0).mean(0)).ravel()
+            universe = a.var_names[pct_reg >= P["universe_min_pct"]] if P["gene_universe"] == "detected" else a.var_names
+            rsig = region_sig.get(reg, set())
+            if len(subs) == 1:
+                df_r = pd.DataFrame({"group": subs[0], "names": a.var_names, "scores": 0.0, "logfoldchanges": 0.0,
+                                     "pvals": 1.0, "pvals_adj": 1.0, "pct_in": pct_reg, "pct_out": np.nan})
+            else:
+                df_r = self.calc_df_rank_genes(a, groupby=key)
+            for s in subs:
+                d = df_r[df_r.group == s].set_index("names").reindex(universe)
+                ms = (a.obs[key] == s).values
+                d["mean_log1p_sub"] = np.asarray(X[ms][:, a.var_names.get_indexer(universe)].mean(0)).ravel()
+                gs = pd.Series("other", index=universe)
+                gs[gs.index.isin(rsig)] = "region_signature"
+                up = (d.logfoldchanges >= P["sub_sig_lfc"]) & (d.pvals_adj <= P["sub_sig_padj"]) & (d.pct_in >= P["sub_sig_min_pct"])
+                gs[(gs == "other") & up.values] = "subregion_signature"
+                np_ = (d.pct_in <= P["notpres_max_pct"]) & (d.pct_out >= P["notpres_min_pct_rest"]) & \
+                      (d.pvals_adj <= P["notpres_padj"]) & (d.logfoldchanges < 0)
+                gs[(gs == "other") & np_.values] = "not_present"
+                rows.append(pd.DataFrame({"region_id": reg, "sub_region_id": s, "gene": universe, "gene_set": gs.values,
+                                          "logfoldchanges": d.logfoldchanges.values, "pvals_adj": d.pvals_adj.values,
+                                          "pct_sub": d.pct_in.values, "pct_rest": d.pct_out.values,
+                                          "scores": d.scores.values, "mean_log1p_sub": d.mean_log1p_sub.values}))
+        df_gene_sets = pd.concat(rows, ignore_index=True)
+        return df_gene_sets
+
+    def calc_df_composition_enrichment(self, df_abund: pd.DataFrame, labels: pd.Series, reference: Optional[pd.Series] = None,
+                                       min_mean: Optional[float] = None) -> pd.DataFrame:
+        """Mean cell-type density per label vs its reference (default: all other spots; with `reference`, the other spots
+        of the same reference group). Returns long table label, cell_type, mean_in, mean_ref, ratio (cell types with
+        mean_in >= min_mean)."""
+        min_mean = self.get_param("composition_min_mean", min_mean)
+        labels = labels.astype(str)
+        rows = []
+        for lab in sorted(labels.dropna().unique()):
+            if lab == "nan":
+                continue
+            m = (labels == lab).values
+            ref = (~m) if reference is None else ((reference == reference[m].iloc[0]).values & ~m)
+            if ref.sum() == 0:
+                continue
+            mi, mr = df_abund[m].mean(), df_abund[ref].mean()
+            ratio = (mi + 0.01) / (mr + 0.01)
+            for ct in df_abund.columns:
+                if mi[ct] >= min_mean:
+                    rows.append(dict(label=lab, cell_type=ct, mean_in=round(float(mi[ct]), 3),
+                                     mean_ref=round(float(mr[ct]), 3), ratio=round(float(ratio[ct]), 2)))
+        df_comp = pd.DataFrame(rows).sort_values(["label", "ratio"], ascending=[True, False])
+        return df_comp
+
+    @staticmethod
+    def _top_ratio_text(df_comp: pd.DataFrame, label: str, n: int) -> str:
+        d = df_comp[df_comp.label == label].head(n)
+        return ", ".join(f"{r.cell_type} (x{r.ratio:.1f})" for r in d.itertuples())
+
+    def calc_df_region_table(self, adata_expr, df_rank_region: pd.DataFrame, region_sig: Dict[str, set],
+                             df_abund: pd.DataFrame, df_region_info: Optional[pd.DataFrame] = None,
+                             label_col: str = "region_label") -> pd.DataFrame:
+        """Table region: region_id, region_name, n_spots, n_subregions, n_signature_genes, signature_genes (top by score),
+        enriched_cell_types (vs all other spots), functional_description (curated region table df_region_info:
+        region_id, region_name, description; e.g. mouse_brain_regions.tsv, lymph_node_regions.tsv)."""
+        key = self.params["subregion_key"]
+        lab = adata_expr.obs[label_col].astype(str)
+        df_comp = self.calc_df_composition_enrichment(df_abund.loc[adata_expr.obs_names], lab)
+        desc = dict(zip(df_region_info.region_id, df_region_info.description)) if df_region_info is not None else {}
+        names = dict(zip(df_region_info.region_id, df_region_info.region_name)) if df_region_info is not None else {}
+        rows = []
+        for reg in adata_expr.obs[label_col].cat.categories:
+            d = df_rank_region[(df_rank_region.region_id == reg) & df_rank_region.region_signature].sort_values("scores", ascending=False)
+            n_sub = adata_expr.obs.loc[lab == reg, key].dropna().nunique() if key in adata_expr.obs else np.nan
+            rows.append(dict(region_id=reg, region_name=names.get(reg, ""), n_spots=int((lab == reg).sum()), n_subregions=(int(n_sub) if pd.notna(n_sub) else None),
+                             n_signature_genes=len(region_sig.get(reg, ())),
+                             signature_genes=", ".join(self._display_genes(d.gene)),
+                             enriched_cell_types=self._top_ratio_text(df_comp, reg, self.params["composition_top"]),
+                             functional_description=desc.get(reg, "")))
+        df_region_table = pd.DataFrame(rows)
+        return df_region_table
+
+    def calc_df_subregion_borders(self, adata_expr, label_col: str = "region_label") -> pd.DataFrame:
+        """For each subregion: fraction of its spots' tissue neighbours (same section) that belong to another region
+        (border_frac), the most frequent of those regions (border_region), the same fraction for its whole region
+        (region_border_frac) and border_rel = border_frac / region_border_frac (> 1: the subregion sits on the region's
+        edge more than the region as a whole; useful when regions are interleaved patches). Index = sub_region_id."""
+        from scipy.spatial import cKDTree
+        key = self.params["subregion_key"]
+        rf = self.params["coherence_radius_factor"]
+        obs = adata_expr.obs
+        lab = obs[label_col].astype(str).values
+        sub = obs[key].astype(str).values
+        libs = obs[self.sample_col].astype(str).values
+        xy = np.asarray(adata_expr.obsm["spatial"], float)
+        counts: Dict[str, Dict[str, int]] = {}
+        totals: Dict[str, int] = {}
+        reg_tot: Dict[str, int] = {}
+        reg_out: Dict[str, int] = {}
+        sub_reg: Dict[str, str] = {}
+        for lb in np.unique(libs):
+            idx = np.where(libs == lb)[0]
+            tree = cKDTree(xy[idx])
+            step = np.median(tree.query(xy[idx], k=2)[0][:, 1])
+            for i_loc, nb in enumerate(tree.query_ball_point(xy[idx], rf * step)):
+                i = idx[i_loc]
+                for j_loc in nb:
+                    j = idx[j_loc]
+                    if j == i:
+                        continue
+                    reg_tot[lab[i]] = reg_tot.get(lab[i], 0) + 1
+                    reg_out[lab[i]] = reg_out.get(lab[i], 0) + int(lab[j] != lab[i])
+                    if sub[i] == "nan":
+                        continue
+                    sub_reg[sub[i]] = lab[i]
+                    totals[sub[i]] = totals.get(sub[i], 0) + 1
+                    if lab[j] != lab[i]:
+                        counts.setdefault(sub[i], {})
+                        counts[sub[i]][lab[j]] = counts[sub[i]].get(lab[j], 0) + 1
+        rows = []
+        for s, tot in totals.items():
+            c = counts.get(s, {})
+            n_other = sum(c.values())
+            top = max(c, key=c.get) if c else ""
+            bf = n_other / tot if tot else 0.0
+            r = sub_reg[s]
+            rbf = reg_out.get(r, 0) / reg_tot[r] if reg_tot.get(r) else 0.0
+            rows.append(dict(sub_region_id=s, border_frac=bf, border_region=top, region_border_frac=rbf,
+                             border_rel=bf / rbf if rbf > 0 else np.nan))
+        df_border = pd.DataFrame(rows).set_index("sub_region_id")
+        return df_border
+
+    def calc_df_subregion_table(self, adata_expr, df_gene_sets: pd.DataFrame, df_abund: pd.DataFrame,
+                                df_descriptions: Optional[pd.DataFrame] = None, label_col: str = "region_label",
+                                n_other_top: int = 10) -> pd.DataFrame:
+        """Table subregion: region_id, sub_region_id, n_spots, section fractions, spatial coherence, counts of the 4 gene
+        sets (+ universe), subregion_signature_genes, not_present_genes, other_genes_top_expressed, enriched cell types
+        (vs the rest of the region), status, functional_description (curated table when given, else automatic)."""
+        P = self.params
+        key = P["subregion_key"]
+        obs = adata_expr.obs[adata_expr.obs[key].notna()]
+        df_coh = self.calc_df_spatial_coherence(adata_expr[obs.index], key=key, within_key=label_col)
+        coh = dict(zip(df_coh.category, df_coh.coherence_ratio))
+        df_comp = self.calc_df_composition_enrichment(df_abund.loc[obs.index], obs[key], reference=obs[label_col])
+        libs = sorted(obs[self.sample_col].astype(str).unique())
+        df_border = self.calc_df_subregion_borders(adata_expr, label_col=label_col)
+        umis = np.asarray(adata_expr.layers[P["counts_layer"]].sum(1)).ravel()
+        umis = pd.Series(umis, index=adata_expr.obs_names)
+        curated = {}
+        if df_descriptions is not None:
+            curated = {r.sub_region_id: r for r in df_descriptions.itertuples()}
+        rows = []
+        for (reg, s), d in df_gene_sets.groupby(["region_id", "sub_region_id"], sort=False):
+            n_set = d.gene_set.value_counts()
+            o = obs[obs[key] == s]
+            frac = o[self.sample_col].astype(str).value_counts(normalize=True).reindex(libs).fillna(0)
+            reg_libs = obs.loc[obs[label_col] == reg, self.sample_col].astype(str).unique()
+            sig = d[d.gene_set == "subregion_signature"].sort_values("scores", ascending=False)
+            npr = d[d.gene_set == "not_present"].sort_values("scores")
+            oth = d[d.gene_set == "other"].sort_values("mean_log1p_sub", ascending=False)
+            n_sig = int(n_set.get("subregion_signature", 0))
+            single = len(reg_libs) > 1 and frac[list(reg_libs)].min() < P["section_min_frac"]
+            n_subs = obs.loc[obs[label_col] == reg, key].nunique()
+            depth_ratio = float(umis[o.index].median() / umis[obs.index[obs[label_col] == reg]].median())
+            low_depth = depth_ratio < P["low_depth_ratio"]
+            b = df_border.loc[s] if s in df_border.index else None
+            border = b is not None and b.border_frac >= P["border_min_frac"] and \
+                (not P["border_min_rel"] or (pd.notna(b.border_rel) and b.border_rel >= P["border_min_rel"]))
+            if n_subs == 1:
+                status = "no subregions (one cluster)"
+            elif coh.get(s, 0) >= P["coherence_min_ratio"] and n_sig >= P["sub_min_sig_genes"]:
+                status = "supported"
+            else:
+                status = "weak"
+            high_depth = depth_ratio > P["high_depth_ratio"]
+            status += ("; single-section" if single else "") + ("; low-depth" if low_depth else "") + \
+                      ("; high-depth" if high_depth else "") + (f"; border with {b.border_region}" if border else "")
+            sig_genes = self._display_genes(sig.gene)
+            np_genes = self._display_genes(npr.gene)
+            cell_types = self._top_ratio_text(df_comp, s, P["composition_top"])
+            cur = curated.get(s)
+            if cur is not None:
+                description, desc_source = cur.functional_description, "curated"
+                check = [g.strip() for g in str(getattr(cur, "signature_check", "")).split(",") if g.strip()]
+                if check and not set(check) & set(self._display_genes(sig.gene, 20)) and n_sig > 0:
+                    desc_source = "curated - CHECK: signature changed since curation"
+            else:
+                description = (f"Part of {reg}" + (f"; enriched for {cell_types}" if cell_types else "")
+                               + (f"; markers {', '.join(sig_genes[:5])}" if sig_genes else "")
+                               + (f"; lacks {', '.join(np_genes[:3])}" if np_genes else "") + ".")
+                desc_source = "automatic"
+            row = dict(region_id=reg, sub_region_id=s, n_spots=len(o))
+            row.update({f"frac_{lb}": round(float(frac[lb]), 2) for lb in libs})
+            row.update(dict(coherence_ratio=coh.get(s, np.nan), depth_ratio=round(depth_ratio, 2),
+                            border_region=(b.border_region if b is not None else ""),
+                            border_frac=(round(float(b.border_frac), 2) if b is not None else np.nan),
+                            border_rel=(round(float(b.border_rel), 2) if b is not None and pd.notna(b.border_rel) else np.nan),
+                            status=status,
+                            n_universe=int(len(d)), n_region_signature=int(n_set.get("region_signature", 0)),
+                            n_subregion_signature=n_sig, n_not_present=int(n_set.get("not_present", 0)),
+                            n_other=int(n_set.get("other", 0)),
+                            subregion_signature_genes=", ".join(sig_genes), not_present_genes=", ".join(np_genes),
+                            other_genes_top_expressed=", ".join(self._display_genes(oth.gene, n_other_top)),
+                            enriched_cell_types=cell_types, functional_description=description,
+                            description_source=desc_source))
+            rows.append(row)
+        df_sub_table = pd.DataFrame(rows)
+        assert (df_sub_table[["n_region_signature", "n_subregion_signature", "n_not_present", "n_other"]].sum(1)
+                == df_sub_table.n_universe).all(), "gene sets do not partition the universe"
+        return df_sub_table
+
+    # ---------------------------------------------------------------------------------------- Plotly figures
+    def save_plotly(self, fig, fname: Optional[str], root_figure: Optional[Path] = None):
+        """fig.write_html to (root_figure or self.root_figure) / fname (plotly.js from params['plotly_include_js'])."""
+        if fname is None:
+            return None
+        path = Path(root_figure or self.root_figure) / fname
+        fig.write_html(path, include_plotlyjs=self.params["plotly_include_js"])
+        return path
+
+    def subregion_colors(self, sub_ids: Sequence[str], region: str, regions: Optional[Sequence[str]] = None) -> Dict[str, str]:
+        """Shades of the region colour, dark -> light by subregion number. The region colour comes from
+        _region_palette(regions) (all regions, so that regions without params['region_colors'] get distinct colours)."""
+        import colorsys
+        base = self._region_palette(list(regions) if regions is not None else [region])[region]
+        r, g, b = mpl.colors.to_rgb(base)
+        h, l, s_ = colorsys.rgb_to_hls(r, g, b)
+        n = len(sub_ids)
+        light = np.linspace(0.28, 0.78, n) if n > 1 else [min(max(l, 0.35), 0.6)]
+        sat = max(s_, 0.45)
+        return {sid: mpl.colors.to_hex(colorsys.hls_to_rgb(h, li, sat)) for sid, li in zip(sub_ids, light)}
+
+    def subregion_palette(self, sub_ids: Sequence[str]) -> Dict[str, str]:
+        """Distinct colours for the subregions of one region (Plotly qualitative palette)."""
+        import plotly.express as px
+        pal = px.colors.qualitative.Bold + px.colors.qualitative.Safe
+        return {s: pal[i % len(pal)] for i, s in enumerate(sub_ids)}
+
+    def _jpeg_uri(self, img: np.ndarray) -> str:
+        import base64, io
+        from PIL import Image
+        a_ = img if img.dtype == np.uint8 else (np.clip(img, 0, 1) * 255).astype(np.uint8)
+        buf = io.BytesIO()
+        Image.fromarray(a_[..., :3]).save(buf, format="JPEG", quality=self.params["plotly_jpeg_quality"])
+        return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+
+    def plotly_region_subregions(self, region: str, adata_sub: ad.AnnData, adata_map, df_sub_table: Optional[pd.DataFrame] = None,
+                                 pad: float = 80, height: int = 470, spot_size: float = 7):
+        """One region: UMAP by subregion | UMAP by section (one section: by log10 UMIs, the depth confounder) |
+        subregions on the H&E of each section (cropped to the region).
+        Legend entries toggle a subregion in every panel. Hover: subregion, section, status, signature genes."""
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+        key = self.params["subregion_key"]
+        subs = list(adata_sub.obs[key].cat.categories)
+        cols = self.subregion_palette(subs)
+        libs = [lb for lb in self.library_ids(adata_map) if (adata_sub.obs[self.sample_col].astype(str) == lb).any()]
+        info = {}
+        if df_sub_table is not None:
+            for r in df_sub_table[df_sub_table.region_id == region].itertuples():
+                info[r.sub_region_id] = f"{r.status}; coherence {r.coherence_ratio}<br>up: {r.subregion_signature_genes[:80]}"
+        one_section = adata_sub.obs[self.sample_col].astype(str).nunique() == 1
+        titles = ["UMAP - subregions", "UMAP - log10 UMIs" if one_section else "UMAP - sections"] + [f"{lb}" for lb in libs]
+        fig = make_subplots(rows=1, cols=2 + len(libs), subplot_titles=titles, horizontal_spacing=0.03)
+        U = adata_sub.obsm["X_umap"]
+        lab = adata_sub.obs[key].astype(str).values
+        sec = adata_sub.obs[self.sample_col].astype(str).values
+        for s in subs:
+            m = lab == s
+            fig.add_trace(go.Scattergl(x=U[m, 0], y=U[m, 1], mode="markers", name=f"{s} (n={m.sum()})", legendgroup=s,
+                                       marker=dict(size=5, color=cols[s]), text=adata_sub.obs_names[m],
+                                       hovertemplate=f"<b>{s}</b><br>{info.get(s, '')}<br>%{{text}}<extra></extra>"),
+                          row=1, col=1)
+        sec_cols = dict(zip(self.library_ids(adata_map), ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"]))
+        if one_section and self.params["counts_layer"] in adata_sub.layers:
+            umi = np.log10(np.asarray(adata_sub.layers[self.params["counts_layer"]].sum(1)).ravel() + 1)
+            fig.add_trace(go.Scattergl(x=U[:, 0], y=U[:, 1], mode="markers", name="log10 UMIs", showlegend=False,
+                                       marker=dict(size=5, color=umi, colorscale="Viridis",
+                                                   colorbar=dict(title="log10<br>UMIs", len=0.6, x=0.33, thickness=10)),
+                                       text=[f"{v:.2f}" for v in umi],
+                                       hovertemplate="log10 UMIs %{text}<extra></extra>"), row=1, col=2)
+        else:
+            for lb in np.unique(sec):
+                m = sec == lb
+                fig.add_trace(go.Scattergl(x=U[m, 0], y=U[m, 1], mode="markers", name=lb, legendgroup=lb,
+                                           marker=dict(size=5, color=sec_cols.get(lb, "#777")), hoverinfo="skip"), row=1, col=2)
+        for j, lb in enumerate(libs):
+            img, _ = self.hires_image(lb, adata_map)
+            mm, xy_all = self.spot_xy(lb, adata_map)
+            names_lb = adata_map.obs_names[mm]
+            in_reg = names_lb.isin(adata_sub.obs_names)
+            xy = xy_all[in_reg]
+            x0, x1 = int(max(xy[:, 0].min() - pad, 0)), int(min(xy[:, 0].max() + pad, img.shape[1]))
+            y0, y1 = int(max(xy[:, 1].min() - pad, 0)), int(min(xy[:, 1].max() + pad, img.shape[0]))
+            col = 3 + j
+            fig.add_trace(go.Image(source=self._jpeg_uri(img[y0:y1, x0:x1]), x0=x0, y0=y0, dx=1, dy=1, hoverinfo="skip"),
+                          row=1, col=col)
+            lab_lb = adata_sub.obs.loc[names_lb[in_reg], key].astype(str).values
+            for s in subs:
+                m = lab_lb == s
+                if not m.any():
+                    continue
+                fig.add_trace(go.Scattergl(x=xy[m, 0], y=xy[m, 1], mode="markers", name=s, legendgroup=s, showlegend=False,
+                                           marker=dict(size=spot_size, color=cols[s], line=dict(width=0.4, color="black")),
+                                           text=names_lb[in_reg][m],
+                                           hovertemplate=f"<b>{s}</b> - {lb}<br>{info.get(s, '')}<br>%{{text}}<extra></extra>"),
+                              row=1, col=col)
+            fig.update_xaxes(range=[x0, x1], visible=False, row=1, col=col)
+            fig.update_yaxes(range=[y1, y0], visible=False, scaleanchor=f"x{col}", row=1, col=col)
+        for c in (1, 2):
+            fig.update_xaxes(showticklabels=False, title_text="UMAP1", row=1, col=c)
+            fig.update_yaxes(showticklabels=False, title_text="UMAP2" if c == 1 else None, row=1, col=c)
+        res = adata_sub.uns.get("subcluster_resolution", "")
+        fig.update_layout(title=f"{region}: {len(subs)} subregion(s), {adata_sub.n_obs} spots (Leiden resolution {res})",
+                          height=height, width=420 * (2 + len(libs)), template="plotly_white",
+                          legend=dict(itemsizing="constant"), margin=dict(l=20, r=20, t=70, b=20))
+        return fig
+
+    def plotly_subregion_map(self, adata_expr, adata_map, library_id: str, df_sub_table: Optional[pd.DataFrame] = None,
+                             label_col: str = "region_label", spot_size: float = 6, width: int = 1300, height: int = 950):
+        """All subregions of one section on the H&E. Colours = shades of each region's colour; legend grouped by region
+        (click a region title to toggle its subregions). Hover: region, subregion, status, signature genes, cell types."""
+        import plotly.graph_objects as go
+        key = self.params["subregion_key"]
+        img, _ = self.hires_image(library_id, adata_map)
+        mm, xy = self.spot_xy(library_id, adata_map)
+        names_lb = adata_map.obs_names[mm]
+        obs = adata_expr.obs.loc[names_lb]
+        info = {}
+        if df_sub_table is not None:
+            for r in df_sub_table.itertuples():
+                info[r.sub_region_id] = (f"{r.status}<br>up: {r.subregion_signature_genes[:70]}"
+                                         f"<br>absent: {r.not_present_genes[:60]}<br>cells: {r.enriched_cell_types[:80]}")
+        fig = go.Figure()
+        fig.add_trace(go.Image(source=self._jpeg_uri(img), hoverinfo="skip"))
+        regions = [r for r in adata_expr.obs[label_col].cat.categories]
+        for reg in regions:
+            mreg = (obs[label_col].astype(str) == reg).values
+            if not mreg.any():
+                continue
+            if reg in self.params["subregion_skip"]:
+                fig.add_trace(go.Scattergl(x=xy[mreg, 0], y=xy[mreg, 1], mode="markers", name=reg, legendgroup=reg,
+                                           legendgrouptitle_text=reg, marker=dict(size=spot_size, color="#dddddd"),
+                                           hovertemplate=f"<b>{reg}</b> (not subclustered)<extra></extra>"))
+                continue
+            subs = sorted(obs.loc[mreg, key].dropna().unique(), key=lambda x: int(x.rsplit("_", 1)[1]))
+            cols = self.subregion_colors(subs, reg, regions)
+            for s in subs:
+                m = (obs[key] == s).values
+                fig.add_trace(go.Scattergl(x=xy[m, 0], y=xy[m, 1], mode="markers", name=s, legendgroup=reg,
+                                           legendgrouptitle_text=reg,
+                                           marker=dict(size=spot_size, color=cols[s], line=dict(width=0.3, color="black")),
+                                           text=names_lb[m],
+                                           hovertemplate=f"<b>{s}</b><br>{info.get(s, '')}<br>%{{text}}<extra></extra>"))
+        fig.update_layout(title=self.params["subregion_map_title"].format(lib=library_id), width=width, height=height,
+                          template="plotly_white", legend=dict(groupclick="toggleitem", itemsizing="constant", font=dict(size=10)),
+                          margin=dict(l=10, r=10, t=50, b=10))
+        fig.update_xaxes(visible=False, range=[xy[:, 0].min() - 40, xy[:, 0].max() + 40])
+        fig.update_yaxes(visible=False, range=[xy[:, 1].max() + 40, xy[:, 1].min() - 40], scaleanchor="x")
+        return fig
+
+    def plotly_subregion_diagnostics(self, df_sub_table: pd.DataFrame, height: int = 520):
+        """Subregion size vs spatial coherence ratio (marker size = number of subregion signature genes, colour = region);
+        dashed line = coherence_min_ratio."""
+        import plotly.express as px
+        d = df_sub_table.copy()
+        d["n_sig_plot"] = d.n_subregion_signature.clip(lower=1)
+        cmap = self._region_palette(d.region_id.unique())
+        fig = px.scatter(d, x="n_spots", y="coherence_ratio", color="region_id", size="n_sig_plot", size_max=28,
+                         hover_name="sub_region_id", color_discrete_map=cmap, log_x=True,
+                         hover_data=dict(status=True, n_subregion_signature=True, n_not_present=True, n_sig_plot=False,
+                                         subregion_signature_genes=True))
+        fig.add_hline(y=self.params["coherence_min_ratio"], line_dash="dash", line_color="#888")
+        fig.update_layout(title="Subregion diagnostics: size vs spatial coherence (marker size = signature genes)",
+                          template="plotly_white", height=height,
+                          xaxis_title="spots in subregion (log)", yaxis_title="spatial coherence ratio (1 = random)")
+        return fig
+
+    def plotly_region_signature_heatmap(self, adata_expr, df_rank_region: pd.DataFrame, n_per_region: int = 3,
+                                        label_col: str = "region_label", height: int = 700):
+        """Mean log1p(CP10k) of the top region signature genes (rows) in every region (columns), z-scored per gene."""
+        import plotly.graph_objects as go
+        regions = list(adata_expr.obs[label_col].cat.categories)
+        genes = []
+        for reg in regions:
+            d = df_rank_region[(df_rank_region.region_id == reg) & df_rank_region.region_signature].sort_values("scores", ascending=False)
+            genes += [g for g in self._display_genes(d.gene, n_per_region) if g not in genes]
+        X = adata_expr[:, genes].X
+        X = X.toarray() if sp.issparse(X) else np.asarray(X)
+        df_mean = pd.DataFrame(X, columns=genes).groupby(adata_expr.obs[label_col].astype(str).values).mean().loc[regions].T
+        Z = df_mean.sub(df_mean.mean(1), axis=0).div(df_mean.std(1).replace(0, 1), axis=0)
+        fig = go.Figure(go.Heatmap(z=Z.values, x=regions, y=genes, colorscale="RdBu_r", zmid=0,
+                                   customdata=df_mean.values.round(2),
+                                   hovertemplate="%{y} in %{x}<br>z = %{z:.2f}<br>mean log1p = %{customdata}<extra></extra>",
+                                   colorbar=dict(title="z (per gene)")))
+        fig.update_layout(title=f"Top {n_per_region} signature genes per region", height=height, template="plotly_white",
+                          yaxis=dict(autorange="reversed", tickfont=dict(size=9)))
+        return fig
+
+    # =====================================================================================================
+    # 9. LIANA: ligand-receptor (LR) communication in regions / subregions and between cell types
+    #    (mp_lymphoid04, mp_mouse_brain04). Dataset-specific values are parameters (liana_*, lr_*, c2l_lr_*,
+    #    ref_lr_*, coloc_*): resource ('consensus' human, 'mouseconsensus' mouse), kernel bandwidth in spot
+    #    spacings (one kernel per section), signatures and abundances from cell2location.
+    # =====================================================================================================
+    @staticmethod
+    def _liana_compat():
+        """liana <= 1.10 with pandas >= 3: single-score methods (logfc, sca) store their missing score in a column
+        labelled None and then fail on lr_res.drop([None]). Recompiles liana's _run_method with a tolerant drop
+        (only when that exact line is present; no files are changed)."""
+        import inspect
+        import liana.method.sc._liana_pipe as lp
+        if getattr(lp, "_compat_patched", False):
+            return
+        src = inspect.getsource(lp._run_method)
+        old = "lr_res = lr_res.drop([None], axis=1)"
+        if old in src:
+            new = ("lr_res = lr_res.drop([c for c in lr_res.columns if c is None or c == 'None' or "
+                   "(isinstance(c, float) and c != c)], axis=1)")
+            exec(compile(src.replace(old, new), lp.__file__, "exec"), lp.__dict__)
+        lp._compat_patched = True
+
+    @staticmethod
+    def _bh(p) -> np.ndarray:
+        """Benjamini-Hochberg adjusted p-values."""
+        p = np.asarray(p, float)
+        n = len(p)
+        o = np.argsort(p)
+        q = p[o] * n / np.arange(1, n + 1)
+        q = np.minimum.accumulate(q[::-1])[::-1]
+        out = np.empty(n)
+        out[o] = np.clip(q, 0, 1)
+        return out
+
+    def _groups(self, adata, group_key: str, skip: Optional[Sequence[str]] = None) -> pd.Series:
+        """obs[group_key] as str (NaN / skipped groups -> None)."""
+        skip = set(self.params["subregion_skip"] if skip is None else skip)
+        g = adata.obs[group_key].astype(object).where(adata.obs[group_key].notna(), None)
+        g = g.map(lambda x: None if x is None or str(x) in skip or str(x) == "nan" else str(x))
+        return g
+
+    def spatial_weights(self, adata=None, bandwidth_spots: Optional[float] = None, cutoff: Optional[float] = None,
+                        max_neighbours: int = 100, key_added: str = "spatial") -> pd.DataFrame:
+        """Gaussian spot kernel w = exp(-d^2 / (2 bw^2)) built per section (obs[sample_col]; block-diagonal, sections
+        never connected), bw = bandwidth_spots x the section's spot spacing, self weight 1 (several cells share a
+        spot), weights < cutoff removed (liana keeps them). Writes obsp[f'{key_added}_connectivities'].
+        Returns df_w: library, spacing_px, bandwidth_px, ring (distance / spacing), n neighbours, weight."""
         import liana as li
+        from scipy.spatial import cKDTree
         a = self._check_adata(adata)
-        li.mt.rank_aggregate(a, groupby=groupby, resource_name=self.get_param("liana_resource", resource_name),
-                             expr_prop=self.get_param("liana_expr_prop", expr_prop), use_raw=use_raw,
-                             n_perms=self.get_param("liana_n_perms", n_perms), key_added=key_added, verbose=False, **kw)
-        df_liana = a.uns[key_added]
-        return df_liana
+        bw = self.get_param("liana_bandwidth_spots", bandwidth_spots)
+        cutoff = self.get_param("liana_cutoff", cutoff)
+        libs = a.obs[self.sample_col].astype(str).values if self.sample_col in a.obs else np.zeros(a.n_obs, str)
+        xy_all = np.asarray(a.obsm["spatial"], float)
+        R, C, V, rows = [], [], [], []
+        for lb in pd.unique(libs):
+            idx = np.where(libs == lb)[0]
+            xy = xy_all[idx]
+            step = float(np.median(cKDTree(xy).query(xy, k=2)[0][:, 1]))
+            tmp = ad.AnnData(obs=pd.DataFrame(index=a.obs_names[idx]))
+            tmp.obsm["spatial"] = xy
+            li.ut.spatial_neighbors(tmp, bandwidth=bw * step, cutoff=cutoff, kernel="gaussian", set_diag=True,
+                                    max_neighbours=max_neighbours)
+            Wl = sp.coo_matrix(tmp.obsp["spatial_connectivities"])
+            k = Wl.data >= cutoff
+            R.append(idx[Wl.row[k]]); C.append(idx[Wl.col[k]]); V.append(Wl.data[k])
+            Wc = sp.csr_matrix((Wl.data[k], (Wl.row[k], Wl.col[k])), shape=(len(idx), len(idx)))
+            i = int(np.argmin(np.linalg.norm(xy - np.median(xy, 0), axis=1)))            # a central spot
+            d = np.linalg.norm(xy[Wc[i].indices] - xy[i], axis=1) / step
+            df_r = pd.DataFrame({"ring": np.round(d, 1), "weight": Wc[i].data}).groupby("ring") \
+                     .agg(n=("weight", "size"), weight=("weight", "mean")).reset_index()
+            df_r.insert(0, "library", lb); df_r.insert(1, "spacing_px", round(step, 1))
+            df_r.insert(2, "bandwidth_px", round(bw * step, 1))
+            df_r["mean_neighbours_incl_self"] = round(float(np.diff(Wc.indptr).mean()), 1)
+            rows.append(df_r)
+        W = sp.csr_matrix((np.concatenate(V), (np.concatenate(R), np.concatenate(C))), shape=(a.n_obs, a.n_obs))
+        a.obsp[f"{key_added}_connectivities"] = W
+        df_w = pd.concat(rows, ignore_index=True)
+        df_w["weight"] = df_w.weight.round(3)
+        return df_w
 
     def liana_bivariate(self, adata=None, resource_name: Optional[str] = None, local_name: Optional[str] = None,
-                        global_name: Optional[str] = None, bandwidth: Optional[int] = None,
-                        n_perms: Optional[int] = None, nz_prop: Optional[float] = None,
-                        **kw) -> Tuple[pd.DataFrame, ad.AnnData]:
-        """LIANA spatial bivariate LR scores (global + local metric). Returns (df_global, lr AnnData)."""
+                        global_name: Optional[str] = None, n_perms: Optional[int] = None,
+                        nz_prop: Optional[float] = None, fname: Optional[str] = None, force: bool = False,
+                        verbose: bool = True, **kw) -> Tuple[pd.DataFrame, ad.AnnData]:
+        """LIANA bivariate on log-normalised X with obsp['spatial_connectivities'] (spatial_weights is called when
+        missing): global Moran's R (permutation p) + local score (cosine) with categories (1 = high-high) and local
+        p-values. Cached as h5ad (root_result / fname). Returns (df_inter sorted by Moran's R, with morans_fdr (BH
+        over all tested pairs), adata_lr: spots x LR pairs, X = local score, layers 'cats', 'pvals')."""
         import liana as li
         a = self._check_adata(adata)
-        global_name = self.get_param("liana_global", global_name)
-        if "spatial_connectivities" not in a.obsp:
-            li.ut.spatial_neighbors(a, bandwidth=self.get_param("liana_bandwidth", bandwidth), cutoff=0.1,
-                                    kernel="gaussian", set_diag=True)
-        lrdata = li.mt.bivariate(a, resource_name=self.get_param("liana_resource", resource_name),
-                                 local_name=self.get_param("liana_local", local_name), global_name=global_name,
-                                 n_perms=self.get_param("liana_n_perms", n_perms), mask_negatives=False, add_categories=True,
-                                 nz_prop=self.get_param("liana_nz_prop", nz_prop), use_raw=False, verbose=False, **kw)
-        df_global = lrdata.var.sort_values(global_name, ascending=False)
-        return df_global, lrdata
+        path = Path(self.root_result) / fname if fname else None
+        if path is not None and path.exists() and not force:
+            adata_lr = ad.read_h5ad(path)
+            if verbose:
+                print(f"File already exists: {path} (read; force=True recomputes)")
+        else:
+            if "spatial_connectivities" not in a.obsp:
+                self.spatial_weights(a)
+            adata_lr = li.mt.bivariate(a, resource_name=self.get_param("liana_resource", resource_name),
+                                       local_name=self.get_param("liana_local", local_name),
+                                       global_name=self.get_param("liana_global", global_name),
+                                       n_perms=self.get_param("liana_n_perms", n_perms), mask_negatives=False,
+                                       add_categories=True, nz_prop=self.get_param("liana_nz_prop", nz_prop),
+                                       use_raw=False, verbose=False, **kw)
+            for k_ in ("cats", "pvals"):
+                if k_ in adata_lr.layers and not sp.issparse(adata_lr.layers[k_]):
+                    adata_lr.layers[k_] = sp.csr_matrix(adata_lr.layers[k_])
+            if path is not None:
+                adata_lr.write_h5ad(path)
+                if verbose:
+                    print(f"Saved {path}")
+        g = self.params["liana_global"]
+        df_inter = adata_lr.var.sort_values(g, ascending=False).copy()
+        df_inter[f"{g}_fdr"] = self._bh(df_inter[f"{g}_pvals"].values)
+        df_inter.index.name = "interaction"
+        return df_inter, adata_lr
+
+    def lr_significant(self, df_inter: pd.DataFrame, fdr: Optional[float] = None) -> pd.DataFrame:
+        """LR pairs with global score > 0 at FDR <= liana_fdr (sorted by the global score)."""
+        g = self.params["liana_global"]
+        fdr = self.get_param("liana_fdr", fdr)
+        return df_inter[(df_inter[f"{g}_fdr"] <= fdr) & (df_inter[g] > 0)]
+
+    def _lr_display(self, interactions: Sequence[str]) -> List[str]:
+        rx = re.compile(self.params["lr_display_exclude"]) if self.params["lr_display_exclude"] else None
+        return [i for i in interactions if not (rx and rx.search(i))]
+
+    def calc_df_lr_by_group(self, adata_lr, groups: pd.Series, interactions: Optional[Sequence[str]] = None,
+                            min_auroc: Optional[float] = None, local_p: Optional[float] = None) -> pd.DataFrame:
+        """LR activity of every group (region / subregion) vs the rest of the tissue, from the LIANA local scores:
+        mean_in / mean_out (local score), AUROC (P(local score of a group spot > a spot elsewhere); 0.5 = no
+        difference), hh_frac_in / hh_frac_out (fraction of spots in the high-high category with local p < local_p),
+        Mann-Whitney p and BH fdr per group. enriched = AUROC >= min_auroc and hh_frac_in > hh_frac_out.
+        Spots are spatially autocorrelated, so p-values are optimistic: rank by AUROC (effect size).
+        groups: Series aligned with adata_lr.obs_names (None = not assigned)."""
+        from scipy.stats import norm
+        min_auroc = self.get_param("lr_group_min_auroc", min_auroc)
+        local_p = self.get_param("lr_local_p", local_p)
+        ints = list(interactions) if interactions is not None else list(adata_lr.var_names)
+        A = adata_lr[:, ints]
+        X = A.X.toarray() if sp.issparse(A.X) else np.asarray(A.X)
+        C = A.layers["cats"]; C = C.toarray() if sp.issparse(C) else np.asarray(C)
+        P = A.layers["pvals"]; P = P.toarray() if sp.issparse(P) else np.asarray(P)
+        HH = (C == 1) & (P < local_p)
+        g = pd.Series(groups).reindex(adata_lr.obs_names)
+        ok = g.notna().values
+        X, HH, gv = X[ok], HH[ok], g[ok].astype(str).values
+        from scipy.stats import rankdata
+        Rk = np.apply_along_axis(rankdata, 0, X)
+        n = len(gv)
+        rows = []
+        for grp in pd.unique(gv):
+            m = gv == grp
+            n1, n0 = int(m.sum()), int(n - m.sum())
+            if n1 == 0 or n0 == 0:
+                continue
+            U = Rk[m].sum(0) - n1 * (n1 + 1) / 2
+            auc = U / (n1 * n0)
+            zU = (U - n1 * n0 / 2) / np.sqrt(n1 * n0 * (n1 + n0 + 1) / 12)
+            pv = 2 * norm.sf(np.abs(zU))
+            rows.append(pd.DataFrame({"group": grp, "interaction": ints, "n_spots": n1,
+                                      "mean_in": X[m].mean(0), "mean_out": X[~m].mean(0), "auroc": auc,
+                                      "hh_frac_in": HH[m].mean(0), "hh_frac_out": HH[~m].mean(0), "p": pv,
+                                      "fdr": self._bh(pv)}))
+        df_lr_group = pd.concat(rows, ignore_index=True)
+        df_lr_group["enriched"] = (df_lr_group.auroc >= min_auroc) & (df_lr_group.hh_frac_in > df_lr_group.hh_frac_out)
+        lr_cols = adata_lr.var[["ligand", "receptor"]]
+        df_lr_group = df_lr_group.join(lr_cols, on="interaction")
+        return df_lr_group.sort_values(["group", "auroc"], ascending=[True, False]).reset_index(drop=True)
+
+    def calc_df_lr_group_top(self, df_lr_group: pd.DataFrame, n: Optional[int] = None, enriched_only: bool = True) -> pd.Series:
+        """Top-n LR pairs per group (display filter lr_display_exclude): 'CCL19^CCR7 (0.96), ...'."""
+        n = self.get_param("lr_n_show", n)
+        d = df_lr_group[df_lr_group.enriched] if enriched_only else df_lr_group
+        d = d[d.interaction.isin(set(self._lr_display(d.interaction.unique())))]
+        return d.groupby("group", sort=False).apply(
+            lambda x: ", ".join(f"{i} ({v:.2f})" for i, v in zip(x.interaction.head(n), x.auroc.head(n))),
+            include_groups=False).rename("top_lr")
+
+    def calc_celltype_expr(self, adata, df_abund: pd.DataFrame, df_sig: pd.DataFrame, genes: Sequence[str],
+                           counts_layer: Optional[str] = None, target_sum: Optional[float] = None
+                           ) -> Tuple[np.ndarray, List[str], List[str]]:
+        """Cell-type-attributed expression without the c2l per-cell-type layers: the observed counts of every spot are
+        split across cell types in proportion to abundance x reference signature,
+            counts_A(s, g) = counts(s, g) * w(s, A) g(A, g) / sum_B w(s, B) g(B, g),
+        which is how cell2location's per-cell-type layers are made (checked: identical to the layers of the lymph node
+        map with q05 abundances and 'means' signatures). Returns (E = log1p(CP10k of the split counts; spot library
+        size), spots x cell types x genes, float32; genes found; cell types).
+        df_sig: genes (same names as adata.var_names) x cell types; df_abund: spots x cell types."""
+        counts_layer = self.get_param("counts_layer", counts_layer)
+        target_sum = self.get_param("target_sum", target_sum)
+        celltypes = [c for c in df_abund.columns if c in df_sig.columns]
+        genes = [x for x in dict.fromkeys(genes) if x in adata.var_names and x in df_sig.index]
+        Xc = adata[:, genes].layers[counts_layer]
+        Xc = (Xc.toarray() if sp.issparse(Xc) else np.asarray(Xc)).astype(np.float32)
+        tot = np.asarray(adata.layers[counts_layer].sum(1)).ravel().astype(np.float32)
+        Wab = df_abund.loc[adata.obs_names, celltypes].values.astype(np.float32)
+        G = df_sig.loc[genes, celltypes].values.astype(np.float32)
+        E = np.empty((adata.n_obs, len(celltypes), len(genes)), np.float32)
+        for j in range(len(genes)):                                # gene by gene: memory n x k
+            mu = Wab * G[j][None, :]
+            E[:, :, j] = Xc[:, [j]] * mu / np.maximum(mu.sum(1, keepdims=True), 1e-12)
+        E = np.log1p(E / np.maximum(tot, 1)[:, None, None] * target_sum)
+        return E, genes, celltypes
+
+    @staticmethod
+    def _lr_entity(E, gpos, entity, sep="_"):
+        subs = entity.split(sep)
+        if not all(s_ in gpos for s_ in subs):
+            return None
+        return np.min(np.stack([E[:, :, gpos[s_]] for s_ in subs], -1), -1)     # complex = min over subunits
+
+    def calc_df_celltype_lr(self, E: np.ndarray, genes: Sequence[str], celltypes: Sequence[str], df_lr: pd.DataFrame,
+                            W, groups=None, n_perms: Optional[int] = None,
+                            group_n_perms: Optional[int] = None, group_top_k: Optional[int] = None,
+                            seed: Optional[int] = None) -> Tuple[pd.DataFrame, Optional[pd.DataFrame]]:
+        """Sender cell type A -> receiver cell type B for every LR pair (df_lr: ligand, receptor; complexes '_'):
+            score[A, B] = mean_s ( (W_norm L_A)(s) * R_B(s) ),  L_A / R_B = ligand of A / receptor of B (E).
+        Whole tissue: receptor spots permuted n_perms times -> z, p (Gaussian tail of z when < 5 permutations reach
+        the score), BH fdr; score_share = share of the LR total; rank_in_lr.
+        Per group (groups: Series aligned with the spots, None = skip; or {level: Series} for several levels, e.g.
+        regions and subregions -> column 'level'): the same score over the group's spots,
+        receptor spots permuted within the group (group_n_perms), ratio = group score / whole-tissue score; the
+        group_top_k links per (group, LR) are kept. The spot-permutation null ignores spatial autocorrelation:
+        rank by score / z rather than by fdr."""
+        from scipy import stats
+        n_perms = self.get_param("c2l_lr_n_perms", n_perms)
+        group_n_perms = self.get_param("c2l_lr_group_n_perms", group_n_perms)
+        group_top_k = self.get_param("c2l_lr_group_top_k", group_top_k)
+        rng = np.random.default_rng(self.get_param("seed", seed))
+        gpos = {x: i for i, x in enumerate(genes)}
+        W = sp.csr_matrix(W, dtype=np.float64)
+        s_ = np.asarray(W.sum(1)).ravel(); s_[s_ == 0] = 1
+        Wn = sp.csr_matrix(sp.diags(1 / s_) @ W)
+        n = E.shape[0]
+        perms = [rng.permutation(n) for _ in range(n_perms)]
+        S, Rr = np.meshgrid(celltypes, celltypes, indexing="ij")
+        levels = {} if groups is None else (dict(groups) if isinstance(groups, dict) else {"group": groups})
+        grp_idx, grp_perms = {}, {}
+        for lev, gs in levels.items():
+            gv = pd.Series(gs).values
+            for grp in pd.unique(gv[pd.notna(gv)]):
+                if grp is None:
+                    continue
+                ix = np.where(gv == grp)[0]
+                grp_idx[(lev, grp)] = ix
+                grp_perms[(lev, grp)] = [rng.permutation(len(ix)) for _ in range(group_n_perms)]
+        rows, grows = [], []
+
+        def _p(z, n_ge, n_p):
+            pe = (1 + n_ge) / (1 + n_p)
+            return pe, np.where(n_ge < 5, np.minimum(pe, np.maximum(stats.norm.sf(z), 1e-12)), pe)
+
+        for _, r in df_lr.iterrows():
+            Lk, Rk = self._lr_entity(E, gpos, r.ligand), self._lr_entity(E, gpos, r.receptor)
+            if Lk is None or Rk is None:
+                continue
+            WL = Wn @ Lk
+            obs = WL.T @ Rk / n
+            null = np.stack([WL.T @ Rk[p] / n for p in perms])
+            z = (obs - null.mean(0)) / (null.std(0) + 1e-12)
+            pe, p = _p(z, (null >= obs).sum(0), n_perms)
+            inter = f"{r.ligand}^{r.receptor}"
+            rows.append(pd.DataFrame({"interaction": inter, "ligand": r.ligand, "receptor": r.receptor,
+                                      "sender": S.ravel(), "receiver": Rr.ravel(), "score": obs.ravel(),
+                                      "z": z.ravel(), "p_emp": pe.ravel(), "p": p.ravel()}))
+            for (lev, grp), ix in grp_idx.items():
+                WLg, Rg = WL[ix], Rk[ix]
+                og = WLg.T @ Rg / len(ix)
+                ng = np.stack([WLg.T @ Rg[p] / len(ix) for p in grp_perms[(lev, grp)]])
+                zg = (og - ng.mean(0)) / (ng.std(0) + 1e-12)
+                _, pg = _p(zg, (ng >= og).sum(0), group_n_perms)
+                top = np.argsort(og.ravel())[::-1][:group_top_k]
+                grows.append(pd.DataFrame({"level": lev, "group": grp, "interaction": inter, "ligand": r.ligand,
+                                           "receptor": r.receptor, "sender": S.ravel()[top], "receiver": Rr.ravel()[top],
+                                           "score": og.ravel()[top], "score_tissue": obs.ravel()[top],
+                                           "ratio": og.ravel()[top] / np.maximum(obs.ravel()[top], 1e-12),
+                                           "z": zg.ravel()[top], "p": pg.ravel()[top],
+                                           "rank_in_group_lr": np.arange(1, len(top) + 1)}))
+        df_ct = pd.concat(rows, ignore_index=True)
+        df_ct["fdr"] = self._bh(df_ct.p.values)
+        df_ct["score_share"] = df_ct.score / df_ct.groupby("interaction").score.transform("sum")
+        df_ct["rank_in_lr"] = df_ct.groupby("interaction").score.rank(ascending=False, method="first").astype(int)
+        df_ct = df_ct.sort_values(["interaction", "rank_in_lr"]).reset_index(drop=True)
+        df_group_ct = None
+        if grows:
+            df_group_ct = pd.concat(grows, ignore_index=True)
+            df_group_ct["fdr"] = df_group_ct.groupby("level").p.transform(lambda x: self._bh(x.values))
+        return df_ct, df_group_ct
+
+    def calc_df_group_celltype_links(self, df_group_ct: pd.DataFrame, min_z: Optional[float] = None,
+                                     min_ratio: float = 1.0, display_filter: bool = True) -> pd.DataFrame:
+        """Per group and sender -> receiver: number of LR pairs for which the link is among the group's top links,
+        with z >= min_z (within-group permutation) and score >= the whole-tissue score (ratio >= min_ratio);
+        lr = those LR pairs (by score); LR pairs matching lr_display_exclude are not counted (display_filter);
+        self_link = sender and receiver are the same type (L and R attributed to one type in the same spots)."""
+        min_z = self.get_param("c2l_lr_min_z", min_z)
+        d = df_group_ct[(df_group_ct.z >= min_z) & (df_group_ct.ratio >= min_ratio)].sort_values("score", ascending=False)
+        if display_filter:
+            d = d[d.interaction.isin(set(self._lr_display(d.interaction.unique())))]
+        d = d.assign(link=d.sender + " -> " + d.receiver)
+        df_links = d.groupby(["group", "link", "sender", "receiver"], sort=False).agg(
+            n_lr=("interaction", "size"), sum_score=("score", "sum"),
+            lr=("interaction", lambda x: ", ".join(list(x)[:6]))).reset_index()
+        df_links["self_link"] = df_links.sender == df_links.receiver
+        return df_links.sort_values(["group", "n_lr", "sum_score"], ascending=[True, False, False]).reset_index(drop=True)
+
+    def liana_rank_aggregate_reference(self, adata_ref, groupby: str, symbol_col: Optional[str] = None,
+                                       n_per_type: Optional[int] = None, resource_name: Optional[str] = None,
+                                       expr_prop: Optional[float] = None, n_perms: Optional[int] = None,
+                                       fname: Optional[str] = None, force: bool = False, verbose: bool = True) -> pd.DataFrame:
+        """Cell-type-resolved, non-spatial LIANA rank_aggregate (CellPhoneDB, Connectome, log2FC, NATMI, SCA,
+        CellChat-like) on the scRNA reference: up to n_per_type cells per type (seed), raw counts -> log1p(CP10k),
+        gene symbols (var[symbol_col] or var_names). Cached as TSV (root_result / fname)."""
+        import liana as li
+        path = Path(self.root_result) / fname if fname else None
+        if path is not None and path.exists() and not force:
+            if verbose:
+                print(f"File already exists: {path} (read; force=True recomputes)")
+            return pd.read_csv(path, sep="\t")
+        self._liana_compat()
+        n_per_type = self.get_param("ref_lr_cells_per_type", n_per_type)
+        rng = np.random.default_rng(self.params["seed"])
+        lab = adata_ref.obs[groupby].astype(str)
+        keep = np.sort(np.concatenate([rng.choice(ix, size=min(n_per_type, len(ix)), replace=False)
+                                       for ix in lab.groupby(lab.values).indices.values()]))
+        sub = adata_ref[keep]
+        X = sub.X[:] if not hasattr(sub.X, "to_memory") else sub.X.to_memory()
+        X = sp.csr_matrix(X, dtype=np.float32)
+        names = sub.var[symbol_col].astype(str).values if symbol_col else np.asarray(sub.var_names).astype(str)
+        a = ad.AnnData(X=X, obs=pd.DataFrame({groupby: lab.values[keep]}, index=sub.obs_names),
+                       var=pd.DataFrame(index=pd.Index(names)))
+        a.var_names_make_unique()
+        a.obs[groupby] = a.obs[groupby].astype("category")
+        sc.pp.normalize_total(a, target_sum=self.params["target_sum"])
+        sc.pp.log1p(a)
+        li.mt.rank_aggregate(a, groupby=groupby, resource_name=self.get_param("liana_resource", resource_name),
+                             expr_prop=self.get_param("liana_expr_prop", expr_prop), use_raw=False,
+                             n_perms=self.get_param("liana_n_perms", n_perms), n_jobs=self.params["liana_n_jobs"],
+                             seed=self.params["seed"], verbose=False)
+        df_liref = a.uns["liana_res"].copy()
+        df_liref.attrs["n_cells"] = int(a.n_obs)
+        if path is not None:
+            df_liref.to_csv(path, sep="\t", index=False)
+            if verbose:
+                print(f"Saved {path} ({a.n_obs} cells, {len(df_liref)} interactions)")
+        return df_liref
+
+    def calc_df_celltype_coloc(self, df_abund: pd.DataFrame, W, groups: Optional[pd.Series] = None
+                               ) -> Tuple[pd.DataFrame, Optional[Dict[str, pd.DataFrame]]]:
+        """Cell-type co-localisation: Pearson r between the abundance of A at a spot and the W-weighted (niche)
+        abundance of B, symmetrised (whole tissue). Per group: the group's share of that correlation,
+        mean over the group's spots of z(A) z(W B) (z over the whole tissue), symmetrised; > 0 when A and the
+        neighbourhood of B are high together in the group."""
+        A = df_abund.values.astype(float)
+        W = sp.csr_matrix(W, dtype=np.float64)
+        s_ = np.asarray(W.sum(1)).ravel(); s_[s_ == 0] = 1
+        WA = sp.diags(1 / s_) @ W @ A
+        Az = (A - A.mean(0)) / (A.std(0) + 1e-12)
+        WAz = (WA - WA.mean(0)) / (WA.std(0) + 1e-12)
+        Cm = Az.T @ WAz / len(A)
+        df_coloc = pd.DataFrame((Cm + Cm.T) / 2, index=df_abund.columns, columns=df_abund.columns)
+        out = None
+        if groups is not None:
+            gv = pd.Series(groups).values
+            out = {}
+            for grp in pd.unique(gv[pd.notna(gv)]):
+                if grp is None:
+                    continue
+                m = gv == grp
+                Cg = Az[m].T @ WAz[m] / m.sum()
+                out[grp] = pd.DataFrame((Cg + Cg.T) / 2, index=df_abund.columns, columns=df_abund.columns)
+        return df_coloc, out
+
+    def calc_df_ref_lr_support(self, df_liref: pd.DataFrame, df_coloc: pd.DataFrame,
+                               coloc_group: Optional[Dict[str, pd.DataFrame]] = None,
+                               spec_rank: Optional[float] = None, mag_rank: Optional[float] = None,
+                               min_coloc: Optional[float] = None, min_coloc_group: Optional[float] = None) -> pd.DataFrame:
+        """Reference interactions (rank_aggregate) that are specific and strong (specificity_rank, magnitude_rank <=
+        cutoffs) annotated with the co-localisation of source and target (coloc), the group where they co-localise
+        most (best_group, coloc_group) and spatially_supported = coloc >= min_coloc or coloc_group >= min_coloc_group."""
+        spec_rank = self.get_param("ref_lr_spec_rank", spec_rank)
+        mag_rank = self.get_param("ref_lr_mag_rank", mag_rank)
+        min_coloc = self.get_param("coloc_min", min_coloc)
+        min_coloc_group = self.get_param("coloc_group_min", min_coloc_group)
+        d = df_liref[(df_liref.specificity_rank <= spec_rank) & (df_liref.magnitude_rank <= mag_rank)].copy()
+        d = d[d.source.isin(df_coloc.index) & d.target.isin(df_coloc.index)]
+        d["interaction"] = d.ligand_complex + "^" + d.receptor_complex
+        d["coloc"] = [df_coloc.at[s_, t] for s_, t in zip(d.source, d.target)]
+        if coloc_group:
+            pos = {c: i for i, c in enumerate(df_coloc.index)}
+            si, ti = d.source.map(pos).values, d.target.map(pos).values
+            G = np.stack([coloc_group[g].reindex(index=df_coloc.index, columns=df_coloc.index).values[si, ti]
+                          for g in coloc_group], 1)
+            gnames = np.array(list(coloc_group))
+            d["best_group"] = gnames[G.argmax(1)]
+            d["coloc_group"] = G.max(1)
+        else:
+            d["best_group"], d["coloc_group"] = "", np.nan
+        d["spatially_supported"] = (d.coloc >= min_coloc) | (d.coloc_group >= min_coloc_group)
+        d["listed"] = d.interaction.isin(set(self._lr_display(d.interaction.unique())))   # passes lr_display_exclude
+        return d.sort_values(["spatially_supported", "magnitude_rank"], ascending=[False, True]).reset_index(drop=True)
+
+    def calc_df_group_ccc(self, df_lr_group: pd.DataFrame, df_group_ct: Optional[pd.DataFrame] = None,
+                          df_ref_sup: Optional[pd.DataFrame] = None, n: Optional[int] = None) -> pd.DataFrame:
+        """Consensus per group: its top-n enriched LR pairs (AUROC; display filter) with the best cell2location
+        sender -> receiver of the pair in the group (z, ratio vs tissue) and the reference support: whether
+        rank_aggregate finds the same LR between that sender and receiver (ref_same_link) and the best spatially
+        supported reference source -> target of the pair (ref_links)."""
+        n = self.get_param("lr_n_show", n)
+        d = df_lr_group[df_lr_group.enriched]
+        d = d[d.interaction.isin(set(self._lr_display(d.interaction.unique())))]
+        d = d.groupby("group", sort=False).head(n)
+        cols = ["group", "interaction", "auroc", "hh_frac_in", "hh_frac_out", "mean_in", "mean_out"]
+        out = d[cols].copy()
+        if df_group_ct is not None:
+            best = df_group_ct[df_group_ct.rank_in_group_lr == 1].set_index(["group", "interaction"])
+            key = list(zip(out.group, out.interaction))
+            for c_src, c_dst in [("sender", "c2l_sender"), ("receiver", "c2l_receiver"), ("z", "c2l_z"),
+                                 ("ratio", "c2l_ratio")]:
+                out[c_dst] = [best[c_src].get(k, np.nan) for k in key]
+        if df_ref_sup is not None:
+            sup = df_ref_sup[df_ref_sup.spatially_supported]
+            links = sup.groupby("interaction").apply(
+                lambda x: ", ".join(f"{s_} -> {t}" for s_, t in zip(x.source.head(3), x.target.head(3))),
+                include_groups=False)
+            out["ref_links"] = out.interaction.map(links).fillna("")
+            trip = set(zip(df_ref_sup.interaction, df_ref_sup.source, df_ref_sup.target))
+            if "c2l_sender" in out:
+                out["ref_same_link"] = [(i, s_, t) in trip for i, s_, t in zip(out.interaction, out.c2l_sender, out.c2l_receiver)]
+        return out.reset_index(drop=True)
+
+    # ---------------------------------------------------------------------------------------- LIANA figures
+    def plot_lr_spatial(self, adata_lr, adata, interactions: Sequence[str], library_id: Optional[str] = None,
+                        ncols: int = 4, panel_size: float = 3.6, titles: Optional[Sequence[str]] = None,
+                        outlines: Optional[Sequence[np.ndarray]] = None, cmap=None,
+                        fname: Optional[str] = "lr_local_scores.png"):
+        """LIANA local scores of LR pairs on the H&E of one section (colour 2nd-99.5th percentile). One panel per
+        entry of interactions (repeats allowed); titles / outlines (boolean masks over adata.obs_names, e.g. the
+        spots of a region, drawn with plot_region_outline) are given per panel."""
+        lib = library_id or self.library_ids(adata)[0]
+        img, _ = self.hires_image(lib, adata)
+        m, xy = self.spot_xy(lib, adata)
+        names = adata.obs_names[m]
+        keep = [k for k, i in enumerate(interactions) if i in adata_lr.var_names]
+        titles = [list(titles)[k] for k in keep] if titles is not None else [interactions[k] for k in keep]
+        outlines = [list(outlines)[k] for k in keep] if outlines is not None else [None] * len(keep)
+        interactions = [interactions[k] for k in keep]
+        nrows = int(np.ceil(len(interactions) / ncols))
+        fig, axes = plt.subplots(nrows, ncols, figsize=(panel_size * ncols, panel_size * nrows), squeeze=False)
+        cmap = cmap or cmap_byr
+        for ax, it, tt, ol in zip(axes.ravel(), interactions, titles, outlines):
+            v = adata_lr[names, it].X
+            v = np.asarray(v.toarray() if sp.issparse(v) else v).ravel()
+            ax.imshow(img, alpha=0.5)
+            o = np.argsort(v)
+            sca = ax.scatter(xy[o, 0], xy[o, 1], c=v[o], s=4, cmap=cmap, vmin=float(np.quantile(v, 0.02)),
+                             vmax=float(np.quantile(v, 0.995)), lw=0)
+            ax.set_xlim(xy[:, 0].min() - 30, xy[:, 0].max() + 30); ax.set_ylim(xy[:, 1].max() + 30, xy[:, 1].min() - 30)
+            ax.set_axis_off()
+            if ol is not None:
+                self.plot_region_outline(ax, xy, np.asarray(ol)[m], color="#00E5FF", lw=1.0, min_spots=5)
+            ax.set_title(tt, fontsize=8, loc="left")
+            fig.colorbar(sca, ax=ax, fraction=0.04, pad=0.01).ax.tick_params(labelsize=6)
+        for ax in axes.ravel()[len(interactions):]:
+            ax.set_visible(False)
+        fig.tight_layout()
+        fig.suptitle(f"{lib}: LIANA local {self.params['liana_local']} score", fontsize=9, x=0.01, y=1.0, ha="left",
+                     va="bottom")
+        self._savefig(fig, fname)
+        return fig
+
+    def plotly_lr_group_heatmap(self, df_lr_group: pd.DataFrame, n_per_group: int = 3, groups: Optional[Sequence[str]] = None,
+                                group_names: Optional[Dict[str, str]] = None, height: Optional[int] = None):
+        """Groups (rows) x LR pairs (columns: union of each group's top-n enriched pairs, display filter): AUROC of
+        the local score (0.5 = as elsewhere). Hover: high-high fraction in / out."""
+        import plotly.graph_objects as go
+        groups = list(groups) if groups is not None else list(pd.unique(df_lr_group.group))
+        d = df_lr_group[df_lr_group.enriched & df_lr_group.interaction.isin(set(self._lr_display(df_lr_group.interaction.unique())))]
+        cols = []
+        for grp in groups:
+            for i in d[d.group == grp].interaction.head(n_per_group):
+                if i not in cols:
+                    cols.append(i)
+        M = df_lr_group.pivot(index="group", columns="interaction", values="auroc").reindex(index=groups, columns=cols)
+        H = df_lr_group.assign(t=lambda x: [f"high-high {a:.2f} vs {b:.2f}" for a, b in zip(x.hh_frac_in, x.hh_frac_out)]) \
+                       .pivot(index="group", columns="interaction", values="t").reindex(index=groups, columns=cols)
+        ylab = [f"{grp} {group_names.get(grp, '')}"[:45] if group_names else grp for grp in groups]
+        fig = go.Figure(go.Heatmap(z=M.values, x=cols, y=ylab, colorscale="RdBu_r", zmid=0.5, zmin=0.2, zmax=0.8,
+                                   customdata=H.values, colorbar=dict(title="AUROC"),
+                                   hovertemplate="%{x} in %{y}<br>AUROC %{z:.2f}<br>%{customdata}<extra></extra>"))
+        fig.update_layout(title=f"LR pairs enriched in each group (top {n_per_group}; AUROC of the local score vs the rest)",
+                          height=height or max(450, 22 * len(groups) + 260), width=max(900, 16 * len(cols) + 380),
+                          template="plotly_white", yaxis=dict(autorange="reversed", tickfont=dict(size=9)),
+                          xaxis=dict(tickfont=dict(size=8), tickangle=-60))
+        return fig
+
+    def plotly_group_celltype_links(self, df_links: pd.DataFrame, n_links: int = 30, groups: Optional[Sequence[str]] = None,
+                                    group_names: Optional[Dict[str, str]] = None, exclude_self: bool = True,
+                                    height: Optional[int] = None):
+        """Groups (rows) x the n_links sender -> receiver links with most LR pairs over all groups (columns):
+        number of LR pairs (calc_df_group_celltype_links). Hover: the LR pairs. exclude_self: links between
+        different cell types only."""
+        import plotly.graph_objects as go
+        groups = list(groups) if groups is not None else list(pd.unique(df_links.group))
+        if exclude_self:
+            df_links = df_links[~df_links.self_link]
+        top = df_links.groupby("link").n_lr.sum().sort_values(ascending=False).index[:n_links]
+        M = df_links.pivot_table(index="group", columns="link", values="n_lr", aggfunc="sum").reindex(index=groups, columns=top)
+        T = df_links.pivot_table(index="group", columns="link", values="lr", aggfunc="first").reindex(index=groups, columns=top)
+        ylab = [f"{grp} {group_names.get(grp, '')}"[:45] if group_names else grp for grp in groups]
+        fig = go.Figure(go.Heatmap(z=M.fillna(0).values, x=list(top), y=ylab, colorscale="Reds", customdata=T.fillna("").values,
+                                   colorbar=dict(title="LR pairs"),
+                                   hovertemplate="%{x} in %{y}<br>%{z} LR pairs<br>%{customdata}<extra></extra>"))
+        fig.update_layout(title="Cell type -> cell type communication per group (cell2location-resolved; LR pairs with z >= "
+                                f"{self.params['c2l_lr_min_z']} and score >= tissue" + ("; different types only)" if exclude_self else ")"),
+                          height=height or max(450, 22 * len(groups) + 300), width=max(900, 18 * len(top) + 380),
+                          template="plotly_white", yaxis=dict(autorange="reversed", tickfont=dict(size=9)),
+                          xaxis=dict(tickfont=dict(size=8), tickangle=-60))
+        return fig
+
+    def plot_sender_receiver_heatmaps(self, df_ct: pd.DataFrame, interactions: Sequence[str], n_top: int = 10,
+                                      ncols: int = 3, panel_size: Tuple[float, float] = (4.6, 4.0),
+                                      fname: Optional[str] = "celltype_lr_sender_receiver.png"):
+        """One heatmap per LR pair: the n_top senders (rows) x n_top receivers (columns) by total score."""
+        interactions = [i for i in interactions if i in set(df_ct.interaction)]
+        nrows = int(np.ceil(len(interactions) / ncols))
+        fig, axes = plt.subplots(nrows, ncols, figsize=(panel_size[0] * ncols, panel_size[1] * nrows), squeeze=False)
+        for ax, it in zip(axes.ravel(), interactions):
+            M = df_ct[df_ct.interaction == it].pivot(index="sender", columns="receiver", values="score")
+            M = M.loc[M.sum(1).nlargest(n_top).index, M.sum(0).nlargest(n_top).index]
+            im = ax.imshow(M.values, cmap="Reds", aspect="auto")
+            ax.set_xticks(range(M.shape[1])); ax.set_xticklabels(M.columns, rotation=90, fontsize=6)
+            ax.set_yticks(range(M.shape[0])); ax.set_yticklabels(M.index, fontsize=6)
+            ax.set_title(it, fontsize=8, loc="left"); ax.set_xlabel("receiver (receptor)", fontsize=7)
+            ax.set_ylabel("sender (ligand)", fontsize=7)
+            fig.colorbar(im, ax=ax, fraction=0.04, pad=0.02).ax.tick_params(labelsize=6)
+        for ax in axes.ravel()[len(interactions):]:
+            ax.set_visible(False)
+        fig.tight_layout()
+        self._savefig(fig, fname)
+        return fig
+
+    def plotly_coloc_heatmap(self, df_coloc: pd.DataFrame, height: int = 800):
+        """Cell-type co-localisation (symmetric), rows / columns ordered by hierarchical clustering."""
+        import plotly.graph_objects as go
+        from scipy.cluster.hierarchy import linkage, leaves_list
+        o = leaves_list(linkage(df_coloc.values, "average", metric="euclidean"))
+        M = df_coloc.iloc[o, o]
+        fig = go.Figure(go.Heatmap(z=M.values, x=list(M.columns), y=list(M.index), colorscale="RdBu_r", zmid=0, zmin=-1,
+                                   zmax=1, colorbar=dict(title="r"),
+                                   hovertemplate="%{y} with niche of %{x}: r = %{z:.2f}<extra></extra>"))
+        fig.update_layout(title="Cell-type co-localisation (abundance at a spot vs kernel-weighted abundance around it)",
+                          height=height, width=height + 80, template="plotly_white",
+                          yaxis=dict(autorange="reversed", tickfont=dict(size=8)), xaxis=dict(tickfont=dict(size=8)))
+        return fig
 
     # =====================================================================================================
     # 10. Static helpers
