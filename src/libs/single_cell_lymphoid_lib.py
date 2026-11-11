@@ -294,12 +294,16 @@ class SingleCellLymphoid(SingleCell):
                 col[c] = cm(0.45 + 0.45 * (j / max(len(v) - 1, 1)))
         return col
 
-    def umap_cell_type_plot(self, adata_ref, genes, lineage, focus, cmaps=None, sizes=(8, 7, 6),
+    def umap_cell_type_plot(self, adata_ref, genes, lineage, focus, cmaps=None, 
+                            sizes=(8, 7, 6), figsize=(14, 8),
                             fname: Optional[str] = "celltype_umap_dotplot.png") -> pd.DataFrame:
-        """Reference UMAP coloured by cell type + dot plot of the panel genes by cell type.
-        Returns df_groups (per tissue x age group panel table)."""
+        """
+        Reference UMAP coloured by cell type + dot plot of the panel genes by cell type.
+        Returns df_groups (per tissue x age group panel table).
+        """
         apply_figure_style(sizes=sizes)
         cmaps = cmaps or self.params["lineage_cmaps"]
+
         labels = self.params["gene_labels"]
         ct = adata_ref.obs[self.params["celltype_col"]].astype(str).values
         found, X, E = self.panel_lognorm(genes, adata_ref)
@@ -307,14 +311,16 @@ class SingleCellLymphoid(SingleCell):
         df_mean = pd.DataFrame(E, columns=found).groupby(ct).mean()
         n_ct = pd.Series(ct).value_counts()
         order = [c for v in lineage.values() for c in v]
+        
         assert set(order) == set(ct), set(ct) ^ set(order)
+        
         df_P = df_pct.loc[order, found]
         df_M = df_mean.loc[order, found]
         U = adata_ref.obsm["X_umap"]
         col = self.lineage_colors(lineage, cmaps)
         df_groups = self.calc_df_gene_age_tissue_groups(genes, adata_ref)
 
-        fig, axes = plt.subplots(1, 2, figsize=(14, 8))
+        fig, axes = plt.subplots(1, 2, figsize=figsize)
         ax = axes[0]
         o = np.random.default_rng(self.params["seed"]).permutation(len(U))
         ax.scatter(U[o, 0], U[o, 1], s=0.4, c=[col[c] for c in ct[o]], lw=0, rasterized=True)

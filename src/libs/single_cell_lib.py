@@ -724,7 +724,12 @@ class SingleCell(object):
         return m, np.asarray(a.obsm["spatial"])[m] * sf
 
     def select_slide(self, adata=None, library_id: Optional[str] = None, batch_key: Optional[str] = None) -> ad.AnnData:
-        """One Visium section (cell2location.utils.select_slide); default: the first library."""
+        """
+        One Visium section (cell2location.utils.select_slide); default: the first library.
+        slide is a smaller AnnData that contains only one section
+        like,
+        adata_vis.uns['spatial']['V1_Human_Lymph_Node']
+        """
         from cell2location.utils import select_slide
         a = self._check_adata(adata)
         lib = library_id or self.library_id(a)
@@ -1179,16 +1184,22 @@ class SingleCell(object):
     def run_colocation_cached(self, adata_vis: ad.AnnData, run_dir: Path, n_facts: Optional[Sequence[int]] = None,
                               n_restarts: Optional[int] = None, alpha: Optional[float] = None,
                               force: bool = False, verbose: bool = True) -> Tuple[ad.AnnData, Optional[dict], bool]:
-        """NMF of the cell abundances (cell2location.run_colocation, CoLocatedGroupsSklearnNMF) for each number of
+        """
+        NMF of the cell abundances (cell2location.run_colocation, CoLocatedGroupsSklearnNMF) for each number of
         factors; skipped when adata.uns already holds every 'mod_coloc_n_fact<n>'.
-        Returns (adata_vis, res_dict or None when cached, edited)."""
+        Returns (adata_vis, res_dict or None when cached, edited).
+        """
         n_facts = list(self.get_param("coloc_n_facts", n_facts))
+
         keys = [f"mod_coloc_n_fact{n}" for n in n_facts]
+
         if all(k in adata_vis.uns for k in keys) and not force:
             if verbose:
                 print(f"NMF co-location already in adata.uns: {keys}")
             return adata_vis, None, False
+        
         from cell2location import run_colocation
+        
         res_dict, adata_vis = run_colocation(
             adata_vis, model_name="CoLocatedGroupsSklearnNMF",
             train_args={"n_fact": np.asarray(n_facts), "sample_name_col": self.sample_col,
@@ -1200,15 +1211,20 @@ class SingleCell(object):
 
     @staticmethod
     def calc_df_coloc_loadings(adata, n_fact: int, normalize: bool = True) -> pd.DataFrame:
-        """NMF cell-type loadings (cell types x factors) from adata.uns['mod_coloc_n_fact<n>'];
+        """
+        NMF cell-type loadings (cell types x factors) from adata.uns['mod_coloc_n_fact<n>'];
         normalize=True: each cell type's weights divided by their sum (relative weight across factors,
-        as in plot_cell_type_loadings)."""
+        as in plot_cell_type_loadings).
+        """
+
         d = adata.uns[f"mod_coloc_n_fact{n_fact}"]
         W = np.asarray(d["post_sample_means"]["cell_type_factors"], dtype=float)
         df_load = pd.DataFrame(W, index=[str(x) for x in d["var_names"]], columns=[str(x) for x in d["fact_names"]])
         df_load.index = [i.replace("mean_cell_type_factors", "") for i in df_load.index]
+        
         if normalize:
             df_load = df_load.div(df_load.sum(1).replace(0, np.nan), axis=0).fillna(0)
+
         return df_load
 
     # =====================================================================================================
@@ -1216,7 +1232,9 @@ class SingleCell(object):
     # =====================================================================================================
     @staticmethod
     def legend_figure_bottom(fig, adata, key, names=None, ncol=4, fontsize=9):
-        """Legend 'cluster: name' along the bottom of a layout='constrained' figure."""
+        """
+        Legend 'cluster: name' along the bottom of a layout='constrained' figure.
+        """
         cats = adata.obs[key].cat.categories
         cols = adata.uns[f"{key}_colors"]
         names = names or {}
