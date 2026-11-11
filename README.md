@@ -31,9 +31,9 @@ Visium (H&E / IF) ────► Scanpy / Squidpy ──► spatial graphs, nei
 | Status | Folder | Notebook | Tools | Description |
 |---|---|---|---|---|
 | new | notebooks_multiproject/ | mp_lymphoid01_prepare.ipynb | all | complete study, new structure |
-| new | notebooks_multiproject/ | mp_lymphoid02_regions.ipynb | all | deeper study, IFN region |
-| new | notebooks_multiproject/ | mp_lymphoid03_subregions.ipynb | all | subregions |
-| new | notebooks_multiproject/ | mp_lymphoid04_liana.ipynb | all | liana: ligand x receivers |
+| new | | mp_lymphoid02_regions.ipynb | all | deeper study, IFN region |
+| new |  | mp_lymphoid03_subregions.ipynb | all | subregions |
+| new |  | mp_lymphoid04_liana.ipynb | all | liana: ligand x receivers |
 | old | notebooks_ccc_liana/ | ccc01_tutorial.ipynb | cell2location | cell2location tutorial (reproduced) |
 | old | | ccc02_study.ipynb | cell2location | cell2location applied study |
 | old | | ccc03_liana_study.ipynb | LIANA | Cell–cell communication analysis |
