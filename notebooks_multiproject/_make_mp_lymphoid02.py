@@ -39,7 +39,7 @@ Rewrite of **notebooks_ccc_lymphoid_liana/ccc02_study.ipynb** with the class lib
 | 11 | Figure 1 (UMAP + dot plot), Figure 2 (spatial maps), Figure 3 (gene vs abundance correlation) |
 | 12 | dot plot lineage x NMF factors |
 
-Figures and tables of this notebook have the prefix **mp_lymphoid02_**.""")
+Figures and tables of this notebook have the prefix **lymph02_**.""")
 md(o2(0, drop_first_line=True).replace("ccc01_tutorial.ipynb", "ccc01_tutorial.ipynb (here: mp_lymphoid01_prepare.ipynb)"))
 
 md("## Loading packages")
@@ -86,11 +86,11 @@ c2l_dir        = 'lymph_nodes_analysis'                  # root_result / c2l_dir
 ref_subdir     = 'reference_signatures'
 map_subdir     = 'cell2location_map'
 fname_map      = 'sp.h5ad'                               # previous calculation: cell2location map (mp_lymphoid01 / ccc01)
-tsv_regions_prev = 'mp_lymphoid01_region_labels.tsv'              # regions of mp_lymphoid01 (root_result)
+tsv_regions_prev = 'lymph01_region_labels.tsv'                    # regions of mp_lymphoid01 (root_result)
 visium_id      = 'V1_Human_Lymph_Node'
 
 # ---- output files
-prefix = 'mp_lymphoid02_'
+prefix = 'lymph02_'
 fig_bcell_dotplot  = prefix + 'bcell_subset_markers_dotplot.png'
 fig_genes_visium   = prefix + 'visium_genes_{k}.png'
 fig_mln_dotplot    = prefix + 'mln_panel_by_celltype_age.png'
@@ -226,8 +226,8 @@ code("""markers = {
 dp = scl.dotplot_bcell_markers(adata_bcell, markers, fname=fig_bcell_dotplot)
 plt.show()""")
 md(o2(35).replace("### ![Markers separating the 10 B-cell subsets]  (../figures/bcell_subset_markers_dotplot.png)", "")
-          .replace("`figures/bcell_subset_markers_dotplot.png`", "`figures/mp_lymphoid02_bcell_subset_markers_dotplot.png`")
-          .replace("`results/bcell_subset_unique_markers.csv`", "`results/mp_lymphoid02_bcell_subset_unique_markers.csv`"))
+          .replace("`figures/bcell_subset_markers_dotplot.png`", "`figures/lymph02_bcell_subset_markers_dotplot.png`")
+          .replace("`results/bcell_subset_unique_markers.csv`", "`results/lymph02_bcell_subset_unique_markers.csv`"))
 code("""del adata_bcell, df_all
 import gc; gc.collect();""")
 
@@ -281,8 +281,8 @@ code("""apply_figure_style(sizes=(8, 7, 6))
 fig = scl.plot_panel_umap_by_tissue_age(genes_plot, adata_ref, fname=fig_panel_umap, cmap_num=2)
 plt.show()""")
 
-md("### 6. " + o2(76).lstrip("# ").replace("results/aicda_by_subset_tissue.csv", "results/mp_lymphoid02_aicda_by_subset_tissue.csv")
-                                       .replace("results/aicda_gc_by_donor.csv", "results/mp_lymphoid02_aicda_gc_by_donor.csv"))
+md("### 6. " + o2(76).lstrip("# ").replace("results/aicda_by_subset_tissue.csv", "results/lymph02_aicda_by_subset_tissue.csv")
+                                       .replace("results/aicda_gc_by_donor.csv", "results/lymph02_aicda_gc_by_donor.csv"))
 code("""aicda = scl.calc_gene_by_subset_tissue("AICDA", adata_ref, groups=bcell_types,
                                        fname_subset=csv_aicda_subset, fname_gc=csv_aicda_gc)
 print(f"AICDA+ cells: {aicda['n_pos']:,}, of which in tonsil: {aicda['pct_pos_tonsil']}%")

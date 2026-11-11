@@ -795,10 +795,10 @@ class SingleCell(object):
         Returns (adata_ref with posterior in varm, df_inf_aver genes x cell types)."""
         from cell2location.models import RegressionModel
         run_dir = create_dir(run_dir)
-        fn = run_dir / fname
+        filename = run_dir / fname
         accelerator = self.get_param("accelerator", accelerator)
-        if fn.exists() and not force:
-            adata_ref = ad.read_h5ad(fn)
+        if filename.exists() and not force:
+            adata_ref = ad.read_h5ad(filename)
         else:
             RegressionModel.setup_anndata(adata=adata_ref, batch_key=batch_key, labels_key=labels_key,
                                           categorical_covariate_keys=categorical_covariate_keys)
@@ -808,26 +808,34 @@ class SingleCell(object):
                                              sample_kwargs={"batch_size": self.params["ref_batch_size"],
                                                             "accelerator": accelerator})
             mod.save(str(run_dir), overwrite=True)
-            adata_ref.write_h5ad(fn)
+            adata_ref.write_h5ad(filename)
         df_inf_aver, _ = self.get_reference_signatures(adata_ref)
         return adata_ref, df_inf_aver
 
     @staticmethod
     def get_reference_signatures(adata_ref, prefer: Sequence[str] = ("means", "q50", "q05")) -> Tuple[pd.DataFrame, str]:
-        """Per-cell-type signatures (genes x cell types) from RegressionModel.export_posterior (varm or var).
-        Also reads the cell2location v0.05 layout (var['means_per_cluster_mu_fg_<type>'])."""
+        """
+        Per-cell-type signatures (genes x cell types) from RegressionModel.export_posterior (varm or var).
+        Also reads the cell2location v0.05 layout (var['means_per_cluster_mu_fg_<type>']).
+        """
+
         factor_names = list(adata_ref.uns["mod"]["factor_names"])
+
         for summary in prefer:
             key = f"{summary}_per_cluster_mu_fg"
             cols = [f"{key}_{i}" for i in factor_names]
+            
             if key in adata_ref.varm:
                 df_inf_aver = adata_ref.varm[key][cols].copy()
             elif cols[0] in adata_ref.var:
                 df_inf_aver = adata_ref.var[cols].copy()
             else:
                 continue
+            
             df_inf_aver.columns = factor_names
+
             return df_inf_aver, summary
+        
         raise KeyError(f"No per-cluster signatures for {list(prefer)}; rerun mod.export_posterior(adata_ref, ...)")
 
     def train_mapping(self, adata_vis: ad.AnnData, df_inf_aver: pd.DataFrame, run_dir: Path,
@@ -844,9 +852,9 @@ class SingleCell(object):
         import torch
         import cell2location
         run_dir = create_dir(run_dir)
-        fn = run_dir / fname
-        if fn.exists() and not force:
-            return ad.read_h5ad(fn)
+        filename = run_dir / fname
+        if filename.exists() and not force:
+            return ad.read_h5ad(filename)
         accelerator = self.get_param("accelerator", accelerator)
         torch.set_num_threads(self.params["torch_threads"] or len(os.sched_getaffinity(0)))
         max_epochs = self.get_param("c2l_max_epochs", max_epochs)
@@ -865,7 +873,7 @@ class SingleCell(object):
                                      n_genes=len(genes), accelerator=str(accelerator),
                                      elbo_history=np.asarray(mod.history["elbo_train"]).ravel().astype(float))
         mod.save(str(run_dir), overwrite=True)
-        a.write_h5ad(fn)
+        a.write_h5ad(filename)
         return a
 
     @staticmethod
@@ -973,29 +981,37 @@ class SingleCell(object):
         Returns (mod_reg, adata_ref, trained).
         """
         from cell2location.models import RegressionModel
+        
         run_dir = create_dir(run_dir)
-        fn = run_dir / fname
+        filename = run_dir / fname
         accelerator = self.get_param("accelerator", accelerator)
         quantiles = list(self.get_param("c2l_quantiles", quantiles))
+        
         RegressionModel.setup_anndata(adata=adata_ref, batch_key=batch_key, labels_key=labels_key,
                                       categorical_covariate_keys=categorical_covariate_keys)
+        
         trained = False
-        if force or not fn.exists():
+        if force or not filename.exists():
             mod = RegressionModel(adata_ref)
             mod.train(max_epochs=self.get_param("ref_max_epochs", max_epochs), accelerator=accelerator)
             adata_ref = mod.export_posterior(adata_ref, sample_kwargs={"num_samples": self.params["c2l_num_samples"],
                                                                        "batch_size": self.params["ref_batch_size"],
                                                                        "accelerator": accelerator})
             mod.save(str(run_dir), overwrite=True, save_anndata=True)
-            adata_ref.write_h5ad(fn)
+            adata_ref.write_h5ad(filename)
+            
             trained = True
+            
             if verbose:
                 print(f"RegressionModel trained and saved to {run_dir}")
         else:
             mod = RegressionModel.load(str(run_dir), adata_ref, accelerator=accelerator)
+            
             adata_ref = mod.adata
+            
             if verbose:
                 print(f"RegressionModel loaded from {run_dir}")
+        
         if not all(f"{q}_per_cluster_mu_fg" in adata_ref.varm for q in quantiles):
             adata_ref = mod.export_posterior(adata_ref, use_quantiles=True, add_to_varm=quantiles,
                                              sample_kwargs={"batch_size": self.params["ref_batch_size"],
@@ -1022,18 +1038,20 @@ class SingleCell(object):
         Returns (mod_c2l, adata_vis, trained).
         """
         import cell2location
+
         run_dir = create_dir(run_dir)
-        fn = run_dir / fname
+        filename = run_dir / fname
         accelerator = self.get_param("accelerator", accelerator)
         batch_key = batch_key or self.sample_col
         quantiles = list(self.params["c2l_quantiles"])
+        
         trained = False
-        if fn.exists() and not force:
-            adata_vis = ad.read_h5ad(fn) if read_layers else self.read_h5ad_slots(fname, root=run_dir)
+        if filename.exists() and not force:
+            adata_vis = ad.read_h5ad(filename) if read_layers else self.read_h5ad_slots(fname, root=run_dir)
             mod = cell2location.models.Cell2location.load(str(run_dir), adata_vis, accelerator=accelerator)
             adata_vis = self.ensure_posterior_samples(mod, adata_vis, quantiles=quantiles, accelerator=accelerator)
             if verbose:
-                print(f"Cell2location map read from {fn}; model loaded; posterior samples: {sorted(mod.samples)}")
+                print(f"Cell2location map read from {filename}; model loaded; posterior samples: {sorted(mod.samples)}")
         else:
             genes = np.intersect1d(adata_vis.var_names, df_inf_aver.index)
             adata_vis = adata_vis[:, genes].copy()
@@ -1051,7 +1069,7 @@ class SingleCell(object):
                 self.add_expected_layers(mod, adata_vis)
             mod.save(str(run_dir), overwrite=True)
             self.abundance_to_obs(adata_vis)
-            adata_vis.write_h5ad(fn)
+            adata_vis.write_h5ad(filename)
             trained = True
             if verbose:
                 print(f"Cell2location trained ({len(genes):,} genes); model and map saved to {run_dir}")
