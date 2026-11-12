@@ -169,17 +169,13 @@ class SingleCellLymphoid(SingleCell):
     """Lymph node / lymphoid-organ analyses. Symbols in var['symbol'] by default (tutorial convention)."""
 
     default_params = {**DEFAULT_PARAMS, **LYMPHOID_PARAMS}
+    analysis_files = LYMPHOID_FILES
 
     def __init__(self, ROOT0, project: str = "lymphoid_tissue", symbol_col: str = "symbol",
-                 sample_col: str = "sample", mt_prefix: str = "MT-", analysis: Optional[str] = None, **kw):
-        """analysis: key of LYMPHOID_FILES ('lymph03') whose output files are registered (caching on); files=
-        adds or overrides single entries."""
-        if analysis is not None and analysis not in LYMPHOID_FILES:
-            raise KeyError(f"analysis {analysis!r} not in LYMPHOID_FILES: {sorted(LYMPHOID_FILES)}")
-        files = {**LYMPHOID_FILES["inputs"], **(LYMPHOID_FILES[analysis] if analysis else {}), **(kw.pop("files", None) or {})}
-        super().__init__(ROOT0, project, symbol_col=symbol_col, sample_col=sample_col, mt_prefix=mt_prefix,
-                         files=files, **kw)
-        self.analysis = analysis
+                 sample_col: str = "sample", mt_prefix: str = "MT-", **kw):
+        """analysis= key of LYMPHOID_FILES ('lymph03') whose output files are registered (caching on); files= adds or
+        overrides single entries."""
+        super().__init__(ROOT0, project, symbol_col=symbol_col, sample_col=sample_col, mt_prefix=mt_prefix, **kw)
 
     # =====================================================================================================
     # data: Visium section, reference re-indexing, symbol index, sample table

@@ -278,12 +278,13 @@ class SingleCell(object):
 
     default_params: Dict[str, Any] = DEFAULT_PARAMS
     default_files: Dict[str, Tuple[str, str]] = {}      # key -> (root, name); see file_path
+    analysis_files: Dict[str, Dict[str, Tuple[str, str]]] = {}   # {'inputs': {...}, '<analysis>': {...}} (subclasses)
 
     def __init__(self, ROOT0: Path, project: str, adata: Optional[ad.AnnData] = None,
                  data_dir: str = "data", figure_dir: str = "figures", result_dir: str = "results",
                  symbol_col: str = "SYMBOL", sample_col: str = "sample", mt_prefix: str = "mt-",
                  params: Optional[Dict[str, Any]] = None, name: str = "",
-                 files: Optional[Dict[str, Tuple[str, str]]] = None):
+                 files: Optional[Dict[str, Tuple[str, str]]] = None, analysis: Optional[str] = None):
         
         self.ROOT0 = Path(ROOT0)
         self.project = project
@@ -301,7 +302,14 @@ class SingleCell(object):
         self.params = copy.deepcopy(self.default_params)
         if params:
             self.set_params(**params)
-        self.files: Dict[str, Tuple[str, str]] = {**copy.deepcopy(self.default_files), **(files or {})}
+        # files: analysis_files['inputs'] always; an analysis (e.g. 'lymph03', 'mb03') adds its outputs, which turns on
+        # the caching of its methods (force=False: read the file when it exists); files= adds or overrides entries
+        if analysis is not None and analysis not in self.analysis_files:
+            raise KeyError(f"analysis {analysis!r} not in {sorted(k for k in self.analysis_files if k != 'inputs')}")
+        self.analysis = analysis
+        self.files: Dict[str, Tuple[str, str]] = {**copy.deepcopy(self.default_files),
+                                                  **self.analysis_files.get("inputs", {}),
+                                                  **(self.analysis_files[analysis] if analysis else {}), **(files or {})}
         self.create_file_dirs()
 
     def __repr__(self):
@@ -348,6 +356,7 @@ class SingleCell(object):
             raise KeyError(f"file key {key!r} is not registered; known: {sorted(self.files)}")
         root, name = self.files[key]
         roots = {"data": self.root_data, "result": self.root_result, "figure": self.root_figure}
+        fmt = {k: str(v).replace("/", "-") for k, v in fmt.items()}      # 'CTX_L2/3' -> 'CTX_L2-3' (no sub-folder)
         return Path(roots[root]) / name.format(**fmt)
 
     def create_file_dirs(self) -> List[Path]:
@@ -409,7 +418,7 @@ class SingleCell(object):
         if hasattr(fig, "write_html"):
             fig.write_html(path, include_plotlyjs=self.params["plotly_include_js"])
         else:
-            fig.savefig(path, dpi=self.params["dpi"], bbox_inches="tight")
+            fig.savefig(path, dpi=self.params["dpi"], bbox_inches="tight", facecolor=fig.get_facecolor())
         if verbose:
             print(f"Saving figure to {path}")
         return path
@@ -421,7 +430,7 @@ class SingleCell(object):
         so a computed and a cached run return the same values (text float parsing can differ by 1 ulp from the
         in-memory float). The file holds the result of the parameters of the run that wrote it: use force=True after
         changing parameters or inputs."""
-        if key not in self.files:
+        if key is None or key not in self.files:
             return compute()
         if not (self.file_path(key).exists() and not force):
             self.write_tsv(compute(), key, verbose=verbose)
@@ -892,6 +901,73 @@ class SingleCell(object):
         img_key = self.get_param("img_key", img_key)
         d = a.uns["spatial"][library_id or self.library_id(a)]
         return d["images"][img_key], d["scalefactors"][f"tissue_{img_key}_scalef"]
+
+    def hires_image_bg(self, library_id: Optional[str] = None, adata=None, bg_color: str = "#3a3a3a",
+                       white_min: float = 0.90, min_area: int = 5000, edge_px: int = 3, img_key: Optional[str] = None,
+                       force: bool = False, verbose: bool = False) -> np.ndarray:
+        """Copy of the hires image (float RGB in [0, 1]) with the glass background outside the tissue set to bg_color;
+        the image in adata is not changed. Tissue = connected areas of pixels with min(R, G, B) < white_min larger
+        than min_area pixels, holes filled (ventricles stay as in the image); smaller blobs (fiducial frame, dust)
+        become background. The last edge_px pixels inside the tissue edge are blended by whiteness (no white rim).
+        Cached as files['hires_bg'] ({lib}, {color}) when registered (PNG, force=False: read it); otherwise kept in
+        memory for the session."""
+        from scipy import ndimage as ndi
+        lib = library_id or self.library_id(self._check_adata(adata))
+        color = mpl.colors.to_hex(bg_color).lstrip("#").lower()
+        key_mem = (lib, color, white_min, min_area, edge_px)
+        cache = self.__dict__.setdefault("_hires_bg_cache", {})
+        if key_mem in cache and not force:
+            return cache[key_mem]
+        reg = "hires_bg" in self.files
+        path = self.file_path("hires_bg", lib=lib, color=color) if reg else None
+        if reg and path.exists() and not force:
+            from PIL import Image
+            out = np.asarray(Image.open(path).convert("RGB"), dtype=np.float32) / 255
+            if verbose:
+                print(f"Reading {path}")
+        else:
+            img, _ = self.hires_image(lib, adata, img_key)
+            x = np.asarray(img[..., :3], dtype=np.float32)
+            x = x / 255 if x.max() > 1.5 else x
+            mn = x.min(2)
+            lab_, n = ndi.label(ndi.binary_closing(mn < white_min, iterations=2))
+            sizes = ndi.sum(np.ones_like(mn), lab_, index=np.arange(1, n + 1))
+            tissue = ndi.binary_fill_holes(np.isin(lab_, 1 + np.flatnonzero(sizes >= min_area)))
+            band = tissue & ~ndi.binary_erosion(tissue, iterations=edge_px)
+            alpha = np.where(tissue, 0.0, 1.0)
+            alpha[band] = np.clip((mn[band] - 0.75) / (white_min + 0.05 - 0.75), 0, 1)
+            bg = np.array(mpl.colors.to_rgb("#" + color), dtype=np.float32)
+            out = (x * (1 - alpha[..., None]) + bg * alpha[..., None]).astype(np.float32)
+            if reg:
+                from PIL import Image
+                Image.fromarray((np.clip(out, 0, 1) * 255).round().astype(np.uint8)).save(path)
+                if verbose:
+                    print(f"Saving {path} (tissue {tissue.mean():.0%} of the image)")
+        cache[key_mem] = out
+        return out
+
+    def _resolve_table(self, fname: Optional[str], root: Optional[Path] = None) -> Optional[Path]:
+        """Path of a table given as a key of self.files or as a file name with an extension (in root or root_result);
+        None when fname is None or an unregistered key."""
+        if fname is None or (fname not in self.files and not Path(fname).suffix):
+            return None
+        return self._resolve_path(fname, root, self.root_result)
+
+    def _plotly_style(self, fig, fontsize_title: int, fontsize_xticks: int, fontsize_yticks: int, fontsize_hover: int,
+                      font_color: str, bg_color: str):
+        """Common Plotly styling of the heatmaps: title / tick fonts, global font colour, backgrounds, hover font."""
+        fig.update_layout(title_font=dict(size=fontsize_title, color=font_color), font=dict(color=font_color),
+                          paper_bgcolor=bg_color, plot_bgcolor=bg_color, hoverlabel=dict(font=dict(size=fontsize_hover)))
+        fig.update_xaxes(tickfont=dict(size=fontsize_xticks, color=font_color))
+        fig.update_yaxes(tickfont=dict(size=fontsize_yticks, color=font_color))
+        return fig
+
+    def _map_image(self, library_id: str, adata_map, image_bg_color: Optional[str] = None, force: bool = False,
+                   verbose: bool = False) -> np.ndarray:
+        """hires image of a map: the original, or the copy with the background set to image_bg_color."""
+        if image_bg_color is None:
+            return self.hires_image(library_id, adata_map)[0]
+        return self.hires_image_bg(library_id, adata_map, bg_color=image_bg_color, force=force, verbose=verbose)
 
     def spot_xy(self, library_id: Optional[str] = None, adata=None, img_key: Optional[str] = None
                 ) -> Tuple[np.ndarray, np.ndarray]:
@@ -2297,6 +2373,7 @@ class SingleCell(object):
                                  section_colors: Optional[Dict[str, str]] = None, umi_colorscale=LIGHT_SEQUENTIAL,
                                  marker_line_color: str = "black", marker_line_width: float = 0.4,
                                  font_color: str = "#2a3f5f", bg_color: str = "white", webgl: bool = False,
+                                 image_bg_color: Optional[str] = None,
                                  fname: Optional[str] = "fig_region_sub", force: bool = False, verbose: bool = False):
         """One region: UMAP by subregion | UMAP by section (one section: by log10 UMIs, the depth confounder) |
         subregions on the H&E of each section (cropped to the region).
@@ -2358,7 +2435,7 @@ class SingleCell(object):
                                            marker=dict(size=umap_size, color=sec_cols.get(lb, REGION_COLORS[0])), hoverinfo="skip"),
                               row=1, col=2)
         for j, lb in enumerate(libs):
-            img, _ = self.hires_image(lb, adata_map)
+            img = self._map_image(lb, adata_map, image_bg_color, force, verbose)
             mm, xy_all = self.spot_xy(lb, adata_map)
             names_lb = adata_map.obs_names[mm]
             in_reg = names_lb.isin(adata_sub.obs_names)
@@ -2404,6 +2481,7 @@ class SingleCell(object):
                              fontsize_hover: int = 13, region_colors: Optional[Dict[str, str]] = None,
                              skip_color: str = "#dddddd", marker_line_color: str = "black", marker_line_width: float = 0.3,
                              font_color: str = "#2a3f5f", bg_color: str = "white", legend_ncols: int = 1,
+                             image_bg_color: Optional[str] = None,
                              legend_col_width: int = 110,
                              fname: Optional[str] = "fig_subregion_map", force: bool = False, verbose: bool = False):
         """All subregions of one section on the H&E. Colours = shades of each region's colour; legend grouped by region
@@ -2416,7 +2494,7 @@ class SingleCell(object):
         equal length; each column is a separate Plotly legend), legend_col_width pixels per column."""
         import plotly.graph_objects as go
         key = self.params["subregion_key"]
-        img, _ = self.hires_image(library_id, adata_map)
+        img = self._map_image(library_id, adata_map, image_bg_color, force, verbose)
         mm, xy = self.spot_xy(library_id, adata_map)
         names_lb = adata_map.obs_names[mm]
         obs = adata_expr.obs.loc[names_lb]
@@ -2489,6 +2567,7 @@ class SingleCell(object):
                           fontsize_hover: int = 13, n_genes_hover: int = 8, region_colors: Optional[Dict[str, str]] = None,
                           marker_line_color: str = "black", marker_line_width: float = 0.3,
                           marker_opacity: Optional[float] = None, font_color: str = "#2a3f5f", bg_color: str = "white",
+                          image_bg_color: Optional[str] = None,
                           fname: Optional[str] = "fig_region_map", force: bool = False, verbose: bool = False):
         """All regions of one section on the H&E (one trace per region, colours = _region_palette, as in the subregion map).
         Legend: 'R10 - Interferon-active zone (n=173)'; click to toggle, double-click to isolate.
@@ -2525,7 +2604,7 @@ class SingleCell(object):
 
         fig = go.Figure()
         if show_image:
-            img, _ = self.hires_image(library_id, adata_map)
+            img = self._map_image(library_id, adata_map, image_bg_color, force, verbose)
             fig.add_trace(go.Image(source=self._jpeg_uri(img), hoverinfo="skip"))
         for reg in regions:
             m = lab == reg
@@ -2673,11 +2752,14 @@ class SingleCell(object):
         return g
 
     def spatial_weights(self, adata=None, bandwidth_spots: Optional[float] = None, cutoff: Optional[float] = None,
-                        max_neighbours: int = 100, key_added: str = "spatial") -> pd.DataFrame:
+                        max_neighbours: int = 100, key_added: str = "spatial", fname: Optional[str] = "spatial_weights",
+                        force: bool = False, verbose: bool = False) -> pd.DataFrame:
         """Gaussian spot kernel w = exp(-d^2 / (2 bw^2)) built per section (obs[sample_col]; block-diagonal, sections
         never connected), bw = bandwidth_spots x the section's spot spacing, self weight 1 (several cells share a
         spot), weights < cutoff removed (liana keeps them). Writes obsp[f'{key_added}_connectivities'].
-        Returns df_w: library, spacing_px, bandwidth_px, ring (distance / spacing), n neighbours, weight."""
+        Returns df_w: library, spacing_px, bandwidth_px, ring (distance / spacing), n neighbours, weight.
+        The weights are always computed (cheap; obsp is needed); df_w is written to files[fname] when registered and
+        missing (or force)."""
         import liana as li
         from scipy.spatial import cKDTree
         a = self._check_adata(adata)
@@ -2710,23 +2792,29 @@ class SingleCell(object):
         a.obsp[f"{key_added}_connectivities"] = W
         df_w = pd.concat(rows, ignore_index=True)
         df_w["weight"] = df_w.weight.round(3)
+        if fname is not None and fname in self.files and (force or not self.file_path(fname).exists()):
+            self.write_tsv(df_w, fname, verbose=verbose)
         return df_w
 
     def liana_bivariate(self, adata=None, resource_name: Optional[str] = None, local_name: Optional[str] = None,
                         global_name: Optional[str] = None, n_perms: Optional[int] = None,
-                        nz_prop: Optional[float] = None, fname: Optional[str] = None, force: bool = False,
-                        verbose: bool = True, **kw) -> Tuple[pd.DataFrame, ad.AnnData]:
+                        nz_prop: Optional[float] = None, fname: Optional[str] = "liana_bivariate",
+                        fname_global: Optional[str] = "liana_global", force: bool = False,
+                        verbose: bool = False, **kw) -> Tuple[pd.DataFrame, ad.AnnData]:
         """LIANA bivariate on log-normalised X with obsp['spatial_connectivities'] (spatial_weights is called when
         missing): global Moran's R (permutation p) + local score (cosine) with categories (1 = high-high) and local
-        p-values. Cached as h5ad (root_result / fname). Returns (df_inter sorted by Moran's R, with morans_fdr (BH
-        over all tested pairs), adata_lr: spots x LR pairs, X = local score, layers 'cats', 'pvals')."""
+        p-values. Cached as h5ad: fname = key of self.files or a file name in root_result (force=False: read it).
+        The global table (df_inter) is written to files[fname_global] when registered. Returns (df_inter sorted by
+        Moran's R, with morans_fdr (BH over all tested pairs), adata_lr: spots x LR pairs, X = local score, layers
+        'cats', 'pvals')."""
         import liana as li
         a = self._check_adata(adata)
-        path = Path(self.root_result) / fname if fname else None
+        path = self._resolve_table(fname)
+        computed = False
         if path is not None and path.exists() and not force:
             adata_lr = ad.read_h5ad(path)
             if verbose:
-                print(f"File already exists: {path} (read; force=True recomputes)")
+                print(f"Reading {path}")
         else:
             if "spatial_connectivities" not in a.obsp:
                 self.spatial_weights(a)
@@ -2739,14 +2827,18 @@ class SingleCell(object):
             for k_ in ("cats", "pvals"):
                 if k_ in adata_lr.layers and not sp.issparse(adata_lr.layers[k_]):
                     adata_lr.layers[k_] = sp.csr_matrix(adata_lr.layers[k_])
+            computed = True
             if path is not None:
                 adata_lr.write_h5ad(path)
                 if verbose:
-                    print(f"Saved {path}")
+                    print(f"Saving {path}")
         g = self.params["liana_global"]
         df_inter = adata_lr.var.sort_values(g, ascending=False).copy()
         df_inter[f"{g}_fdr"] = self._bh(df_inter[f"{g}_pvals"].values)
         df_inter.index.name = "interaction"
+        if fname_global is not None and fname_global in self.files and \
+                (computed or force or not self.file_path(fname_global).exists()):
+            self.write_tsv(df_inter.reset_index(), fname_global, verbose=verbose)
         return df_inter, adata_lr
 
     def lr_significant(self, df_inter: pd.DataFrame, fdr: Optional[float] = None) -> pd.DataFrame:
@@ -2759,7 +2851,17 @@ class SingleCell(object):
         rx = re.compile(self.params["lr_display_exclude"]) if self.params["lr_display_exclude"] else None
         return [i for i in interactions if not (rx and rx.search(i))]
 
+    LR_STR_COLS = ("group", "interaction", "ligand", "receptor", "level", "sender", "receiver", "link", "lr", "source",
+                   "target", "ligand_complex", "receptor_complex", "best_group", "ref_links")
+
     def calc_df_lr_by_group(self, adata_lr, groups: pd.Series, interactions: Optional[Sequence[str]] = None,
+                            min_auroc: Optional[float] = None, local_p: Optional[float] = None,
+                            fname: Optional[str] = None, force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """Cached in files[fname] (e.g. 'lr_by_region', 'lr_by_subregion'; see _calc_df_lr_by_group)."""
+        return self._cached_table(fname, lambda: self._calc_df_lr_by_group(adata_lr, groups, interactions, min_auroc, local_p),
+                                  force, verbose, str_cols=("group", "interaction", "ligand", "receptor"))
+
+    def _calc_df_lr_by_group(self, adata_lr, groups: pd.Series, interactions: Optional[Sequence[str]] = None,
                             min_auroc: Optional[float] = None, local_p: Optional[float] = None) -> pd.DataFrame:
         """LR activity of every group (region / subregion) vs the rest of the tissue, from the LIANA local scores:
         mean_in / mean_out (local score), AUROC (P(local score of a group spot > a spot elsewhere); 0.5 = no
@@ -2845,6 +2947,30 @@ class SingleCell(object):
         return np.min(np.stack([E[:, :, gpos[s_]] for s_ in subs], -1), -1)     # complex = min over subunits
 
     def calc_df_celltype_lr(self, E: np.ndarray, genes: Sequence[str], celltypes: Sequence[str], df_lr: pd.DataFrame,
+                            W, groups=None, n_perms: Optional[int] = None, group_n_perms: Optional[int] = None,
+                            group_top_k: Optional[int] = None, seed: Optional[int] = None,
+                            fname: Optional[str] = "celltype_lr_tissue", fname_group: Optional[str] = "celltype_lr_by_group",
+                            force: bool = False, verbose: bool = False) -> Tuple[pd.DataFrame, Optional[pd.DataFrame]]:
+        """Cached in files[fname] (whole tissue) and files[fname_group] (per group) when registered: both present and
+        not force -> read (the permutations are the slow part). See _calc_df_celltype_lr."""
+        keys = [fname] + ([fname_group] if groups is not None else [])
+        reg = all(k is not None and k in self.files for k in keys)
+        str_cols = ("interaction", "ligand", "receptor", "sender", "receiver", "level", "group")
+        if reg and not force and all(self.file_path(k).exists() for k in keys):
+            df_ct = self.read_tsv(fname, str_cols=str_cols, verbose=verbose)
+            df_group_ct = self.read_tsv(fname_group, str_cols=str_cols, verbose=verbose) if groups is not None else None
+            return df_ct, df_group_ct
+        df_ct, df_group_ct = self._calc_df_celltype_lr(E, genes, celltypes, df_lr, W, groups, n_perms, group_n_perms,
+                                                       group_top_k, seed)
+        if reg:
+            self.write_tsv(df_ct, fname, verbose=verbose)
+            df_ct = self.read_tsv(fname, str_cols=str_cols)
+            if df_group_ct is not None:
+                self.write_tsv(df_group_ct, fname_group, verbose=verbose)
+                df_group_ct = self.read_tsv(fname_group, str_cols=str_cols)
+        return df_ct, df_group_ct
+
+    def _calc_df_celltype_lr(self, E: np.ndarray, genes: Sequence[str], celltypes: Sequence[str], df_lr: pd.DataFrame,
                             W, groups=None, n_perms: Optional[int] = None,
                             group_n_perms: Optional[int] = None, group_top_k: Optional[int] = None,
                             seed: Optional[int] = None) -> Tuple[pd.DataFrame, Optional[pd.DataFrame]]:
@@ -2923,6 +3049,14 @@ class SingleCell(object):
         return df_ct, df_group_ct
 
     def calc_df_group_celltype_links(self, df_group_ct: pd.DataFrame, min_z: Optional[float] = None,
+                                     min_ratio: float = 1.0, display_filter: bool = True,
+                                     fname: Optional[str] = "celltype_links_by_group", force: bool = False,
+                                     verbose: bool = False) -> pd.DataFrame:
+        """Cached in files[fname] (see _calc_df_group_celltype_links)."""
+        return self._cached_table(fname, lambda: self._calc_df_group_celltype_links(df_group_ct, min_z, min_ratio, display_filter),
+                                  force, verbose, str_cols=("group", "link", "sender", "receiver", "lr"))
+
+    def _calc_df_group_celltype_links(self, df_group_ct: pd.DataFrame, min_z: Optional[float] = None,
                                      min_ratio: float = 1.0, display_filter: bool = True) -> pd.DataFrame:
         """Per group and sender -> receiver: number of LR pairs for which the link is among the group's top links,
         with z >= min_z (within-group permutation) and score >= the whole-tissue score (ratio >= min_ratio);
@@ -2942,16 +3076,18 @@ class SingleCell(object):
     def liana_rank_aggregate_reference(self, adata_ref, groupby: str, symbol_col: Optional[str] = None,
                                        n_per_type: Optional[int] = None, resource_name: Optional[str] = None,
                                        expr_prop: Optional[float] = None, n_perms: Optional[int] = None,
-                                       fname: Optional[str] = None, force: bool = False, verbose: bool = True) -> pd.DataFrame:
+                                       fname: Optional[str] = "liana_reference", force: bool = False,
+                                       verbose: bool = False) -> pd.DataFrame:
         """Cell-type-resolved, non-spatial LIANA rank_aggregate (CellPhoneDB, Connectome, log2FC, NATMI, SCA,
         CellChat-like) on the scRNA reference: up to n_per_type cells per type (seed), raw counts -> log1p(CP10k),
-        gene symbols (var[symbol_col] or var_names). Cached as TSV (root_result / fname)."""
+        gene symbols (var[symbol_col] or var_names). Cached as TSV: fname = key of self.files or a file name in
+        root_result (force=False: read it)."""
         import liana as li
-        path = Path(self.root_result) / fname if fname else None
+        path = self._resolve_table(fname)
         if path is not None and path.exists() and not force:
             if verbose:
-                print(f"File already exists: {path} (read; force=True recomputes)")
-            return pd.read_csv(path, sep="\t")
+                print(f"Reading {path}")
+            return pdreadcsv(path.name, path.parent)
         self._liana_compat()
         n_per_type = self.get_param("ref_lr_cells_per_type", n_per_type)
         rng = np.random.default_rng(self.params["seed"])
@@ -2975,9 +3111,10 @@ class SingleCell(object):
         df_liref = a.uns["liana_res"].copy()
         df_liref.attrs["n_cells"] = int(a.n_obs)
         if path is not None:
-            df_liref.to_csv(path, sep="\t", index=False)
+            pdwritecsv(df_liref, path.name, path.parent)
             if verbose:
-                print(f"Saved {path} ({a.n_obs} cells, {len(df_liref)} interactions)")
+                print(f"Saving {path} ({a.n_obs} cells, {len(df_liref)} interactions)")
+            df_liref = pdreadcsv(path.name, path.parent)
         return df_liref
 
     def calc_df_celltype_coloc(self, df_abund: pd.DataFrame, W, groups: Optional[pd.Series] = None
@@ -3009,6 +3146,17 @@ class SingleCell(object):
     def calc_df_ref_lr_support(self, df_liref: pd.DataFrame, df_coloc: pd.DataFrame,
                                coloc_group: Optional[Dict[str, pd.DataFrame]] = None,
                                spec_rank: Optional[float] = None, mag_rank: Optional[float] = None,
+                               min_coloc: Optional[float] = None, min_coloc_group: Optional[float] = None,
+                               fname: Optional[str] = "liana_reference_supported", force: bool = False,
+                               verbose: bool = False) -> pd.DataFrame:
+        """Cached in files[fname] (see _calc_df_ref_lr_support)."""
+        return self._cached_table(fname, lambda: self._calc_df_ref_lr_support(df_liref, df_coloc, coloc_group, spec_rank, mag_rank,
+                                                                              min_coloc, min_coloc_group),
+                                  force, verbose, str_cols=("source", "target", "interaction", "best_group"))
+
+    def _calc_df_ref_lr_support(self, df_liref: pd.DataFrame, df_coloc: pd.DataFrame,
+                               coloc_group: Optional[Dict[str, pd.DataFrame]] = None,
+                               spec_rank: Optional[float] = None, mag_rank: Optional[float] = None,
                                min_coloc: Optional[float] = None, min_coloc_group: Optional[float] = None) -> pd.DataFrame:
         """Reference interactions (rank_aggregate) that are specific and strong (specificity_rank, magnitude_rank <=
         cutoffs) annotated with the co-localisation of source and target (coloc), the group where they co-localise
@@ -3036,6 +3184,19 @@ class SingleCell(object):
         return d.sort_values(["spatially_supported", "magnitude_rank"], ascending=[False, True]).reset_index(drop=True)
 
     def calc_df_group_ccc(self, df_lr_group: pd.DataFrame, df_group_ct: Optional[pd.DataFrame] = None,
+                          df_ref_sup: Optional[pd.DataFrame] = None, n: Optional[int] = None,
+                          group_names: Optional[Dict[str, str]] = None, name_col: str = "region_name",
+                          fname: Optional[str] = None, force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """Cached in files[fname] (e.g. 'ccc_by_region', 'ccc_by_subregion'); group_names: adds name_col after 'group'.
+        See _calc_df_group_ccc. Missing cell-type links read back as '' (count them with (col != '')."""
+        def _compute():
+            out = self._calc_df_group_ccc(df_lr_group, df_group_ct, df_ref_sup, n)
+            if group_names:
+                out.insert(1, name_col, out.group.map(group_names))
+            return out
+        return self._cached_table(fname, _compute, force, verbose, str_cols=("group", "interaction", "ref_links"))
+
+    def _calc_df_group_ccc(self, df_lr_group: pd.DataFrame, df_group_ct: Optional[pd.DataFrame] = None,
                           df_ref_sup: Optional[pd.DataFrame] = None, n: Optional[int] = None) -> pd.DataFrame:
         """Consensus per group: its top-n enriched LR pairs (AUROC; display filter) with the best cell2location
         sender -> receiver of the pair in the group (z, ratio vs tissue) and the reference support: whether
@@ -3066,14 +3227,23 @@ class SingleCell(object):
 
     # ---------------------------------------------------------------------------------------- LIANA figures
     def plot_lr_spatial(self, adata_lr, adata, interactions: Sequence[str], library_id: Optional[str] = None,
-                        ncols: int = 4, panel_size: float = 3.6, titles: Optional[Sequence[str]] = None,
-                        outlines: Optional[Sequence[np.ndarray]] = None, cmap=None,
-                        fname: Optional[str] = "lr_local_scores.png"):
+                        ncols: int = 4, figsize:tuple=(12,8), titles: Optional[Sequence[str]] = None,
+                        outlines: Optional[Sequence[np.ndarray]] = None, cmap=None, point_size: float = 4,
+                        image_alpha: float = 0.5, image_bg_color: Optional[str] = None, outline_color: str = "#00E5FF",
+                        outline_width: float = 1.0, fontsize_title: float = 8, fontsize_suptitle: float = 9,
+                        fontsize_colorbar: float = 6, font_color: str = "black", bg_color: str = "white",
+                        fname: Optional[str] = "lr_local_scores.png", force: bool = False, verbose: bool = False):
         """LIANA local scores of LR pairs on the H&E of one section (colour 2nd-99.5th percentile). One panel per
         entry of interactions (repeats allowed); titles / outlines (boolean masks over adata.obs_names, e.g. the
-        spots of a region, drawn with plot_region_outline) are given per panel."""
+        spots of a region, drawn with plot_region_outline) are given per panel.
+
+        Image: image_bg_color (H&E copy with the glass background in this colour, hires_image_bg), image_alpha.
+        Sizes: point_size, outline_width. Font sizes: fontsize_title (panels), fontsize_suptitle,
+        fontsize_colorbar. Colours: cmap, outline_color, font_color, bg_color (figure and panels).
+        fname: key of self.files ({lib}) or a file name in root_figure; an existing file is kept unless force."""
+        
         lib = library_id or self.library_ids(adata)[0]
-        img, _ = self.hires_image(lib, adata)
+        img = self._map_image(lib, adata, image_bg_color, verbose=verbose)
         m, xy = self.spot_xy(lib, adata)
         names = adata.obs_names[m]
         keep = [k for k, i in enumerate(interactions) if i in adata_lr.var_names]
@@ -3081,33 +3251,47 @@ class SingleCell(object):
         outlines = [list(outlines)[k] for k in keep] if outlines is not None else [None] * len(keep)
         interactions = [interactions[k] for k in keep]
         nrows = int(np.ceil(len(interactions) / ncols))
-        fig, axes = plt.subplots(nrows, ncols, figsize=(panel_size * ncols, panel_size * nrows), squeeze=False)
+        
+        fig, axes = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False, facecolor=bg_color)
         cmap = cmap or cmap_byr
+
         for ax, it, tt, ol in zip(axes.ravel(), interactions, titles, outlines):
+            ax.set_facecolor(bg_color)
             v = adata_lr[names, it].X
             v = np.asarray(v.toarray() if sp.issparse(v) else v).ravel()
-            ax.imshow(img, alpha=0.5)
+            ax.imshow(img, alpha=image_alpha)
             o = np.argsort(v)
-            sca = ax.scatter(xy[o, 0], xy[o, 1], c=v[o], s=4, cmap=cmap, vmin=float(np.quantile(v, 0.02)),
+            sca = ax.scatter(xy[o, 0], xy[o, 1], c=v[o], s=point_size, cmap=cmap, vmin=float(np.quantile(v, 0.02)),
                              vmax=float(np.quantile(v, 0.995)), lw=0)
             ax.set_xlim(xy[:, 0].min() - 30, xy[:, 0].max() + 30); ax.set_ylim(xy[:, 1].max() + 30, xy[:, 1].min() - 30)
             ax.set_axis_off()
             if ol is not None:
-                self.plot_region_outline(ax, xy, np.asarray(ol)[m], color="#00E5FF", lw=1.0, min_spots=5)
-            ax.set_title(tt, fontsize=8, loc="left")
-            fig.colorbar(sca, ax=ax, fraction=0.04, pad=0.01).ax.tick_params(labelsize=6)
+                self.plot_region_outline(ax, xy, np.asarray(ol)[m], color=outline_color, lw=outline_width, min_spots=5)
+            ax.set_title(tt, fontsize=fontsize_title, loc="left", color=font_color)
+            cb = fig.colorbar(sca, ax=ax, fraction=0.04, pad=0.01)
+            cb.ax.tick_params(labelsize=fontsize_colorbar, colors=font_color)
+            cb.outline.set_edgecolor(font_color)
         for ax in axes.ravel()[len(interactions):]:
             ax.set_visible(False)
+        
         fig.tight_layout()
-        fig.suptitle(f"{lib}: LIANA local {self.params['liana_local']} score", fontsize=9, x=0.01, y=1.0, ha="left",
-                     va="bottom")
-        self._savefig(fig, fname)
+        
+        fig.suptitle(f"{lib}: LIANA local {self.params['liana_local']} score", fontsize=fontsize_suptitle, color=font_color,
+                     x=0.01, y=1.0, ha="left", va="bottom")
+        
+        self._save_figure(fig, fname, force, verbose, lib=lib)
         return fig
 
     def plotly_lr_group_heatmap(self, df_lr_group: pd.DataFrame, n_per_group: int = 3, groups: Optional[Sequence[str]] = None,
-                                group_names: Optional[Dict[str, str]] = None, height: Optional[int] = None):
+                                group_names: Optional[Dict[str, str]] = None, height: int = 900, width: int = 1200,
+                                fontsize_title: int = 17, fontsize_xticks: int = 8, fontsize_yticks: int = 9,
+                                fontsize_colorbar: int = 12, fontsize_hover: int = 13, colorscale: str = "RdBu_r",
+                                font_color: str = "#2a3f5f", bg_color: str = "white",
+                                fname: Optional[str] = None, force: bool = False, verbose: bool = False):
         """Groups (rows) x LR pairs (columns: union of each group's top-n enriched pairs, display filter): AUROC of
-        the local score (0.5 = as elsewhere). Hover: high-high fraction in / out."""
+        the local score (0.5 = as elsewhere). Hover: high-high fraction in / out.
+        Font sizes: fontsize_title, fontsize_xticks (LR pairs), fontsize_yticks (groups), fontsize_colorbar,
+        fontsize_hover. Colours: colorscale (diverging at 0.5), font_color, bg_color. fname: key ('fig_lr_region_hm')."""
         import plotly.graph_objects as go
         groups = list(groups) if groups is not None else list(pd.unique(df_lr_group.group))
         d = df_lr_group[df_lr_group.enriched & df_lr_group.interaction.isin(set(self._lr_display(df_lr_group.interaction.unique())))]
@@ -3120,21 +3304,30 @@ class SingleCell(object):
         H = df_lr_group.assign(t=lambda x: [f"high-high {a:.2f} vs {b:.2f}" for a, b in zip(x.hh_frac_in, x.hh_frac_out)]) \
                        .pivot(index="group", columns="interaction", values="t").reindex(index=groups, columns=cols)
         ylab = [f"{grp} {group_names.get(grp, '')}"[:45] if group_names else grp for grp in groups]
-        fig = go.Figure(go.Heatmap(z=M.values, x=cols, y=ylab, colorscale="RdBu_r", zmid=0.5, zmin=0.2, zmax=0.8,
-                                   customdata=H.values, colorbar=dict(title="AUROC"),
+        fig = go.Figure(go.Heatmap(z=M.values, x=cols, y=ylab, colorscale=colorscale, zmid=0.5, zmin=0.2, zmax=0.8,
+                                   customdata=H.values,
+                                   colorbar=dict(title=dict(text="AUROC", font=dict(size=fontsize_colorbar)),
+                                                 tickfont=dict(size=fontsize_colorbar)),
                                    hovertemplate="%{x} in %{y}<br>AUROC %{z:.2f}<br>%{customdata}<extra></extra>"))
         fig.update_layout(title=f"LR pairs enriched in each group (top {n_per_group}; AUROC of the local score vs the rest)",
-                          height=height or max(450, 22 * len(groups) + 260), width=max(900, 16 * len(cols) + 380),
-                          template="plotly_white", yaxis=dict(autorange="reversed", tickfont=dict(size=9)),
-                          xaxis=dict(tickfont=dict(size=8), tickangle=-60))
+                          height=height, width=width, template="plotly_white",
+                          yaxis=dict(autorange="reversed"), xaxis=dict(tickangle=-60))
+        self._plotly_style(fig, fontsize_title, fontsize_xticks, fontsize_yticks, fontsize_hover, font_color, bg_color)
+        self._save_figure(fig, fname, force, verbose)
         return fig
 
     def plotly_group_celltype_links(self, df_links: pd.DataFrame, n_links: int = 30, groups: Optional[Sequence[str]] = None,
                                     group_names: Optional[Dict[str, str]] = None, exclude_self: bool = True,
-                                    height: Optional[int] = None):
+                                    height: Optional[int] = None, width: Optional[int] = None, fontsize_title: int = 17,
+                                    fontsize_xticks: int = 8, fontsize_yticks: int = 9, fontsize_colorbar: int = 12,
+                                    fontsize_hover: int = 13, colorscale: str = "Reds", font_color: str = "#2a3f5f",
+                                    bg_color: str = "white", fname: Optional[str] = None, force: bool = False,
+                                    verbose: bool = False):
         """Groups (rows) x the n_links sender -> receiver links with most LR pairs over all groups (columns):
         number of LR pairs (calc_df_group_celltype_links). Hover: the LR pairs. exclude_self: links between
-        different cell types only."""
+        different cell types only.
+        Font sizes: fontsize_title, fontsize_xticks (links), fontsize_yticks (groups), fontsize_colorbar, fontsize_hover.
+        Colours: colorscale, font_color, bg_color. fname: key ('fig_links_region', 'fig_links_sub')."""
         import plotly.graph_objects as go
         groups = list(groups) if groups is not None else list(pd.unique(df_links.group))
         if exclude_self:
@@ -3143,50 +3336,74 @@ class SingleCell(object):
         M = df_links.pivot_table(index="group", columns="link", values="n_lr", aggfunc="sum").reindex(index=groups, columns=top)
         T = df_links.pivot_table(index="group", columns="link", values="lr", aggfunc="first").reindex(index=groups, columns=top)
         ylab = [f"{grp} {group_names.get(grp, '')}"[:45] if group_names else grp for grp in groups]
-        fig = go.Figure(go.Heatmap(z=M.fillna(0).values, x=list(top), y=ylab, colorscale="Reds", customdata=T.fillna("").values,
-                                   colorbar=dict(title="LR pairs"),
+        fig = go.Figure(go.Heatmap(z=M.fillna(0).values, x=list(top), y=ylab, colorscale=colorscale, customdata=T.fillna("").values,
+                                   colorbar=dict(title=dict(text="LR pairs", font=dict(size=fontsize_colorbar)),
+                                                 tickfont=dict(size=fontsize_colorbar)),
                                    hovertemplate="%{x} in %{y}<br>%{z} LR pairs<br>%{customdata}<extra></extra>"))
         fig.update_layout(title="Cell type -> cell type communication per group (cell2location-resolved; LR pairs with z >= "
                                 f"{self.params['c2l_lr_min_z']} and score >= tissue" + ("; different types only)" if exclude_self else ")"),
-                          height=height or max(450, 22 * len(groups) + 300), width=max(900, 18 * len(top) + 380),
-                          template="plotly_white", yaxis=dict(autorange="reversed", tickfont=dict(size=9)),
-                          xaxis=dict(tickfont=dict(size=8), tickangle=-60))
+                          height=height or max(450, 22 * len(groups) + 300), width=width or max(900, 18 * len(top) + 380),
+                          template="plotly_white", yaxis=dict(autorange="reversed"), xaxis=dict(tickangle=-60))
+        self._plotly_style(fig, fontsize_title, fontsize_xticks, fontsize_yticks, fontsize_hover, font_color, bg_color)
+        self._save_figure(fig, fname, force, verbose)
         return fig
 
     def plot_sender_receiver_heatmaps(self, df_ct: pd.DataFrame, interactions: Sequence[str], n_top: int = 10,
-                                      ncols: int = 3, panel_size: Tuple[float, float] = (4.6, 4.0),
-                                      fname: Optional[str] = "celltype_lr_sender_receiver.png"):
-        """One heatmap per LR pair: the n_top senders (rows) x n_top receivers (columns) by total score."""
+                                      ncols: int = 3, panel_size: Tuple[float, float] = (4.6, 4.0), cmap: str = "Reds",
+                                      fontsize_title: float = 8, fontsize_ticks: float = 6, fontsize_label: float = 7,
+                                      fontsize_colorbar: float = 6, font_color: str = "black", bg_color: str = "white",
+                                      fname: Optional[str] = "celltype_lr_sender_receiver.png", force: bool = False,
+                                      verbose: bool = False):
+        """One heatmap per LR pair: the n_top senders (rows) x n_top receivers (columns) by total score.
+        Font sizes: fontsize_title, fontsize_ticks (cell types), fontsize_label (axis labels), fontsize_colorbar.
+        Colours: cmap, font_color, bg_color. fname: key of self.files or a file name; kept unless force."""
         interactions = [i for i in interactions if i in set(df_ct.interaction)]
         nrows = int(np.ceil(len(interactions) / ncols))
-        fig, axes = plt.subplots(nrows, ncols, figsize=(panel_size[0] * ncols, panel_size[1] * nrows), squeeze=False)
+        fig, axes = plt.subplots(nrows, ncols, figsize=(panel_size[0] * ncols, panel_size[1] * nrows), squeeze=False,
+                                 facecolor=bg_color)
         for ax, it in zip(axes.ravel(), interactions):
+            ax.set_facecolor(bg_color)
             M = df_ct[df_ct.interaction == it].pivot(index="sender", columns="receiver", values="score")
             M = M.loc[M.sum(1).nlargest(n_top).index, M.sum(0).nlargest(n_top).index]
-            im = ax.imshow(M.values, cmap="Reds", aspect="auto")
-            ax.set_xticks(range(M.shape[1])); ax.set_xticklabels(M.columns, rotation=90, fontsize=6)
-            ax.set_yticks(range(M.shape[0])); ax.set_yticklabels(M.index, fontsize=6)
-            ax.set_title(it, fontsize=8, loc="left"); ax.set_xlabel("receiver (receptor)", fontsize=7)
-            ax.set_ylabel("sender (ligand)", fontsize=7)
-            fig.colorbar(im, ax=ax, fraction=0.04, pad=0.02).ax.tick_params(labelsize=6)
+            im = ax.imshow(M.values, cmap=cmap, aspect="auto")
+            ax.set_xticks(range(M.shape[1])); ax.set_xticklabels(M.columns, rotation=90, fontsize=fontsize_ticks, color=font_color)
+            ax.set_yticks(range(M.shape[0])); ax.set_yticklabels(M.index, fontsize=fontsize_ticks, color=font_color)
+            ax.tick_params(colors=font_color)
+            for sp_ in ax.spines.values():
+                sp_.set_edgecolor(font_color)
+            ax.set_title(it, fontsize=fontsize_title, loc="left", color=font_color)
+            ax.set_xlabel("receiver (receptor)", fontsize=fontsize_label, color=font_color)
+            ax.set_ylabel("sender (ligand)", fontsize=fontsize_label, color=font_color)
+            cb = fig.colorbar(im, ax=ax, fraction=0.04, pad=0.02)
+            cb.ax.tick_params(labelsize=fontsize_colorbar, colors=font_color)
+            cb.outline.set_edgecolor(font_color)
         for ax in axes.ravel()[len(interactions):]:
             ax.set_visible(False)
         fig.tight_layout()
-        self._savefig(fig, fname)
+        self._save_figure(fig, fname, force, verbose)
         return fig
 
-    def plotly_coloc_heatmap(self, df_coloc: pd.DataFrame, height: int = 800):
-        """Cell-type co-localisation (symmetric), rows / columns ordered by hierarchical clustering."""
+    def plotly_coloc_heatmap(self, df_coloc: pd.DataFrame, height: int = 800, width: Optional[int] = None,
+                             fontsize_title: int = 17, fontsize_ticks: int = 8, fontsize_colorbar: int = 12,
+                             fontsize_hover: int = 13, colorscale: str = "RdBu_r", font_color: str = "#2a3f5f",
+                             bg_color: str = "white", fname: Optional[str] = "fig_coloc", force: bool = False,
+                             verbose: bool = False):
+        """Cell-type co-localisation (symmetric), rows / columns ordered by hierarchical clustering.
+        Font sizes: fontsize_title, fontsize_ticks (cell types), fontsize_colorbar, fontsize_hover.
+        Colours: colorscale (diverging at 0), font_color, bg_color. fname: key of self.files."""
         import plotly.graph_objects as go
         from scipy.cluster.hierarchy import linkage, leaves_list
         o = leaves_list(linkage(df_coloc.values, "average", metric="euclidean"))
         M = df_coloc.iloc[o, o]
-        fig = go.Figure(go.Heatmap(z=M.values, x=list(M.columns), y=list(M.index), colorscale="RdBu_r", zmid=0, zmin=-1,
-                                   zmax=1, colorbar=dict(title="r"),
+        fig = go.Figure(go.Heatmap(z=M.values, x=list(M.columns), y=list(M.index), colorscale=colorscale, zmid=0, zmin=-1,
+                                   zmax=1, colorbar=dict(title=dict(text="r", font=dict(size=fontsize_colorbar)),
+                                                         tickfont=dict(size=fontsize_colorbar)),
                                    hovertemplate="%{y} with niche of %{x}: r = %{z:.2f}<extra></extra>"))
         fig.update_layout(title="Cell-type co-localisation (abundance at a spot vs kernel-weighted abundance around it)",
-                          height=height, width=height + 80, template="plotly_white",
-                          yaxis=dict(autorange="reversed", tickfont=dict(size=8)), xaxis=dict(tickfont=dict(size=8)))
+                          height=height, width=width or height + 80, template="plotly_white",
+                          yaxis=dict(autorange="reversed"))
+        self._plotly_style(fig, fontsize_title, fontsize_ticks, fontsize_ticks, fontsize_hover, font_color, bg_color)
+        self._save_figure(fig, fname, force, verbose)
         return fig
 
     # =====================================================================================================

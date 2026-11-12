@@ -94,12 +94,14 @@ NEURO_PARAMS: Dict[str, Any] = dict(
     },
     region_label_min_enrich=1.5,    # the labelling type must be at least this enriched in the cluster
     region_label_top_k=3,           # labels voted by the k most enriched mapped types
-    region_colors={                 # label -> colour (same palette as mb01_brain_regions.png); unknown labels: Kelly / tab20
-        "CTX_L1": "#c6dbef", "CTX_L2/3": "#9ecae1", "CTX_L4": "#4292c6", "CTX_L5": "#2171b5", "CTX_L5/6": "#08519c",
-        "CTX_L6b": "#08306b", "PIR": "#9e9ac8", "AMY": "#6a51a3", "HPC_CA1": "#74c476", "HPC_CA3": "#238b45",
-        "HPC_DG": "#00441b", "STR": "#e7298a", "THAL": "#fd8d3c", "HAB": "#d94801", "HYPO": "#fdd0a2",
-        "WM": "#969696", "edge_LowQ": "#f0f0f0"},
-    region_label_override={},       # {region_cluster: label}, set after inspecting calc_df_edge_fraction
+    # label -> colour: distinct light hues from REGION_COLORS (no shades of one colour), assigned so that regions sharing
+    # a border on the sections differ most (min CIEDE2000 between bordering regions 31.9); edge_LowQ pale; unknown: REGION_COLORS
+    region_colors={
+        "CTX_L1": "#36F587", "CTX_L2/3": "#FF9DA7", "CTX_L4": "#98DF8A", "CTX_L5": "#3FB9DB", "CTX_L5/6": "#FFBB78",
+        "CTX_L6b": "#4DAF4A", "PIR": "#F3C300", "AMY": "#F96560", "HPC_CA1": "#17BECF", "HPC_CA3": "#BCE667",
+        "HPC_DG": "#E68FAC", "STR": "#6296ED", "THAL": "#71E9ED", "HAB": "#F38400", "HYPO": "#8DB600",
+        "WM": "#FA5D98", "edge_LowQ": "#FCE4E4"},
+    region_label_override={"11": "CTX_L1", "21": "edge_LowQ"},   # {region_cluster: label}: edge-fraction evidence (mb01)
     edge_radius_factor=1.2,         # neighbours searched within factor x spot spacing
     edge_min_neighbors=6,           # fewer neighbours -> border spot
     # --- cortical layers for Fig 2I/2J (region label -> layer)
@@ -181,18 +183,86 @@ NEURO_PARAMS: Dict[str, Any] = dict(
     composition_min_mean=0.05,                # cell types with mean density >= this (cells per spot) are ranked
     composition_top=3,
     subregion_map_title="{lib}: subregions of each brain region",
+    region_table_first=("region_id", "signature_genes", "functional_description"),
+    region_table_depth=True,                  # median_UMIs, median_cells_per_spot in the region table
+    subregion_table_first=("region_id", "sub_region_id", "subregion_name", "subregion_signature_genes", "n_other",
+                           "other_genes_top_expressed", "not_present_genes", "functional_description"),
     liana_resource="mouseconsensus",          # LIANA LR resource (mouse symbols)
     plotly_include_js="cdn",                  # write_html: 'cdn' (small files, needs internet to view) or True
 )
+
+
+# Files of the mouse brain project: key -> (root, name); root 'data' | 'result' | 'figure' (folders of ROOT0/project).
+# 'inputs' are always registered; an analysis (SingleCellNeuro(..., analysis='mb03')) adds its outputs, which turns on
+# the caching of its methods (force=False: read the file when it exists). {region}: '/' -> '-' (CTX_L2/3 -> CTX_L2-3).
+NEURO_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
+    "inputs": dict(
+        c2l_map=("data", "c2l_paper_map/sp_with_clusters.h5ad"),                 # paper cell2location map (v0.05 layout)
+        region_info=("data", "mouse_brain_regions.tsv"),                         # curated region table (editable)
+        subregion_descriptions=("data", "mouse_brain_subregion_descriptions.tsv"),  # curated subregion descriptions
+        # H&E copy with the glass background recoloured (hires_image_bg; maps with image_bg_color=...); the original
+        # image in the map h5ad is not changed
+        hires_bg=("data", "hires_bg/{lib}_bg_{color}.png"),
+        signatures=("data", "snrna/regression_signatures_sc.h5ad"),            # 59 regression signatures
+        reference=("data", "snrna/all_cells_20200625.h5ad"),                   # snRNA reference, raw counts
+        reference_annotation=("data", "snrna/snRNA_annotation_astro_subtypes_refined59_20200823.csv"),
+    ),
+    "mb03": dict(
+        # tables (cached)
+        region_rank_genes=("result", "mb03_region_rank_genes.tsv.gz"),
+        region_table=("result", "mb03_region_table.tsv"),
+        subregion_grid=("result", "mb03_subcluster_resolution_grid.tsv"),
+        subregion_adata=("result", "mb03_subregions/{region}.h5ad"),            # run_subregions: one AnnData per region
+        subregion_gene_sets=("result", "mb03_subregion_gene_sets.tsv.gz"),
+        subregion_table=("result", "mb03_subregion_table.tsv"),
+        # figures
+        fig_region_heatmap=("figure", "mb03_region_signature_heatmap.html"),
+        fig_region_map=("figure", "mb03_region_map_{lib}.html"),
+        fig_region_sub=("figure", "mb03_subregions_{region}.html"),
+        fig_diagnostics=("figure", "mb03_subregion_diagnostics.html"),
+        fig_subregion_map=("figure", "mb03_subregion_map_{lib}.html"),
+    ),
+    "mb04": dict(
+        # subregions of mb03 (read: same parameters; run_subregions reuses its cached subsets)
+        subregion_grid=("result", "mb03_subcluster_resolution_grid.tsv"),
+        subregion_adata=("result", "mb03_subregions/{region}.h5ad"),
+        subregion_table_mb03=("result", "mb03_subregion_table.tsv"),
+        # tables / caches
+        spatial_weights=("result", "mb04_spatial_weights.tsv"),
+        liana_bivariate=("result", "mb04_liana_bivariate.h5ad"),
+        liana_global=("result", "mb04_liana_bivariate_global.tsv"),
+        lr_by_region=("result", "mb04_lr_by_region.tsv"),
+        lr_by_subregion=("result", "mb04_lr_by_subregion.tsv"),
+        celltype_lr_tissue=("result", "mb04_celltype_lr_tissue.tsv.gz"),
+        celltype_lr_by_group=("result", "mb04_celltype_lr_by_group.tsv.gz"),
+        celltype_links_by_group=("result", "mb04_celltype_links_by_group.tsv"),
+        liana_reference=("result", "mb04_liana_reference_rank_aggregate.tsv"),
+        liana_reference_supported=("result", "mb04_liana_reference_supported.tsv"),
+        ccc_by_region=("result", "mb04_ccc_consensus_by_region.tsv"),
+        ccc_by_subregion=("result", "mb04_ccc_consensus_by_subregion.tsv"),
+        # figures
+        fig_lr_top=("figure", "mb04_lr_top_local_scores_{lib}.png"),
+        fig_lr_regions=("figure", "mb04_lr_region_top_local_scores_{lib}.png"),
+        fig_lr_region_hm=("figure", "mb04_lr_by_region_heatmap.html"),
+        fig_lr_sub_hm=("figure", "mb04_lr_by_subregion_heatmap.html"),
+        fig_sender_recv=("figure", "mb04_celltype_lr_sender_receiver.png"),
+        fig_links_region=("figure", "mb04_celltype_links_by_region.html"),
+        fig_links_sub=("figure", "mb04_celltype_links_by_subregion.html"),
+        fig_coloc=("figure", "mb04_celltype_colocalisation.html"),
+    ),
+}
 
 
 class SingleCellNeuro(SingleCell):
     """Mouse brain (neuro) analyses of the cell2location paper (Fig 2)."""
 
     default_params = {**DEFAULT_PARAMS, **NEURO_PARAMS}
+    analysis_files = NEURO_FILES
 
     def __init__(self, ROOT0, project: str = "mouse_brain", symbol_col: str = "SYMBOL", sample_col: str = "sample",
                  mt_prefix: str = "mt-", **kw):
+        """analysis= key of NEURO_FILES ('mb03') whose output files are registered (caching on); files= adds or
+        overrides single entries."""
         super().__init__(ROOT0, project, symbol_col=symbol_col, sample_col=sample_col, mt_prefix=mt_prefix, **kw)
 
     def alias(self, ct: str) -> str:
@@ -259,7 +329,7 @@ class SingleCellNeuro(SingleCell):
         annotated cells. Returns (AnnData, df_annot)."""
         a = self._check_adata(adata)
         ct = self.params["celltype_col"]
-        df_annot = pd.read_csv(Path(root or self.root_data) / fname, index_col=0)
+        df_annot = pd.read_csv(self._resolve_path(fname, root, self.root_data), index_col=0)      # key or file name
         a.obs[ct] = df_annot[ct].reindex(a.obs_names).values
         if keep_annotated:
             a = a[a.obs[ct].notna()].copy()
@@ -337,10 +407,10 @@ class SingleCellNeuro(SingleCell):
         """
         Paper cell2location map (v0.05 layout): obs '<prefix><cell type>' -> obsm[c2l_obsm_key] DataFrame;
         uns['spatial'] keys renamed to sample ids (map_library_regex); uns['mod']['factor_names'] set.
-        Only libraries with spots are kept in uns['spatial'].
+        Only libraries with spots are kept in uns['spatial']. fname: file in (root or root_data), or a key of self.files.
         """
 
-        a = ad.read_h5ad(Path(root or self.root_data) / fname)
+        a = ad.read_h5ad(self._resolve_path(fname, root, self.root_data))
         prefix = self.get_param("map_density_prefix", prefix)
         cols = [c for c in a.obs.columns if c.startswith(prefix)]
         types = [c[len(prefix):] for c in cols]
@@ -557,7 +627,7 @@ class SingleCellNeuro(SingleCell):
         (uns['regression_mod']['post_sample_means']['gene_factors'], factors x genes). With use_symbols,
         index = var[symbol_col] (duplicated symbols: first kept)."""
         import h5py
-        path = Path(root or self.root_data) / fname
+        path = self._resolve_path(fname, root, self.root_data)                                    # key or file name
         a = ad.read_h5ad(path, backed="r")
         with h5py.File(path) as h:
             g = h["uns/regression_mod"]
