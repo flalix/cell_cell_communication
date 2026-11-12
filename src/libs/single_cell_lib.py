@@ -90,6 +90,33 @@ KELLY_COLORS = ['#F3C300', '#875692', '#F38400', '#A1CAF1', '#BE0032', '#C2B280'
                 '#F6A600', '#B3446C', '#DCD300', '#882D17', '#8DB600', '#654522',
                 '#E25822', '#2B3D26']
 
+# Region colours: bright and distinct, visible on H&E. Excluded: black, gray, violet/purple (HSV hue 230-335),
+# brown/tan, dark colours (all CIELAB L* >= 55). Ordered so that consecutive regions get contrasting hues.
+REGION_COLORS = ['#F3C300',  # yellow
+                 '#3FB9DB',  # sky blue
+                 '#F38400',  # orange
+                 '#FA5D98',  # pink
+                 '#8DB600',  # lime
+                 '#6296ED',  # cornflower blue
+                 '#F96560',  # coral red
+                 '#3BF0D5',  # turquoise
+                 '#FFBB78',  # peach
+                 '#4DAF4A',  # green
+                 '#E68FAC',  # rose
+                 '#A1CAF1',  # light blue
+                 '#E25822',  # red-orange
+                 '#00C49A',  # teal
+                 '#BCE667',  # light lime
+                 '#FF9DA7',  # light pink
+                 '#17BECF',  # cyan
+                 '#98DF8A',  # pale green
+                 '#F44336',  # red
+                 '#71E9ED',  # pale cyan
+                 '#36F587']  # spring green
+
+# Light sequential scale (low -> high; all CIELAB L* >= 60): continuous values such as log10 UMIs
+LIGHT_SEQUENTIAL = ['#FFEDA0', '#FEB24C', '#FD8D3C', '#F96560']
+
 # -----------------------------------------------------------------------------------------------------------
 # Default parameters (cutoffs, model settings, plotting). Copied to self.params; override per project.
 # -----------------------------------------------------------------------------------------------------------
@@ -195,7 +222,10 @@ DEFAULT_PARAMS: Dict[str, Any] = dict(
     # --- subregions (section 8c; mp_mouse_brain03 / mp_lymphoid03): gene sets, flags, tables
     subregion_key="sub_region_id",            # obs column, e.g. 'THAL_2'
     subregion_skip=(),                        # regions not subclustered (artefacts, e.g. low-quality spots)
-    region_colors={},                         # region -> colour (others: Kelly colours)
+    region_colors={},                         # region -> colour (others: REGION_COLORS)
+    region_table_first=(),                    # calc_df_region_table: these columns first (the others keep their order)
+    region_table_depth=False,                 # calc_df_region_table: add median_UMIs, median_cells_per_spot
+    subregion_table_first=(),                 # calc_df_subregion_table: these columns first
     region_sig_lfc=1.0, region_sig_padj=0.05, region_sig_min_pct=0.25,
     sub_sig_lfc=0.75, sub_sig_padj=0.05, sub_sig_min_pct=0.20,
     notpres_max_pct=0.05,                     # 'absent': detected in <= 5% of the subregion's spots
@@ -247,11 +277,13 @@ class SingleCell(object):
     """
 
     default_params: Dict[str, Any] = DEFAULT_PARAMS
+    default_files: Dict[str, Tuple[str, str]] = {}      # key -> (root, name); see file_path
 
     def __init__(self, ROOT0: Path, project: str, adata: Optional[ad.AnnData] = None,
                  data_dir: str = "data", figure_dir: str = "figures", result_dir: str = "results",
                  symbol_col: str = "SYMBOL", sample_col: str = "sample", mt_prefix: str = "mt-",
-                 params: Optional[Dict[str, Any]] = None, name: str = ""):
+                 params: Optional[Dict[str, Any]] = None, name: str = "",
+                 files: Optional[Dict[str, Tuple[str, str]]] = None):
         
         self.ROOT0 = Path(ROOT0)
         self.project = project
@@ -269,6 +301,8 @@ class SingleCell(object):
         self.params = copy.deepcopy(self.default_params)
         if params:
             self.set_params(**params)
+        self.files: Dict[str, Tuple[str, str]] = {**copy.deepcopy(self.default_files), **(files or {})}
+        self.create_file_dirs()
 
     def __repr__(self):
         shape = None if self.adata is None else self.adata.shape
@@ -304,12 +338,101 @@ class SingleCell(object):
             raise ValueError("no AnnData: pass adata= or set self.adata")
         return a
 
+    # -----------------------------------------------------------------------------------------------------
+    # files: registry self.files (key -> (root, name)) and cached tables
+    # -----------------------------------------------------------------------------------------------------
+    def file_path(self, key: str, **fmt) -> Path:
+        """Path of a registered file. self.files[key] = (root, name): root 'data' | 'result' | 'figure' (the project
+        folders); name may contain sub-folders and {placeholders} filled from fmt (e.g. lib=..., region=...)."""
+        if key not in self.files:
+            raise KeyError(f"file key {key!r} is not registered; known: {sorted(self.files)}")
+        root, name = self.files[key]
+        roots = {"data": self.root_data, "result": self.root_result, "figure": self.root_figure}
+        return Path(roots[root]) / name.format(**fmt)
+
+    def create_file_dirs(self) -> List[Path]:
+        """create_dir for the sub-folders of the registered files (e.g. results/lymph03_subregions); called by __init__."""
+        roots = {"data": self.root_data, "result": self.root_result, "figure": self.root_figure}
+        subs = sorted({(root, str(Path(name).parent)) for root, name in self.files.values() if str(Path(name).parent) != "."})
+        return [create_dir(roots[root], sub) for root, sub in subs]
+
+    def _resolve_path(self, fname: str, root: Optional[Path], default_root: Path, **fmt) -> Path:
+        """Registered key (and no explicit root) -> file_path(key); otherwise (root or default_root) / fname."""
+        if root is None and fname in self.files:
+            return self.file_path(fname, **fmt)
+        return Path(root or default_root) / (fname.format(**fmt) if fmt else fname)
+
+    def calc_df_files(self) -> pd.DataFrame:
+        """Registered files: key, root, name, path, exists."""
+        rows = []
+        for k, (root, name) in self.files.items():
+            p = self.file_path(k) if "{" not in name else None
+            rows.append(dict(key=k, root=root, name=name, path=str(p) if p else "", exists=bool(p and p.exists())))
+        return pd.DataFrame(rows)
+
+    def read_tsv(self, key: str, str_cols: Optional[Sequence[str]] = None, verbose: bool = False, **fmt) -> pd.DataFrame:
+        """pdreadcsv of a registered table (FileNotFoundError if missing). Empty strings are written as empty fields
+        and read back as NaN: NaN -> '' in object columns and in str_cols (text columns that may be all empty)."""
+        path = self.file_path(key, **fmt)
+        if not path.exists():
+            raise FileNotFoundError(path)
+        df = pdreadcsv(path.name, path.parent)
+        str_cols = set(str_cols or ())
+        for c in df.columns:
+            if c in str_cols:
+                df[c] = df[c].fillna("").astype(str)
+            elif df[c].dtype == object:
+                df[c] = df[c].fillna("")
+        if verbose:
+            print(f"Reading {path} ({len(df):,} rows)")
+        return df
+
+    def write_tsv(self, df: pd.DataFrame, key: str, index: bool = False, verbose: bool = False, **fmt) -> Path:
+        """pdwritecsv of df to the registered file (its folder is created by __init__: create_file_dirs)."""
+        path = self.file_path(key, **fmt)
+        if not pdwritecsv(df, path.name, path.parent, index=index, verbose=verbose):
+            raise IOError(f"could not write {path}")
+        return path
+
+    def _save_figure(self, fig, fname: Optional[str], force: bool = False, verbose: bool = False, **fmt) -> Optional[Path]:
+        """Save a figure inside its plot method. fname: key of self.files ({placeholders} from fmt, e.g. lib=..., region=...)
+        or a file name with an extension in root_figure; None, or a key that is not registered (e.g. another analysis),
+        -> not saved. An existing file is kept unless force (as _savefig). Plotly -> write_html (params['plotly_include_js']),
+        matplotlib -> savefig (params['dpi'])."""
+        if fname is None or (fname not in self.files and not Path(fname).suffix):
+            return None
+        path = self._resolve_path(fname, None, self.root_figure, **fmt)
+        if path.exists() and not force:
+            if verbose:
+                print(f"File already exists: {path}")
+            return path
+        if hasattr(fig, "write_html"):
+            fig.write_html(path, include_plotlyjs=self.params["plotly_include_js"])
+        else:
+            fig.savefig(path, dpi=self.params["dpi"], bbox_inches="tight")
+        if verbose:
+            print(f"Saving figure to {path}")
+        return path
+
+    def _cached_table(self, key: str, compute, force: bool = False, verbose: bool = False,
+                      str_cols: Optional[Sequence[str]] = None) -> pd.DataFrame:
+        """Cached table: file registered, present and not force -> read it; else df = compute() and write it.
+        Key not registered (no analysis files): compute only, nothing written. After writing, the table is read back,
+        so a computed and a cached run return the same values (text float parsing can differ by 1 ulp from the
+        in-memory float). The file holds the result of the parameters of the run that wrote it: use force=True after
+        changing parameters or inputs."""
+        if key not in self.files:
+            return compute()
+        if not (self.file_path(key).exists() and not force):
+            self.write_tsv(compute(), key, verbose=verbose)
+        return self.read_tsv(key, str_cols=str_cols, verbose=verbose)
+
     def _savefig(self, fig, fname: Optional[str], root_figure: Optional[Path] = None, dpi: Optional[int] = None, 
                  force: bool = False, verbose: bool = False):
         """Save fig to (root_figure or self.root_figure) / fname; fname=None -> not saved."""
         if fname is None:
             return None
-        filename = Path(root_figure or self.root_figure) / fname
+        filename = self._resolve_path(fname, root_figure, self.root_figure)
 
         if filename.exists() and not force:
             print(f"File already exists: {filename}")
@@ -325,12 +448,12 @@ class SingleCell(object):
     # 1. I/O and components
     # =====================================================================================================
     def read_h5ad(self, fname: str, root: Optional[Path] = None, backed: Optional[str] = None,
-                  set_self: bool = True, verbose: bool = False) -> ad.AnnData:
+                  set_self: bool = True, verbose: bool = False, **fmt) -> ad.AnnData:
         """
-        Read (root or self.root_data) / fname (backed='r' keeps X on disk). 
-        Sets self.adata unless set_self=False.
+        Read (root or self.root_data) / fname, or the registered file when fname is a key of self.files
+        (backed='r' keeps X on disk). Sets self.adata unless set_self=False.
         """
-        filename = Path(root or self.root_data) / fname
+        filename = self._resolve_path(fname, root, self.root_data, **fmt)
 
         if not filename.exists():
             raise FileNotFoundError(filename)
@@ -345,9 +468,10 @@ class SingleCell(object):
         return a
 
     def write_h5ad(self, fname: str, adata=None, root: Optional[Path] = None,
-                   compression: Optional[str] = "gzip", verbose: bool = False) -> Path:
-        
-        filename = Path(root or self.root_data) / fname
+                   compression: Optional[str] = "gzip", verbose: bool = False, **fmt) -> Path:
+        """Write to (root or self.root_data) / fname, or to the registered file when fname is a key of self.files
+        ({placeholders} from fmt, e.g. region=...)."""
+        filename = self._resolve_path(fname, root, self.root_data, **fmt)
 
         self._check_adata(adata).write_h5ad(filename, compression=compression)
 
@@ -361,10 +485,11 @@ class SingleCell(object):
         """
         Read an h5ad without some slots (default: layers). Useful for cell2location maps whose
         per-cell-type expected-expression layers are dense (e.g. 34 layers x spots x genes, several GB).
+        fname: file name in (root or root_data), or a key of self.files.
         """
         import h5py
         from anndata.io import read_elem
-        filename = Path(root or self.root_data) / fname
+        filename = self._resolve_path(fname, root, self.root_data)
         if not filename.exists():
             raise FileNotFoundError(filename)
         slots = ("X", "obs", "var", "obsm", "varm", "obsp", "varp", "layers", "uns")
@@ -1724,9 +1849,10 @@ class SingleCell(object):
     #     plotly_region_signature_heatmap
     # =====================================================================================================
     def _region_palette(self, labels: Sequence[str]) -> Dict[str, str]:
-        """Region -> colour: params['region_colors'] first, then Kelly colours + tab20 in sorted order."""
+        """Region -> colour: params['region_colors'] first, then REGION_COLORS (no black/gray/violet/brown/dark)
+        in sorted order; cycles if there are more than len(REGION_COLORS) regions."""
         given = self.params.get("region_colors") or {}
-        pal = KELLY_COLORS + [mpl.colors.to_hex(c) for c in plt.get_cmap("tab20").colors]
+        pal = REGION_COLORS
         out, i = {}, 0
         for l in sorted(labels):
             if l in given:
@@ -1751,13 +1877,25 @@ class SingleCell(object):
         a.obs[label_col] = a.obs[label_col].astype(str).astype("category")
         return a
 
-    def run_subregions(self, adata_expr, label_col: str = "region_label", regions: Optional[Sequence[str]] = None
-                       ) -> Tuple[Dict[str, ad.AnnData], pd.DataFrame]:
+    def run_subregions(self, adata_expr, label_col: str = "region_label", regions: Optional[Sequence[str]] = None,
+                       force: bool = False, verbose: bool = False) -> Tuple[Dict[str, ad.AnnData], pd.DataFrame]:
         """subcluster_adaptive on the spots of each region (batch = section). Writes obs[subregion_key] = '<region>_<k>'
-        (k = 1 is the largest; regions in subregion_skip stay NaN). Returns ({region: adata_sub}, df_grid)."""
+        (k = 1 is the largest; regions in subregion_skip stay NaN). Returns ({region: adata_sub}, df_grid).
+        Saved: df_grid -> files['subregion_grid'], each adata_sub -> files['subregion_adata'] (one h5ad per region).
+        When all of them exist and not force they are read back as they are (no recomputation)."""
         key = self.params["subregion_key"]
         regions = regions or [r for r in sorted(adata_expr.obs[label_col].unique()) if r not in self.params["subregion_skip"]]
         adata_expr.obs[key] = pd.Series(np.nan, index=adata_expr.obs_names, dtype=object)
+        cached = all(k in self.files for k in ("subregion_grid", "subregion_adata"))
+
+        if cached and not force and self.file_path("subregion_grid").exists() and \
+                all(self.file_path("subregion_adata", region=reg).exists() for reg in regions):
+            df_grid = self.read_tsv("subregion_grid", verbose=verbose)
+            subs = {reg: self.read_h5ad("subregion_adata", set_self=False, verbose=verbose, region=reg) for reg in regions}
+            for a_sub in subs.values():                      # labels back into adata_expr (used by the next methods)
+                adata_expr.obs.loc[a_sub.obs_names, key] = a_sub.obs[key].astype(str).values
+            return subs, df_grid
+
         subs, grids = {}, []
         for reg in regions:
             a_reg = adata_expr[adata_expr.obs[label_col] == reg]
@@ -1768,27 +1906,49 @@ class SingleCell(object):
             df_grid.insert(0, "region_id", reg)
             subs[reg] = a_sub
             grids.append(df_grid)
-        return subs, pd.concat(grids, ignore_index=True)
+        df_grid = pd.concat(grids, ignore_index=True)
+
+        if cached:
+            self.write_tsv(df_grid, "subregion_grid", verbose=verbose)
+            for reg, a_sub in subs.items():
+                self.write_h5ad("subregion_adata", a_sub, verbose=verbose, region=reg)
+            df_grid = self.read_tsv("subregion_grid")        # same dtypes as a cached run
+        return subs, df_grid
 
     def _display_genes(self, genes: Sequence[str], n: Optional[int] = None) -> List[str]:
         rx = re.compile(self.params["gene_display_exclude"]) if self.params["gene_display_exclude"] else None
         out = [g for g in genes if not (rx and rx.search(g))]
         return out[: (n or self.params["n_genes_show"])]
 
-    def calc_df_region_signature(self, adata_expr, label_col: str = "region_label") -> Tuple[pd.DataFrame, Dict[str, set]]:
+    def calc_df_region_signature(self, adata_expr, label_col: str = "region_label", force: bool = False,
+                                 verbose: bool = False) -> Tuple[pd.DataFrame, Dict[str, set]]:
         """Each region vs all other spots (Wilcoxon). Returns (df_rank of all genes, {region: signature gene set})
-        with signature = logFC >= region_sig_lfc, padj <= region_sig_padj, pct_in >= region_sig_min_pct."""
+        with signature = logFC >= region_sig_lfc, padj <= region_sig_padj, pct_in >= region_sig_min_pct.
+        Cached in files 'region_rank_genes' (the signature sets are rebuilt from its region_signature column)."""
         P = self.params
-        df_rank = self.calc_df_rank_genes(adata_expr, groupby=label_col)
-        df_rank = df_rank.rename(columns={"group": "region_id", "names": "gene"})
-        m = (df_rank.logfoldchanges >= P["region_sig_lfc"]) & (df_rank.pvals_adj <= P["region_sig_padj"]) & \
-            (df_rank.pct_in >= P["region_sig_min_pct"])
-        df_rank["region_signature"] = m
-        sig = {r: set(g.gene) for r, g in df_rank[m].groupby("region_id", observed=True)}
+
+        def _compute():
+            df = self.calc_df_rank_genes(adata_expr, groupby=label_col)
+            df = df.rename(columns={"group": "region_id", "names": "gene"})
+            df["region_id"] = df["region_id"].astype(str)
+            df["region_signature"] = (df.logfoldchanges >= P["region_sig_lfc"]) & (df.pvals_adj <= P["region_sig_padj"]) & \
+                                     (df.pct_in >= P["region_sig_min_pct"])
+            return df
+
+        df_rank = self._cached_table("region_rank_genes", _compute, force, verbose, str_cols=("region_id", "gene"))
+        df_rank["region_signature"] = df_rank["region_signature"].astype(bool)
+        sig = {r: set(g.gene) for r, g in df_rank[df_rank.region_signature].groupby("region_id", observed=True)}
         return df_rank, sig
 
-    def calc_df_subregion_gene_sets(self, adata_expr, region_sig: Dict[str, set], label_col: str = "region_label"
-                                    ) -> pd.DataFrame:
+    def calc_df_subregion_gene_sets(self, adata_expr, region_sig: Dict[str, set], label_col: str = "region_label",
+                                    force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """Cached in files 'subregion_gene_sets' (see _calc_df_subregion_gene_sets)."""
+        return self._cached_table("subregion_gene_sets",
+                                  lambda: self._calc_df_subregion_gene_sets(adata_expr, region_sig, label_col),
+                                  force, verbose, str_cols=("region_id", "sub_region_id", "gene", "gene_set"))
+
+    def _calc_df_subregion_gene_sets(self, adata_expr, region_sig: Dict[str, set], label_col: str = "region_label"
+                                     ) -> pd.DataFrame:
         """Partition of each subregion's gene universe into 4 disjoint sets (counts add up to the universe):
           region_signature    - in the region signature (region vs all other regions)
           subregion_signature - higher in the subregion than in the rest of the region (logFC >= sub_sig_lfc,
@@ -1862,9 +2022,47 @@ class SingleCell(object):
         d = df_comp[df_comp.label == label].head(n)
         return ", ".join(f"{r.cell_type} (x{r.ratio:.1f})" for r in d.itertuples())
 
+    def calc_df_region_depth(self, adata_expr, df_abund: pd.DataFrame, label_col: str = "region_label") -> pd.DataFrame:
+        """Per region: median UMIs per spot (layers[counts_layer]) and median cells per spot (sum of df_abund).
+        Index = region id (sorted)."""
+        umis = pd.Series(np.asarray(adata_expr.layers[self.params["counts_layer"]].sum(1)).ravel(), index=adata_expr.obs_names)
+        df = pd.DataFrame({"median_UMIs": umis, "median_cells_per_spot": df_abund.loc[adata_expr.obs_names].sum(1)})
+        return df.groupby(adata_expr.obs[label_col].astype(str).values).median().round(0).astype(int)
+
+    REGION_TABLE_STR_COLS = ("region_id", "region_name", "compartment", "signature_genes", "enriched_cell_types",
+                             "functional_description")
+
     def calc_df_region_table(self, adata_expr, df_rank_region: pd.DataFrame, region_sig: Dict[str, set],
                              df_abund: pd.DataFrame, df_region_info: Optional[pd.DataFrame] = None,
-                             label_col: str = "region_label") -> pd.DataFrame:
+                             label_col: str = "region_label", force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """Cached in files 'region_table' (see _calc_df_region_table). n_subregions is empty until the subregions exist:
+        update it with update_region_table_subregions."""
+        return self._cached_table("region_table",
+                                  lambda: self._calc_df_region_table(adata_expr, df_rank_region, region_sig, df_abund,
+                                                                     df_region_info, label_col),
+                                  force, verbose, str_cols=self.REGION_TABLE_STR_COLS)
+
+    def update_region_table_subregions(self, df_region_table: pd.DataFrame, adata_expr, label_col: str = "region_label",
+                                       force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """n_subregions from obs[subregion_key] (after run_subregions). The table file ('region_table') is rewritten
+        when the column changed, or always with force."""
+        key = self.params["subregion_key"]
+        df = df_region_table.copy()
+        lab = adata_expr.obs[label_col].astype(str)
+        n_sub = adata_expr.obs[key].groupby(lab.values).nunique() if key in adata_expr.obs else pd.Series(dtype=float)
+        new = df.region_id.map(n_sub).astype(float)          # 0 = not subclustered (subregion_skip)
+        old = pd.to_numeric(df["n_subregions"], errors="coerce").astype(float) if "n_subregions" in df else new * np.nan
+        changed = not np.array_equal(new.fillna(-1).to_numpy(), old.fillna(-1).to_numpy())
+        df["n_subregions"] = new.astype("Int64")
+        if "region_table" in self.files and (changed or force):
+            self.write_tsv(df, "region_table", verbose=verbose)
+        elif verbose:
+            print("n_subregions unchanged: region table not rewritten")
+        return df
+
+    def _calc_df_region_table(self, adata_expr, df_rank_region: pd.DataFrame, region_sig: Dict[str, set],
+                              df_abund: pd.DataFrame, df_region_info: Optional[pd.DataFrame] = None,
+                              label_col: str = "region_label") -> pd.DataFrame:
         """Table region: region_id, region_name, n_spots, n_subregions, n_signature_genes, signature_genes (top by score),
         enriched_cell_types (vs all other spots), functional_description (curated region table df_region_info:
         region_id, region_name, description; e.g. mouse_brain_regions.tsv, lymph_node_regions.tsv)."""
@@ -1883,7 +2081,23 @@ class SingleCell(object):
                              enriched_cell_types=self._top_ratio_text(df_comp, reg, self.params["composition_top"]),
                              functional_description=desc.get(reg, "")))
         df_region_table = pd.DataFrame(rows)
-        return df_region_table
+        if df_region_info is not None and "compartment" in df_region_info.columns:
+            comp = dict(zip(df_region_info.region_id, df_region_info.compartment))
+            df_region_table.insert(2, "compartment", df_region_table.region_id.map(comp).fillna(""))
+        if self.params["region_table_depth"]:
+            df_depth = self.calc_df_region_depth(adata_expr, df_abund, label_col=label_col)
+            i = df_region_table.columns.get_loc("n_spots") + 1
+            df_region_table.insert(i, "median_UMIs", df_region_table.region_id.map(df_depth.median_UMIs).values)
+            df_region_table.insert(i + 1, "median_cells_per_spot",
+                                   df_region_table.region_id.map(df_depth.median_cells_per_spot).values)
+        df_region_table["n_subregions"] = df_region_table["n_subregions"].astype("Int64")
+        return self._first_cols(df_region_table, self.params["region_table_first"])
+
+    @staticmethod
+    def _first_cols(df: pd.DataFrame, first: Sequence[str]) -> pd.DataFrame:
+        """Columns in `first` (those present) first, the others in their order."""
+        first = [c for c in first if c in df.columns]
+        return df[first + [c for c in df.columns if c not in first]]
 
     def calc_df_subregion_borders(self, adata_expr, label_col: str = "region_label") -> pd.DataFrame:
         """For each subregion: fraction of its spots' tissue neighbours (same section) that belong to another region
@@ -1935,9 +2149,29 @@ class SingleCell(object):
         df_border = pd.DataFrame(rows).set_index("sub_region_id")
         return df_border
 
+    SUBREGION_TABLE_STR_COLS = ("region_id", "sub_region_id", "subregion_name", "subregion_signature_genes", "other_genes_top_expressed",
+                                "not_present_genes", "functional_description", "border_region", "status",
+                                "enriched_cell_types", "description_source", "ref_cell_types")
+
     def calc_df_subregion_table(self, adata_expr, df_gene_sets: pd.DataFrame, df_abund: pd.DataFrame,
                                 df_descriptions: Optional[pd.DataFrame] = None, label_col: str = "region_label",
-                                n_other_top: int = 10) -> pd.DataFrame:
+                                n_other_top: int = 10, force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """Cached in files 'subregion_table' (see _calc_df_subregion_table); columns params['subregion_table_first'] first."""
+        return self._cached_table("subregion_table",
+                                  lambda: self._first_cols(self._calc_df_subregion_table(
+                                      adata_expr, df_gene_sets, df_abund, df_descriptions, label_col, n_other_top),
+                                      self.params["subregion_table_first"]),
+                                  force, verbose, str_cols=self.SUBREGION_TABLE_STR_COLS)
+
+    @staticmethod
+    def _short_label(text: str, n: int = 40) -> str:
+        """Short name from a description: the text before the first ':' or ';', cut to n characters."""
+        t = re.split(r"[:;]", str(text or ""))[0].strip().rstrip(".")
+        return t if len(t) <= n else t[:n - 3].rstrip() + "..."
+
+    def _calc_df_subregion_table(self, adata_expr, df_gene_sets: pd.DataFrame, df_abund: pd.DataFrame,
+                                 df_descriptions: Optional[pd.DataFrame] = None, label_col: str = "region_label",
+                                 n_other_top: int = 10) -> pd.DataFrame:
         """Table subregion: region_id, sub_region_id, n_spots, section fractions, spatial coherence, counts of the 4 gene
         sets (+ universe), subregion_signature_genes, not_present_genes, other_genes_top_expressed, enriched cell types
         (vs the rest of the region), status, functional_description (curated table when given, else automatic)."""
@@ -1994,7 +2228,8 @@ class SingleCell(object):
                                + (f"; markers {', '.join(sig_genes[:5])}" if sig_genes else "")
                                + (f"; lacks {', '.join(np_genes[:3])}" if np_genes else "") + ".")
                 desc_source = "automatic"
-            row = dict(region_id=reg, sub_region_id=s, n_spots=len(o))
+            name = str(getattr(cur, "subregion_name", "") or "") if cur is not None else ""
+            row = dict(region_id=reg, sub_region_id=s, subregion_name=name or self._short_label(description), n_spots=len(o))
             row.update({f"frac_{lb}": round(float(frac[lb]), 2) for lb in libs})
             row.update(dict(coherence_ratio=coh.get(s, np.nan), depth_ratio=round(depth_ratio, 2),
                             border_region=(b.border_region if b is not None else ""),
@@ -2015,19 +2250,25 @@ class SingleCell(object):
         return df_sub_table
 
     # ---------------------------------------------------------------------------------------- Plotly figures
-    def save_plotly(self, fig, fname: Optional[str], root_figure: Optional[Path] = None):
-        """fig.write_html to (root_figure or self.root_figure) / fname (plotly.js from params['plotly_include_js'])."""
+    def save_plotly(self, fig, fname: Optional[str], root_figure: Optional[Path] = None, verbose: bool = False, **fmt):
+        """fig.write_html to (root_figure or self.root_figure) / fname, or to the registered file when fname is a key of
+        self.files ({placeholders} from fmt, e.g. lib=..., region=...). plotly.js from params['plotly_include_js']."""
         if fname is None:
             return None
-        path = Path(root_figure or self.root_figure) / fname
+        path = self._resolve_path(fname, root_figure, self.root_figure, **fmt)
         fig.write_html(path, include_plotlyjs=self.params["plotly_include_js"])
+        if verbose:
+            print(f"Saving figure to {path}")
         return path
 
-    def subregion_colors(self, sub_ids: Sequence[str], region: str, regions: Optional[Sequence[str]] = None) -> Dict[str, str]:
+    def subregion_colors(self, sub_ids: Sequence[str], region: str, regions: Optional[Sequence[str]] = None,
+                         region_colors: Optional[Dict[str, str]] = None) -> Dict[str, str]:
         """Shades of the region colour, dark -> light by subregion number. The region colour comes from
-        _region_palette(regions) (all regions, so that regions without params['region_colors'] get distinct colours)."""
+        _region_palette(regions) (all regions, so that regions without params['region_colors'] get distinct colours),
+        overridden by region_colors (region -> colour)."""
         import colorsys
-        base = self._region_palette(list(regions) if regions is not None else [region])[region]
+        pal = {**self._region_palette(list(regions) if regions is not None else [region]), **(region_colors or {})}
+        base = pal[region]
         r, g, b = mpl.colors.to_rgb(base)
         h, l, s_ = colorsys.rgb_to_hls(r, g, b)
         n = len(sub_ids)
@@ -2036,10 +2277,9 @@ class SingleCell(object):
         return {sid: mpl.colors.to_hex(colorsys.hls_to_rgb(h, li, sat)) for sid, li in zip(sub_ids, light)}
 
     def subregion_palette(self, sub_ids: Sequence[str]) -> Dict[str, str]:
-        """Distinct colours for the subregions of one region (Plotly qualitative palette)."""
-        import plotly.express as px
-        pal = px.colors.qualitative.Bold + px.colors.qualitative.Safe
-        return {s: pal[i % len(pal)] for i, s in enumerate(sub_ids)}
+        """Distinct light colours for the subregions of one region: REGION_COLORS in order (no dark, gray, violet,
+        brown); consecutive subregions get contrasting hues."""
+        return {s: REGION_COLORS[i % len(REGION_COLORS)] for i, s in enumerate(sub_ids)}
 
     def _jpeg_uri(self, img: np.ndarray) -> str:
         import base64, io
@@ -2050,20 +2290,44 @@ class SingleCell(object):
         return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
     def plotly_region_subregions(self, region: str, adata_sub: ad.AnnData, adata_map, df_sub_table: Optional[pd.DataFrame] = None,
-                                 pad: float = 80, height: int = 470, spot_size: float = 7):
+                                 df_region_table: Optional[pd.DataFrame] = None, pad: float = 80, height: int = 470, width: Optional[int] = None, spot_size: float = 7,
+                                 umap_size: float = 5, fontsize_title: int = 17, fontsize_subplot_title: int = 16,
+                                 fontsize_axis: int = 14, fontsize_legend: int = 12, fontsize_colorbar: int = 12,
+                                 fontsize_hover: int = 13, subregion_colors: Optional[Dict[str, str]] = None,
+                                 section_colors: Optional[Dict[str, str]] = None, umi_colorscale=LIGHT_SEQUENTIAL,
+                                 marker_line_color: str = "black", marker_line_width: float = 0.4,
+                                 font_color: str = "#2a3f5f", bg_color: str = "white", webgl: bool = False,
+                                 fname: Optional[str] = "fig_region_sub", force: bool = False, verbose: bool = False):
         """One region: UMAP by subregion | UMAP by section (one section: by log10 UMIs, the depth confounder) |
         subregions on the H&E of each section (cropped to the region).
-        Legend entries toggle a subregion in every panel. Hover: subregion, section, status, signature genes."""
+        Legend entries toggle a subregion in every panel. Hover: subregion, section, status, signature genes.
+        webgl=False draws the points as SVG (go.Scatter): many of these figures shown in one notebook would otherwise
+        exceed the browser's WebGL context limit and the first ones turn blank. Spots per region are few (< 500).
+        Title: 'R06 - <region_name>' (region_name from df_region_table). Legend: 'R06_1 - <subregion_name> (n=92)'
+        (df_sub_table['subregion_name'], else the start of functional_description).
+
+        Sizes: spot_size (H&E spots), umap_size (UMAP points), width (default 420 per panel). Font sizes: fontsize_title,
+        fontsize_subplot_title (panel titles), fontsize_axis (UMAP1/UMAP2), fontsize_legend, fontsize_colorbar (log10 UMIs),
+        fontsize_hover. Colours (light by default): subregion_colors (subregion -> colour; others from subregion_palette =
+        REGION_COLORS), section_colors (section -> colour; others REGION_COLORS), umi_colorscale (Plotly scale name or
+        list of colours; default LIGHT_SEQUENTIAL), marker_line_color / marker_line_width (H&E spot outline), font_color, bg_color."""
         import plotly.graph_objects as go
         from plotly.subplots import make_subplots
+        Scatter = go.Scattergl if webgl else go.Scatter      # SVG by default: browsers keep only ~16 WebGL contexts per page
         key = self.params["subregion_key"]
         subs = list(adata_sub.obs[key].cat.categories)
-        cols = self.subregion_palette(subs)
+        cols = {**self.subregion_palette(subs), **(subregion_colors or {})}
         libs = [lb for lb in self.library_ids(adata_map) if (adata_sub.obs[self.sample_col].astype(str) == lb).any()]
-        info = {}
+        info, sub_names = {}, {}
         if df_sub_table is not None:
             for r in df_sub_table[df_sub_table.region_id == region].itertuples():
                 info[r.sub_region_id] = f"{r.status}; coherence {r.coherence_ratio}<br>up: {r.subregion_signature_genes[:80]}"
+                nm = getattr(r, "subregion_name", "") or self._short_label(getattr(r, "functional_description", ""))
+                if nm:
+                    sub_names[r.sub_region_id] = nm
+        region_name = ""
+        if df_region_table is not None and "region_name" in df_region_table.columns:
+            region_name = dict(zip(df_region_table.region_id, df_region_table.region_name)).get(region, "") or ""
         one_section = adata_sub.obs[self.sample_col].astype(str).nunique() == 1
         titles = ["UMAP - subregions", "UMAP - log10 UMIs" if one_section else "UMAP - sections"] + [f"{lb}" for lb in libs]
         fig = make_subplots(rows=1, cols=2 + len(libs), subplot_titles=titles, horizontal_spacing=0.03)
@@ -2072,23 +2336,27 @@ class SingleCell(object):
         sec = adata_sub.obs[self.sample_col].astype(str).values
         for s in subs:
             m = lab == s
-            fig.add_trace(go.Scattergl(x=U[m, 0], y=U[m, 1], mode="markers", name=f"{s} (n={m.sum()})", legendgroup=s,
-                                       marker=dict(size=5, color=cols[s]), text=adata_sub.obs_names[m],
+            legend_name = f"{s} - {sub_names[s]} (n={m.sum()})" if s in sub_names else f"{s} (n={m.sum()})"
+            fig.add_trace(Scatter(x=U[m, 0], y=U[m, 1], mode="markers", name=legend_name, legendgroup=s,
+                                       marker=dict(size=umap_size, color=cols[s]), text=adata_sub.obs_names[m],
                                        hovertemplate=f"<b>{s}</b><br>{info.get(s, '')}<br>%{{text}}<extra></extra>"),
                           row=1, col=1)
-        sec_cols = dict(zip(self.library_ids(adata_map), ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"]))
+        sec_cols = {**dict(zip(self.library_ids(adata_map), REGION_COLORS[1:])), **(section_colors or {})}
         if one_section and self.params["counts_layer"] in adata_sub.layers:
             umi = np.log10(np.asarray(adata_sub.layers[self.params["counts_layer"]].sum(1)).ravel() + 1)
-            fig.add_trace(go.Scattergl(x=U[:, 0], y=U[:, 1], mode="markers", name="log10 UMIs", showlegend=False,
-                                       marker=dict(size=5, color=umi, colorscale="Viridis",
-                                                   colorbar=dict(title="log10<br>UMIs", len=0.6, x=0.33, thickness=10)),
+            fig.add_trace(Scatter(x=U[:, 0], y=U[:, 1], mode="markers", name="log10 UMIs", showlegend=False,
+                                       marker=dict(size=umap_size, color=umi, colorscale=umi_colorscale,
+                                                   colorbar=dict(title=dict(text="log10<br>UMIs", font=dict(size=fontsize_colorbar)),
+                                                                 tickfont=dict(size=fontsize_colorbar),
+                                                                 len=0.6, x=0.33, thickness=10)),
                                        text=[f"{v:.2f}" for v in umi],
                                        hovertemplate="log10 UMIs %{text}<extra></extra>"), row=1, col=2)
         else:
             for lb in np.unique(sec):
                 m = sec == lb
-                fig.add_trace(go.Scattergl(x=U[m, 0], y=U[m, 1], mode="markers", name=lb, legendgroup=lb,
-                                           marker=dict(size=5, color=sec_cols.get(lb, "#777")), hoverinfo="skip"), row=1, col=2)
+                fig.add_trace(Scatter(x=U[m, 0], y=U[m, 1], mode="markers", name=lb, legendgroup=lb,
+                                           marker=dict(size=umap_size, color=sec_cols.get(lb, REGION_COLORS[0])), hoverinfo="skip"),
+                              row=1, col=2)
         for j, lb in enumerate(libs):
             img, _ = self.hires_image(lb, adata_map)
             mm, xy_all = self.spot_xy(lb, adata_map)
@@ -2105,26 +2373,47 @@ class SingleCell(object):
                 m = lab_lb == s
                 if not m.any():
                     continue
-                fig.add_trace(go.Scattergl(x=xy[m, 0], y=xy[m, 1], mode="markers", name=s, legendgroup=s, showlegend=False,
-                                           marker=dict(size=spot_size, color=cols[s], line=dict(width=0.4, color="black")),
+                fig.add_trace(Scatter(x=xy[m, 0], y=xy[m, 1], mode="markers", name=s, legendgroup=s, showlegend=False,
+                                           marker=dict(size=spot_size, color=cols[s],
+                                                       line=dict(width=marker_line_width, color=marker_line_color)),
                                            text=names_lb[in_reg][m],
                                            hovertemplate=f"<b>{s}</b> - {lb}<br>{info.get(s, '')}<br>%{{text}}<extra></extra>"),
                               row=1, col=col)
             fig.update_xaxes(range=[x0, x1], visible=False, row=1, col=col)
             fig.update_yaxes(range=[y1, y0], visible=False, scaleanchor=f"x{col}", row=1, col=col)
+        axis_font = dict(size=fontsize_axis, color=font_color)
         for c in (1, 2):
-            fig.update_xaxes(showticklabels=False, title_text="UMAP1", row=1, col=c)
-            fig.update_yaxes(showticklabels=False, title_text="UMAP2" if c == 1 else None, row=1, col=c)
+            fig.update_xaxes(showticklabels=False, title_text="UMAP1", title_font=axis_font, row=1, col=c)
+            fig.update_yaxes(showticklabels=False, title_text="UMAP2" if c == 1 else None, title_font=axis_font, row=1, col=c)
+        fig.update_annotations(font=dict(size=fontsize_subplot_title, color=font_color))      # subplot titles
         res = adata_sub.uns.get("subcluster_resolution", "")
-        fig.update_layout(title=f"{region}: {len(subs)} subregion(s), {adata_sub.n_obs} spots (Leiden resolution {res})",
-                          height=height, width=420 * (2 + len(libs)), template="plotly_white",
-                          legend=dict(itemsizing="constant"), margin=dict(l=20, r=20, t=70, b=20))
+        head = f"{region} - {region_name}" if region_name else region
+        fig.update_layout(title=dict(text=f"{head}: {len(subs)} subregion(s), {adata_sub.n_obs} spots (Leiden resolution {res})",
+                                     font=dict(size=fontsize_title, color=font_color)),
+                          height=height, width=width or 420 * (2 + len(libs)) + (300 if sub_names else 0), template="plotly_white",
+                          font=dict(color=font_color), paper_bgcolor=bg_color, plot_bgcolor=bg_color,
+                          hoverlabel=dict(font=dict(size=fontsize_hover)),
+                          legend=dict(itemsizing="constant", font=dict(size=fontsize_legend, color=font_color)),
+                          margin=dict(l=20, r=20, t=70, b=20))
+        self._save_figure(fig, fname, force, verbose, region=region)
         return fig
 
     def plotly_subregion_map(self, adata_expr, adata_map, library_id: str, df_sub_table: Optional[pd.DataFrame] = None,
-                             label_col: str = "region_label", spot_size: float = 6, width: int = 1300, height: int = 950):
+                             label_col: str = "region_label", spot_size: float = 6, width: int = 1300, height: int = 950,
+                             fontsize_title: int = 17, fontsize_legend: int = 10, fontsize_legend_title: int = 10,
+                             fontsize_hover: int = 13, region_colors: Optional[Dict[str, str]] = None,
+                             skip_color: str = "#dddddd", marker_line_color: str = "black", marker_line_width: float = 0.3,
+                             font_color: str = "#2a3f5f", bg_color: str = "white", legend_ncols: int = 1,
+                             legend_col_width: int = 110,
+                             fname: Optional[str] = "fig_subregion_map", force: bool = False, verbose: bool = False):
         """All subregions of one section on the H&E. Colours = shades of each region's colour; legend grouped by region
-        (click a region title to toggle its subregions). Hover: region, subregion, status, signature genes, cell types."""
+        (click a region title to toggle its subregions). Hover: region, subregion, status, signature genes, cell types.
+
+        Font sizes: fontsize_title, fontsize_legend (subregions), fontsize_legend_title (region group titles), fontsize_hover.
+        Colours: region_colors (region -> base colour of its shades; others from _region_palette), skip_color (regions in
+        subregion_skip), marker_line_color / marker_line_width (spot outline), font_color, bg_color.
+        Legend: legend_ncols columns side by side on the right (regions kept whole, split in order into columns of about
+        equal length; each column is a separate Plotly legend), legend_col_width pixels per column."""
         import plotly.graph_objects as go
         key = self.params["subregion_key"]
         img, _ = self.hires_image(library_id, adata_map)
@@ -2139,51 +2428,183 @@ class SingleCell(object):
         fig = go.Figure()
         fig.add_trace(go.Image(source=self._jpeg_uri(img), hoverinfo="skip"))
         regions = [r for r in adata_expr.obs[label_col].cat.categories]
+        reg_traces: Dict[str, List[int]] = {}             # region -> indices of its traces (legend columns)
         for reg in regions:
             mreg = (obs[label_col].astype(str) == reg).values
             if not mreg.any():
                 continue
+            n_before = len(fig.data)
             if reg in self.params["subregion_skip"]:
                 fig.add_trace(go.Scattergl(x=xy[mreg, 0], y=xy[mreg, 1], mode="markers", name=reg, legendgroup=reg,
-                                           legendgrouptitle_text=reg, marker=dict(size=spot_size, color="#dddddd"),
+                                           legendgrouptitle_text=reg, marker=dict(size=spot_size, color=skip_color),
                                            hovertemplate=f"<b>{reg}</b> (not subclustered)<extra></extra>"))
+                reg_traces[reg] = list(range(n_before, len(fig.data)))
                 continue
             subs = sorted(obs.loc[mreg, key].dropna().unique(), key=lambda x: int(x.rsplit("_", 1)[1]))
-            cols = self.subregion_colors(subs, reg, regions)
+            cols = self.subregion_colors(subs, reg, regions, region_colors=region_colors)
             for s in subs:
                 m = (obs[key] == s).values
                 fig.add_trace(go.Scattergl(x=xy[m, 0], y=xy[m, 1], mode="markers", name=s, legendgroup=reg,
                                            legendgrouptitle_text=reg,
-                                           marker=dict(size=spot_size, color=cols[s], line=dict(width=0.3, color="black")),
+                                           marker=dict(size=spot_size, color=cols[s],
+                                                       line=dict(width=marker_line_width, color=marker_line_color)),
                                            text=names_lb[m],
                                            hovertemplate=f"<b>{s}</b><br>{info.get(s, '')}<br>%{{text}}<extra></extra>"))
-        fig.update_layout(title=self.params["subregion_map_title"].format(lib=library_id), width=width, height=height,
-                          template="plotly_white", legend=dict(groupclick="toggleitem", itemsizing="constant", font=dict(size=10)),
+            reg_traces[reg] = list(range(n_before, len(fig.data)))
+        fig.update_traces(legendgrouptitle_font=dict(size=fontsize_legend_title, color=font_color), selector=dict(type="scattergl"))
+        legend_style = dict(groupclick="toggleitem", itemsizing="constant", font=dict(size=fontsize_legend, color=font_color))
+        margin = dict(l=10, r=10, t=50, b=10)
+        ncols = max(1, int(legend_ncols))
+        if ncols > 1:
+            lines = {reg: len(ix) + 1 for reg, ix in reg_traces.items()}          # entries + group title
+            target = sum(lines.values()) / ncols
+            col, acc = 0, 0
+            for reg, ix in reg_traces.items():
+                if acc >= target * (col + 1) and col < ncols - 1:
+                    col += 1
+                acc += lines[reg]
+                for i in ix:
+                    fig.data[i].legend = "legend" if col == 0 else f"legend{col + 1}"
+            margin["r"] = ncols * legend_col_width + 10
+            plot_w = width - margin["l"] - margin["r"]
+            for k in range(ncols):
+                fig.update_layout({("legend" if k == 0 else f"legend{k + 1}"):
+                                   dict(legend_style, x=1 + (10 + k * legend_col_width) / plot_w, xanchor="left",
+                                        y=1, yanchor="top")})
+        fig.update_layout(title=dict(text=self.params["subregion_map_title"].format(lib=library_id),
+                                     font=dict(size=fontsize_title, color=font_color)),
+                          width=width, height=height, template="plotly_white",
+                          font=dict(color=font_color), paper_bgcolor=bg_color, plot_bgcolor=bg_color,
+                          hoverlabel=dict(font=dict(size=fontsize_hover)), margin=margin)
+        if ncols == 1:
+            fig.update_layout(legend=legend_style)
+        fig.update_xaxes(visible=False, range=[xy[:, 0].min() - 40, xy[:, 0].max() + 40])
+        fig.update_yaxes(visible=False, range=[xy[:, 1].max() + 40, xy[:, 1].min() - 40], scaleanchor="x")
+        self._save_figure(fig, fname, force, verbose, lib=library_id)
+        return fig
+
+    def plotly_region_map(self, adata_expr, adata_map, library_id: str, df_region_table: Optional[pd.DataFrame] = None,
+                          label_col: str = "region_label", spot_size: float = 6, show_image: bool = True,
+                          width: int = 1300, height: int = 950, fontsize_legend: int = 11, fontsize_title: int = 18,
+                          fontsize_hover: int = 13, n_genes_hover: int = 8, region_colors: Optional[Dict[str, str]] = None,
+                          marker_line_color: str = "black", marker_line_width: float = 0.3,
+                          marker_opacity: Optional[float] = None, font_color: str = "#2a3f5f", bg_color: str = "white",
+                          fname: Optional[str] = "fig_region_map", force: bool = False, verbose: bool = False):
+        """All regions of one section on the H&E (one trace per region, colours = _region_palette, as in the subregion map).
+        Legend: 'R10 - Interferon-active zone (n=173)'; click to toggle, double-click to isolate.
+        Hover (from df_region_table, any of these columns that exist): region_name, compartment, n_spots, median_UMIs,
+        median_cells_per_spot, n_signature_genes, signature_genes (first n_genes_hover), enriched_cell_types.
+
+        Font sizes: fontsize_title, fontsize_legend, fontsize_hover. Colours: region_colors (region -> colour; others from
+        _region_palette), marker_line_color / marker_line_width (spot outline), marker_opacity, font_color, bg_color."""
+        import plotly.graph_objects as go
+        mm, xy = self.spot_xy(library_id, adata_map)
+        names_lb = adata_map.obs_names[mm]
+        keep = names_lb.isin(adata_expr.obs_names)
+        names_lb, xy = names_lb[keep], xy[keep]
+        lab = adata_expr.obs.loc[names_lb, label_col].astype(str).values
+        regions = list(adata_expr.obs[label_col].cat.categories)
+        cols = {**self._region_palette(regions), **(region_colors or {})}
+        tab = df_region_table.set_index("region_id") if df_region_table is not None else pd.DataFrame(index=regions)
+        fields = [("compartment", "compartment"), ("n_spots", "spots"), ("median_UMIs", "median UMIs"),
+                  ("median_cells_per_spot", "median cells/spot"), ("n_signature_genes", "signature genes (n)")]
+
+        def _hover(reg: str) -> str:
+            if reg not in tab.index:
+                return f"<b>{reg}</b>"
+            r = tab.loc[reg]
+            name = r.get("region_name", "")
+            lines = [f"<b>{reg}</b>" + (f" - {name}" if isinstance(name, str) and name else "")]
+            lines += [f"{lbl}: {r[c]}" for c, lbl in fields if c in tab.columns and pd.notna(r[c]) and r[c] != ""]
+            if "signature_genes" in tab.columns and isinstance(r["signature_genes"], str) and r["signature_genes"]:
+                g = [x.strip() for x in r["signature_genes"].split(",")]
+                lines.append("up: " + ", ".join(g[:n_genes_hover]) + (" ..." if len(g) > n_genes_hover else ""))
+            if "enriched_cell_types" in tab.columns and isinstance(r["enriched_cell_types"], str):
+                lines.append("cells: " + r["enriched_cell_types"])
+            return "<br>".join(lines).replace("%{", "% {")      # no accidental Plotly %{var} in the text
+
+        fig = go.Figure()
+        if show_image:
+            img, _ = self.hires_image(library_id, adata_map)
+            fig.add_trace(go.Image(source=self._jpeg_uri(img), hoverinfo="skip"))
+        for reg in regions:
+            m = lab == reg
+            if not m.any():
+                continue
+            name = tab.loc[reg, "region_name"] if (reg in tab.index and "region_name" in tab.columns) else ""
+            legend = f"{reg} - {name} (n={m.sum()})" if isinstance(name, str) and name else f"{reg} (n={m.sum()})"
+            fig.add_trace(go.Scattergl(x=xy[m, 0], y=xy[m, 1], mode="markers", name=legend, legendgroup=reg,
+                                       marker=dict(size=spot_size, color=cols[reg], opacity=marker_opacity,
+                                                   line=dict(width=marker_line_width, color=marker_line_color)),
+                                       text=names_lb[m],
+                                       hovertemplate=_hover(reg) + "<br>%{text}<extra></extra>"))
+        fig.update_layout(title=dict(text=f"Regions - {library_id} ({len(names_lb)} spots, {len(regions)} regions)",
+                                     font=dict(size=fontsize_title, color=font_color)),
+                          width=width, height=height, template="plotly_white",
+                          font=dict(color=font_color), paper_bgcolor=bg_color, plot_bgcolor=bg_color,
+                          hoverlabel=dict(font=dict(size=fontsize_hover)),
+                          legend=dict(itemsizing="constant", font=dict(size=fontsize_legend, color=font_color)),
                           margin=dict(l=10, r=10, t=50, b=10))
         fig.update_xaxes(visible=False, range=[xy[:, 0].min() - 40, xy[:, 0].max() + 40])
         fig.update_yaxes(visible=False, range=[xy[:, 1].max() + 40, xy[:, 1].min() - 40], scaleanchor="x")
+        self._save_figure(fig, fname, force, verbose, lib=library_id)
         return fig
 
-    def plotly_subregion_diagnostics(self, df_sub_table: pd.DataFrame, height: int = 520):
+    def plotly_subregion_diagnostics(self, df_sub_table: pd.DataFrame, height: int = 520, width: Optional[int] = None,
+                                     fontsize_title: int = 17, fontsize_axis: int = 14, fontsize_ticks: int = 12,
+                                     fontsize_legend: int = 12, fontsize_legend_title: int = 12, fontsize_hover: int = 13,
+                                     region_colors: Optional[Dict[str, str]] = None, font_color: str = "#2a3f5f",
+                                     line_color: str = "#888888", line_width: float = 1.5,
+                                     marker_line_color: str = "#333333", marker_line_width: float = 0.0,
+                                     marker_opacity: Optional[float] = None, bg_color: str = "white",
+                                     grid_color: str = "#EBF0F8", size_max: int = 28,
+                                     fname: Optional[str] = "fig_diagnostics", force: bool = False, verbose: bool = False):
         """Subregion size vs spatial coherence ratio (marker size = number of subregion signature genes, colour = region);
-        dashed line = coherence_min_ratio."""
+        dashed line = coherence_min_ratio.
+
+        Font sizes: fontsize_title, fontsize_axis (axis titles), fontsize_ticks (tick labels), fontsize_legend,
+        fontsize_legend_title, fontsize_hover. Colours: region_colors (region -> colour; regions not given keep
+        _region_palette), font_color (all text), line_color / line_width (threshold line), marker_line_color /
+        marker_line_width (marker outline; 0 = none), marker_opacity, bg_color (plot + paper), grid_color.
+        Defaults reproduce the plotly_white look."""
         import plotly.express as px
         d = df_sub_table.copy()
         d["n_sig_plot"] = d.n_subregion_signature.clip(lower=1)
-        cmap = self._region_palette(d.region_id.unique())
-        fig = px.scatter(d, x="n_spots", y="coherence_ratio", color="region_id", size="n_sig_plot", size_max=28,
+        cmap = {**self._region_palette(d.region_id.unique()), **(region_colors or {})}
+        fig = px.scatter(d, x="n_spots", y="coherence_ratio", color="region_id", size="n_sig_plot", size_max=size_max,
                          hover_name="sub_region_id", color_discrete_map=cmap, log_x=True,
                          hover_data=dict(status=True, n_subregion_signature=True, n_not_present=True, n_sig_plot=False,
                                          subregion_signature_genes=True))
-        fig.add_hline(y=self.params["coherence_min_ratio"], line_dash="dash", line_color="#888")
-        fig.update_layout(title="Subregion diagnostics: size vs spatial coherence (marker size = signature genes)",
-                          template="plotly_white", height=height,
-                          xaxis_title="spots in subregion (log)", yaxis_title="spatial coherence ratio (1 = random)")
+        marker = dict(line=dict(color=marker_line_color, width=marker_line_width))
+        if marker_opacity is not None:
+            marker["opacity"] = marker_opacity
+        fig.update_traces(marker=marker)
+        fig.add_hline(y=self.params["coherence_min_ratio"], line_dash="dash", line_color=line_color, line_width=line_width)
+        axis_title = dict(font=dict(size=fontsize_axis, color=font_color))
+        fig.update_layout(title=dict(text="Subregion diagnostics: size vs spatial coherence (marker size = signature genes)",
+                                     font=dict(size=fontsize_title, color=font_color)),
+                          template="plotly_white", height=height, width=width,
+                          font=dict(color=font_color), paper_bgcolor=bg_color, plot_bgcolor=bg_color,
+                          legend=dict(font=dict(size=fontsize_legend, color=font_color),
+                                      title=dict(font=dict(size=fontsize_legend_title, color=font_color))),
+                          hoverlabel=dict(font=dict(size=fontsize_hover)))
+        fig.update_xaxes(title=dict(text="spots in subregion (log)", **axis_title),
+                         tickfont=dict(size=fontsize_ticks, color=font_color), gridcolor=grid_color)
+        fig.update_yaxes(title=dict(text="spatial coherence ratio (1 = random)", **axis_title),
+                         tickfont=dict(size=fontsize_ticks, color=font_color), gridcolor=grid_color)
+        self._save_figure(fig, fname, force, verbose)
         return fig
 
     def plotly_region_signature_heatmap(self, adata_expr, df_rank_region: pd.DataFrame, n_per_region: int = 3,
-                                        label_col: str = "region_label", height: int = 700):
-        """Mean log1p(CP10k) of the top region signature genes (rows) in every region (columns), z-scored per gene."""
+                                        label_col: str = "region_label", height: int = 700, width: Optional[int] = None,
+                                        fontsize_title: int = 17, fontsize_xticks: int = 12, fontsize_yticks: int = 9,
+                                        fontsize_colorbar: int = 12, fontsize_hover: int = 13, colorscale: str = "RdBu_r",
+                                        font_color: str = "#2a3f5f", bg_color: str = "white",
+                                        fname: Optional[str] = "fig_region_heatmap", force: bool = False, verbose: bool = False):
+        """Mean log1p(CP10k) of the top region signature genes (rows) in every region (columns), z-scored per gene.
+
+        Font sizes: fontsize_title, fontsize_xticks (regions), fontsize_yticks (genes), fontsize_colorbar, fontsize_hover.
+        Colours: colorscale (diverging, centred at 0), font_color, bg_color."""
         import plotly.graph_objects as go
         regions = list(adata_expr.obs[label_col].cat.categories)
         genes = []
@@ -2194,12 +2615,19 @@ class SingleCell(object):
         X = X.toarray() if sp.issparse(X) else np.asarray(X)
         df_mean = pd.DataFrame(X, columns=genes).groupby(adata_expr.obs[label_col].astype(str).values).mean().loc[regions].T
         Z = df_mean.sub(df_mean.mean(1), axis=0).div(df_mean.std(1).replace(0, 1), axis=0)
-        fig = go.Figure(go.Heatmap(z=Z.values, x=regions, y=genes, colorscale="RdBu_r", zmid=0,
+        fig = go.Figure(go.Heatmap(z=Z.values, x=regions, y=genes, colorscale=colorscale, zmid=0,
                                    customdata=df_mean.values.round(2),
                                    hovertemplate="%{y} in %{x}<br>z = %{z:.2f}<br>mean log1p = %{customdata}<extra></extra>",
-                                   colorbar=dict(title="z (per gene)")))
-        fig.update_layout(title=f"Top {n_per_region} signature genes per region", height=height, template="plotly_white",
-                          yaxis=dict(autorange="reversed", tickfont=dict(size=9)))
+                                   colorbar=dict(title=dict(text="z (per gene)", font=dict(size=fontsize_colorbar)),
+                                                 tickfont=dict(size=fontsize_colorbar))))
+        fig.update_layout(title=dict(text=f"Top {n_per_region} signature genes per region",
+                                     font=dict(size=fontsize_title, color=font_color)),
+                          height=height, width=width, template="plotly_white",
+                          font=dict(color=font_color), paper_bgcolor=bg_color, plot_bgcolor=bg_color,
+                          hoverlabel=dict(font=dict(size=fontsize_hover)),
+                          xaxis=dict(tickfont=dict(size=fontsize_xticks, color=font_color)),
+                          yaxis=dict(autorange="reversed", tickfont=dict(size=fontsize_yticks, color=font_color)))
+        self._save_figure(fig, fname, force, verbose)
         return fig
 
     # =====================================================================================================

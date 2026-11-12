@@ -116,6 +116,11 @@ LYMPHOID_PARAMS: Dict[str, Any] = dict(
     isg_maps=(("B_IFN", "abundance"), ("CXCL10", "gene"), ("DC_CCR7+", "abundance")),
     rho_vmax=0.8,
     # --- subregions (mp_lymphoid03; pipeline in SingleCell section 8c)
+    subregion_skip=("R19",),           # low-quality strip, not subclustered
+    region_table_first=("region_id", "signature_genes", "functional_description"),
+    region_table_depth=True,           # median_UMIs, median_cells_per_spot in the region table
+    subregion_table_first=("region_id", "sub_region_id", "subregion_name", "subregion_signature_genes", "n_other",
+                           "other_genes_top_expressed", "not_present_genes", "functional_description"),
     region_id_fmt="R{:02d}",           # region_cluster 6 -> 'R06' (names of mp_lymphoid01 are not unique)
     gene_display_exclude=r"^RP[SL]\d|^MT-|^A[CLP]\d{6}\.\d|^LINC\d|-AS\d$",   # ribosomal / unnamed clones / lncRNA: not listed
     border_min_rel=1.25,               # regions are interleaved patches: 'border' only when the subregion is more on the
@@ -127,14 +132,54 @@ LYMPHOID_PARAMS: Dict[str, Any] = dict(
 )
 
 
+# Files of the lymphoid project: key -> (root, name); root 'data' | 'result' | 'figure' (folders of ROOT0/project).
+# 'inputs' are always registered; an analysis (SingleCellLymphoid(..., analysis='lymph03')) adds its outputs, which
+# turns on the caching of its methods (force=False: read the file when it exists).
+LYMPHOID_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
+    "inputs": dict(
+        c2l_map=("result", "lymph_nodes_analysis/cell2location_map/sp.h5ad"),     # cell2location map (mp_lymphoid01)
+        region_labels=("result", "lymph01_region_labels.tsv"),                    # regions of mp_lymphoid01
+        reference=("data", "lymphoid_organ_sc.h5ad"),                             # scRNA reference
+        region_info=("data", "lymph_node_regions.tsv"),                           # curated region table (editable)
+        subregion_descriptions=("data", "lymph_node_subregion_descriptions.tsv"), # curated subregion descriptions
+    ),
+    "lymph03": dict(
+        # tables (cached)
+        region_rank_genes=("result", "lymph03_region_rank_genes.tsv.gz"),
+        region_table=("result", "lymph03_region_table.tsv"),
+        subregion_grid=("result", "lymph03_subcluster_resolution_grid.tsv"),
+        subregion_adata=("result", "lymph03_subregions/{region}.h5ad"),            # run_subregions: one AnnData per region
+        subregion_gene_sets=("result", "lymph03_subregion_gene_sets.tsv.gz"),
+        subregion_table=("result", "lymph03_subregion_table.tsv"),
+        subregion_ref_score=("result", "lymph03_subregion_ref_celltype_score.tsv"),
+        subregion_ref_genes=("result", "lymph03_subregion_ref_genes.tsv"),
+        # figures
+        fig_region_heatmap=("figure", "lymph03_region_signature_heatmap.html"),
+        fig_region_map=("figure", "lymph03_region_map_{lib}.html"),
+        fig_region_sub=("figure", "lymph03_subregions_{region}.html"),
+        fig_diagnostics=("figure", "lymph03_subregion_diagnostics.html"),
+        fig_subregion_map=("figure", "lymph03_subregion_map_{lib}.html"),
+        fig_ref_heatmap=("figure", "lymph03_subregion_ref_celltype_heatmap.html"),
+        fig_ref_umap=("figure", "lymph03_ref_umap_subregion_scores.png"),
+    ),
+}
+
+
 class SingleCellLymphoid(SingleCell):
     """Lymph node / lymphoid-organ analyses. Symbols in var['symbol'] by default (tutorial convention)."""
 
     default_params = {**DEFAULT_PARAMS, **LYMPHOID_PARAMS}
 
     def __init__(self, ROOT0, project: str = "lymphoid_tissue", symbol_col: str = "symbol",
-                 sample_col: str = "sample", mt_prefix: str = "MT-", **kw):
-        super().__init__(ROOT0, project, symbol_col=symbol_col, sample_col=sample_col, mt_prefix=mt_prefix, **kw)
+                 sample_col: str = "sample", mt_prefix: str = "MT-", analysis: Optional[str] = None, **kw):
+        """analysis: key of LYMPHOID_FILES ('lymph03') whose output files are registered (caching on); files=
+        adds or overrides single entries."""
+        if analysis is not None and analysis not in LYMPHOID_FILES:
+            raise KeyError(f"analysis {analysis!r} not in LYMPHOID_FILES: {sorted(LYMPHOID_FILES)}")
+        files = {**LYMPHOID_FILES["inputs"], **(LYMPHOID_FILES[analysis] if analysis else {}), **(kw.pop("files", None) or {})}
+        super().__init__(ROOT0, project, symbol_col=symbol_col, sample_col=sample_col, mt_prefix=mt_prefix,
+                         files=files, **kw)
+        self.analysis = analysis
 
     # =====================================================================================================
     # data: Visium section, reference re-indexing, symbol index, sample table
@@ -964,7 +1009,8 @@ class SingleCellLymphoid(SingleCell):
 
     def calc_df_subregion_ref_score(self, adata_ref, df_gene_sets: pd.DataFrame, df_sub_table: Optional[pd.DataFrame] = None,
                                     status: Optional[str] = "supported", n_genes: Optional[int] = None,
-                                    min_genes: Optional[int] = None, groupby: Optional[str] = None
+                                    min_genes: Optional[int] = None, groupby: Optional[str] = None,
+                                    force: bool = False, verbose: bool = False
                                     ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, List[str]]]:
         """Score the signature of each subregion on the scRNA reference.
 
@@ -974,7 +1020,13 @@ class SingleCellLymphoid(SingleCell):
         highly expressed genes do not dominate. Returns
           df_ref_score : subregion x cell type (params['celltype_col']) mean cell score
           df_cell_score: cells x subregions (for UMAPs)
-          genes_used   : {subregion: genes}."""
+          genes_used   : {subregion: genes}.
+        Cached in files 'subregion_ref_score' (rounded to 6 decimals) and 'subregion_ref_genes'; when both exist and
+        not force, df_cell_score is recomputed from the cached genes (no Wilcoxon / selection step)."""
+        groupby = groupby or self.params["celltype_col"]
+        cache = ("subregion_ref_score", "subregion_ref_genes")
+        if not force and all(k in self.files and self.file_path(k).exists() for k in cache):
+            return self._read_ref_score(adata_ref, verbose)
         n_genes = self.get_param("ref_sig_n_genes", n_genes)
         min_genes = self.get_param("ref_sig_min_genes", min_genes)
         groupby = groupby or self.params["celltype_col"]
@@ -990,6 +1042,27 @@ class SingleCellLymphoid(SingleCell):
                 genes_used[s_id] = gl
         order = [s_id for s_id in df_gene_sets.sub_region_id.unique() if s_id in genes_used]
         genes_used = {k: genes_used[k] for k in order}
+        df_cell_score = self._calc_df_cell_score(adata_ref, genes_used)
+        ct = adata_ref.obs[groupby].astype(str).values
+        df_ref_score = df_cell_score.groupby(ct).mean().T.round(6)      # 6 decimals: ref_cell_types text (2 decimals) not double-rounded
+        if all(k in self.files for k in cache):
+            self.write_tsv(df_ref_score.reset_index(names="sub_region_id"), "subregion_ref_score", verbose=verbose)
+            self.write_tsv(pd.DataFrame({"sub_region_id": list(genes_used),
+                                         "genes": [",".join(v) for v in genes_used.values()]}),
+                           "subregion_ref_genes", verbose=verbose)
+            return self._read_ref_score(adata_ref, verbose)         # read back: same values as a cached run
+        return df_ref_score, df_cell_score, genes_used
+
+    def _read_ref_score(self, adata_ref, verbose: bool = False):
+        """Cached calc_df_subregion_ref_score: df_ref_score and genes_used from their files, df_cell_score recomputed."""
+        df_ref_score = self.read_tsv("subregion_ref_score", verbose=verbose).set_index("sub_region_id")
+        df_ref_score.index.name = None
+        d = self.read_tsv("subregion_ref_genes", verbose=verbose)
+        genes_used = {r.sub_region_id: r.genes.split(",") for r in d.itertuples()}
+        return df_ref_score, self._calc_df_cell_score(adata_ref, genes_used), genes_used
+
+    def _calc_df_cell_score(self, adata_ref, genes_used: Dict[str, List[str]]) -> pd.DataFrame:
+        """Cells x subregions: mean over the subregion's genes of the per-gene z-score of log1p(CP10k)."""
         union = sorted({x for v in genes_used.values() for x in v})
         found, _, E = self.panel_lognorm(union, adata_ref)
         E = E.astype(np.float32)
@@ -997,10 +1070,21 @@ class SingleCellLymphoid(SingleCell):
         Z = (E - E.mean(0)) / np.where(sd > 0, sd, 1)
         col = {g: i for i, g in enumerate(found)}
         S = np.column_stack([Z[:, [col[g] for g in gl]].mean(1) for gl in genes_used.values()])
-        df_cell_score = pd.DataFrame(S, index=adata_ref.obs_names, columns=list(genes_used))
-        ct = adata_ref.obs[groupby].astype(str).values
-        df_ref_score = df_cell_score.groupby(ct).mean().T
-        return df_ref_score, df_cell_score, genes_used
+        return pd.DataFrame(S, index=adata_ref.obs_names, columns=list(genes_used))
+
+    def add_ref_cell_types(self, df_sub_table: pd.DataFrame, df_ref_score: pd.DataFrame, n: int = 3,
+                           force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """df_sub_table['ref_cell_types'] = top-n reference cell types per subregion ('' = not scored). The subregion
+        table file ('subregion_table') is rewritten when the column changed, or always with force."""
+        df = df_sub_table.copy()
+        new = df.sub_region_id.map(self.calc_df_ref_top(df_ref_score, n=n)).fillna("").astype(str)
+        changed = "ref_cell_types" not in df or not new.equals(df["ref_cell_types"].fillna("").astype(str))
+        df["ref_cell_types"] = new.values
+        if "subregion_table" in self.files and (changed or force):
+            self.write_tsv(df, "subregion_table", verbose=verbose)
+        elif verbose:
+            print("ref_cell_types unchanged: subregion table not rewritten")
+        return df
 
     @staticmethod
     def calc_df_ref_top(df_ref_score: pd.DataFrame, n: int = 3) -> pd.Series:
@@ -1009,9 +1093,18 @@ class SingleCellLymphoid(SingleCell):
                                                       .head(n).items()), axis=1).rename("ref_cell_types")
 
     def plotly_subregion_ref_heatmap(self, df_ref_score: pd.DataFrame, lineage: Optional[Dict[str, Sequence[str]]] = None,
-                                     df_sub_table: Optional[pd.DataFrame] = None, height: Optional[int] = None):
+                                     df_sub_table: Optional[pd.DataFrame] = None, height: Optional[int] = None,
+                                     width: Optional[int] = None, fontsize_title: int = 17, fontsize_xticks: int = 9,
+                                     fontsize_yticks: int = 9, fontsize_colorbar: int = 12, fontsize_lineage: int = 10,
+                                     fontsize_hover: int = 13, colorscale: str = "RdBu_r", lineage_line_color: str = "#444444",
+                                     lineage_line_width: float = 1.0, font_color: str = "#2a3f5f", bg_color: str = "white",
+                                     fname: Optional[str] = "fig_ref_heatmap", force: bool = False, verbose: bool = False):
         """Heatmap subregion (rows, grouped by region) x reference cell type (columns, lineage order): mean cell score
-        of the subregion signature. Hover: signature genes, status."""
+        of the subregion signature. Hover: signature genes, status.
+
+        Font sizes: fontsize_title, fontsize_xticks (cell types), fontsize_yticks (subregions), fontsize_colorbar,
+        fontsize_lineage (lineage labels on top), fontsize_hover. Colours: colorscale (diverging, symmetric at the 99th
+        percentile of |score|), lineage_line_color / lineage_line_width (separators), font_color, bg_color."""
         import plotly.graph_objects as go
         cols = [c for c in (self.lineage_order(lineage) if lineage else df_ref_score.columns) if c in df_ref_score.columns]
         Z = df_ref_score[cols]
@@ -1020,55 +1113,74 @@ class SingleCellLymphoid(SingleCell):
             info = {r.sub_region_id: f"{r.status}<br>up: {r.subregion_signature_genes[:70]}" for r in df_sub_table.itertuples()}
         cd = np.array([[info.get(s_id, "")] * len(cols) for s_id in Z.index])
         vmax = float(np.nanpercentile(np.abs(Z.values), 99))
-        fig = go.Figure(go.Heatmap(z=Z.values, x=cols, y=list(Z.index), colorscale="RdBu_r", zmid=0, zmin=-vmax, zmax=vmax,
-                                   customdata=cd, colorbar=dict(title="mean<br>score (z)"),
+        fig = go.Figure(go.Heatmap(z=Z.values, x=cols, y=list(Z.index), colorscale=colorscale, zmid=0, zmin=-vmax, zmax=vmax,
+                                   customdata=cd,
+                                   colorbar=dict(title=dict(text="mean<br>score (z)", font=dict(size=fontsize_colorbar)),
+                                                 tickfont=dict(size=fontsize_colorbar)),
                                    hovertemplate="%{y} signature in %{x}<br>score %{z:.2f}<br>%{customdata}<extra></extra>"))
         if lineage:
             x0 = 0
             for k, v in lineage.items():
                 n_ = len([c for c in v if c in cols])
-                fig.add_vline(x=x0 + n_ - 0.5, line_color="#444", line_width=1)
+                fig.add_vline(x=x0 + n_ - 0.5, line_color=lineage_line_color, line_width=lineage_line_width)
                 fig.add_annotation(x=x0 + (n_ - 1) / 2, y=1.0, yref="paper", yanchor="bottom", text=k, showarrow=False,
-                                   font=dict(size=10))
+                                   font=dict(size=fontsize_lineage, color=font_color))
                 x0 += n_
-        fig.update_layout(title="Subregion signatures scored on the scRNA reference (mean per-gene z of log1p CP10k)",
-                          height=height or max(420, 18 * len(Z) + 200), template="plotly_white",
-                          yaxis=dict(autorange="reversed", tickfont=dict(size=9)), xaxis=dict(tickfont=dict(size=9)),
+        fig.update_layout(title=dict(text="Subregion signatures scored on the scRNA reference (mean per-gene z of log1p CP10k)",
+                                     font=dict(size=fontsize_title, color=font_color)),
+                          height=height or max(420, 18 * len(Z) + 200), width=width, template="plotly_white",
+                          font=dict(color=font_color), paper_bgcolor=bg_color, plot_bgcolor=bg_color,
+                          hoverlabel=dict(font=dict(size=fontsize_hover)),
+                          yaxis=dict(autorange="reversed", tickfont=dict(size=fontsize_yticks, color=font_color)),
+                          xaxis=dict(tickfont=dict(size=fontsize_xticks, color=font_color)),
                           margin=dict(t=110))
+        self._save_figure(fig, fname, force, verbose)
         return fig
 
     def plot_ref_umap_subregion_scores(self, adata_ref, df_cell_score: pd.DataFrame, subregions: Sequence[str],
                                        df_ref_score: Optional[pd.DataFrame] = None, ncols: int = 4, q: Optional[float] = None,
-                                       panel_size: float = 3.2, fname: Optional[str] = "ref_umap_subregion_scores.png"):
+                                       panel_size: float = 3.2, point_size: float = 0.3, fontsize_title: float = 8,
+                                       fontsize_suptitle: float = 9, fontsize_colorbar: float = 6,
+                                       cmap_colors: Sequence[str] = ("#e6e6e6", "#fdbb84", "#d7301f", "#7f0000"),
+                                       font_color: str = "black", bg_color: str = "white",
+                                       fname: Optional[str] = "fig_ref_umap", force: bool = False, verbose: bool = False):
         """Reference UMAP (obsm['X_umap']) coloured by the signature score of each subregion (one panel per subregion,
-        own scale clipped at the q-th percentile, values < 0 grey). Title: subregion + top reference cell type."""
+        own scale clipped at the q-th percentile, values < 0 grey). Title: subregion + top reference cell type.
+
+        Sizes: panel_size (inches per panel), point_size. Font sizes: fontsize_title (panel titles), fontsize_suptitle,
+        fontsize_colorbar (tick labels). Colours: cmap_colors (low -> high; the first is the colour of scores <= 0),
+        font_color, bg_color (figure and panel background)."""
         q = self.get_param("ref_score_clip", q)
         U = adata_ref.obsm["X_umap"]
         subregions = [s_id for s_id in subregions if s_id in df_cell_score.columns]
         nrows = int(math.ceil(len(subregions) / ncols))
-        fig, axes = plt.subplots(nrows, ncols, figsize=(panel_size * ncols, panel_size * nrows), squeeze=False)
+        fig, axes = plt.subplots(nrows, ncols, figsize=(panel_size * ncols, panel_size * nrows), squeeze=False,
+                                 facecolor=bg_color)
         o = np.random.default_rng(self.params["seed"]).permutation(len(U))
-        cmap = LinearSegmentedColormap.from_list("grey_red", ["#e6e6e6", "#fdbb84", "#d7301f", "#7f0000"])
+        cmap = LinearSegmentedColormap.from_list("score", list(cmap_colors))
         for ax, s_id in zip(axes.ravel(), subregions):
+            ax.set_facecolor(bg_color)
             v = df_cell_score[s_id].values
             cap = np.nanpercentile(v, q)
             vv = np.clip(v, 0, cap)
             oo = o[np.argsort(vv[o], kind="stable")]           # high scores on top
-            sca = ax.scatter(U[oo, 0], U[oo, 1], s=0.3, c=vv[oo], cmap=cmap, vmin=0, vmax=cap, lw=0, rasterized=True)
+            sca = ax.scatter(U[oo, 0], U[oo, 1], s=point_size, c=vv[oo], cmap=cmap, vmin=0, vmax=cap, lw=0, rasterized=True)
             top = ""
             if df_ref_score is not None and s_id in df_ref_score.index:
                 top = df_ref_score.loc[s_id].idxmax()
-            ax.set_title(f"{s_id}" + (f" - {top}" if top else ""), fontsize=8, loc="left")
+            ax.set_title(f"{s_id}" + (f" - {top}" if top else ""), fontsize=fontsize_title, loc="left", color=font_color)
             ax.set_xticks([]); ax.set_yticks([])
             for sp_ in ax.spines.values():
                 sp_.set_visible(False)
-            fig.colorbar(sca, ax=ax, fraction=0.04, pad=0.01).ax.tick_params(labelsize=6)
+            cb = fig.colorbar(sca, ax=ax, fraction=0.04, pad=0.01)
+            cb.ax.tick_params(labelsize=fontsize_colorbar, colors=font_color)
+            cb.outline.set_edgecolor(font_color)
         for ax in axes.ravel()[len(subregions):]:
             ax.set_visible(False)
         fig.tight_layout()
-        fig.suptitle("Reference UMAP coloured by subregion signature score (mean per-gene z; < 0 grey)", fontsize=9, x=0.01,
-                     y=1.0, ha="left", va="bottom")
-        self._savefig(fig, fname)
+        fig.suptitle("Reference UMAP coloured by subregion signature score (mean per-gene z; < 0 grey)",
+                     fontsize=fontsize_suptitle, color=font_color, x=0.01, y=1.0, ha="left", va="bottom")
+        self._save_figure(fig, fname, force, verbose)
         return fig
 
     def reference_signatures_symbols(self, fname: str = "sc.h5ad", root: Optional[Path] = None,
