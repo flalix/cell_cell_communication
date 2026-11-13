@@ -54,16 +54,21 @@ Visium (H&E / IF) ────► Scanpy / Squidpy ──► spatial graphs, nei
 
 ---
 
-## Cell-to-Cell Communication (CCC) reports
+## Cell-to-Cell Communication - Multiproject reports
 
-Rendered via **html-preview**:
+Rendered via **html-preview** *(Ctrl+click to open in a new tab)*:
 
-<p><em>(Ctrl+click to open in a new tab)</em></p>
-<ul>
-  <li><a href="https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_ccc_liana/docs/ccc01_tutorial.html" target="_blank" rel="noopener noreferrer">01 — Cell2location Tutorial</a></li>
-  <li><a href="https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_ccc_liana/docs/ccc02_study.html" target="_blank" rel="noopener noreferrer">02 — Cell2location Study</a></li>
-  <li><a href="https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_ccc_liana/docs/ccc03_liana_study.html" target="_blank" rel="noopener noreferrer">03 — CCC - LIANA study</a></li>
-</ul>
+**Lymphoid tissue**
+- [01 — Prepare](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_lymphoid01_prepare.html)
+- [02 — Regions](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_lymphoid02_regions.html)
+- [03 — Subregions](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_lymphoid03_subregions.html)
+- [04 — LIANA regions](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_lymphoid04_liana_regions.html)
+
+**Mouse brain**
+- [01 — Prepare](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_mouse_brain01_prepare.html)
+- [02 — Region astrocytes](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_mouse_brain02_region_astrocytes.html)
+- [03 — Subregions](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_mouse_brain03_subregions.html)
+- [04 — LIANA regions](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_mouse_brain04_liana_regions.html)
 
 Open from a Linux terminal:
 
