@@ -129,3 +129,19 @@ Scanpy, AnnData and Squidpy are part of [scverse®](https://scverse.org/), a pro
 ## Author
 
 Flavio Lichtenstein, PhD — bioinformatics & systems biology.
+
+## notebooks_multiproject/docs reports
+
+<!-- previews:notebooks_multiproject/docs:start -->
+<p><em>(Ctrl+click to open in a new tab)</em></p>
+<ul>
+  <li><a href="https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_lymphoid01_prepare.html" target="_blank" rel="noopener noreferrer">01 — Lymphoid: prepare</a></li>
+  <li><a href="https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_lymphoid02_regions.html" target="_blank" rel="noopener noreferrer">02 — Lymphoid: regions</a></li>
+  <li><a href="https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_lymphoid03_subregions.html" target="_blank" rel="noopener noreferrer">03 — Lymphoid: subregions</a></li>
+  <li><a href="https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_lymphoid04_liana_regions.html" target="_blank" rel="noopener noreferrer">04 — Lymphoid: liana regions</a></li>
+  <li><a href="https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_mouse_brain01_prepare.html" target="_blank" rel="noopener noreferrer">01 — Mouse Brain: prepare</a></li>
+  <li><a href="https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_mouse_brain02_region_astrocytes.html" target="_blank" rel="noopener noreferrer">02 — Mouse Brain: region astrocytes</a></li>
+  <li><a href="https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_mouse_brain03_subregions.html" target="_blank" rel="noopener noreferrer">03 — Mouse Brain: subregions</a></li>
+  <li><a href="https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_mouse_brain04_liana_regions.html" target="_blank" rel="noopener noreferrer">04 — Mouse Brain: liana regions</a></li>
+</ul>
+<!-- previews:notebooks_multiproject/docs:end -->
