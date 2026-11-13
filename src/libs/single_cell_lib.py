@@ -59,6 +59,7 @@ libs/cell2location_lib.py (function version, used by ccc01/ccc02) is kept unchan
 @author: Flavio Lichtenstein
 """
 
+import contextlib
 import copy
 import re
 import warnings
@@ -263,6 +264,7 @@ DEFAULT_PARAMS: Dict[str, Any] = dict(
     font_color="black",
     bg_color="white",
     fontsize_scale=1.0,            # x the font sizes set inside the matplotlib plot methods (style_figure)
+    image_bg_color="black",        # H&E glass (outside the tissue) in every map figure (hires_image_bg); None = image as is
 )
 
 
@@ -427,11 +429,12 @@ class SingleCell(object):
         return path
 
     def _save_figure(self, fig, fname: Optional[str],
-    force: bool = False, verbose: bool = False, **fmt) -> Optional[Path]:
+    force: bool = False, verbose: bool = False, include_plotlyjs=None, **fmt) -> Optional[Path]:
         """Save a figure inside its plot method. fname: key of self.files ({placeholders} from fmt, e.g. lib=..., region=...)
         or a file name with an extension in root_figure; None, or a key that is not registered (e.g. another analysis),
         -> not saved. An existing file is kept unless force (as _savefig). Plotly -> write_html (params['plotly_include_js']),
-        matplotlib -> savefig (params['dpi'])."""
+        matplotlib -> savefig (params['dpi']). include_plotlyjs: override of params['plotly_include_js']
+        (True = self-contained HTML)."""
         if fname is None or (fname not in self.files and not Path(fname).suffix):
             return None
         path = self._resolve_path(fname, None, self.root_figure, **fmt)
@@ -440,7 +443,7 @@ class SingleCell(object):
                 print(f"File already exists: {path}")
             return path
         if hasattr(fig, "write_html"):
-            fig.write_html(path, include_plotlyjs=self.params["plotly_include_js"])
+            fig.write_html(path, include_plotlyjs=self.params["plotly_include_js"] if include_plotlyjs is None else include_plotlyjs)
         else:
             fig.savefig(path, dpi=self.params["dpi"], bbox_inches="tight", facecolor=fig.get_facecolor())
         if verbose:
@@ -503,7 +506,7 @@ class SingleCell(object):
         return 0.2126 * r + 0.7152 * g + 0.0722 * b
 
     def style_figure(self, fig, font_color: str = "black", bg_color: str = "white", fontsize_scale: float = 1.0,
-                     min_contrast: float = 0.3, relayout: bool = False):
+                     min_contrast: float = 0.3, relayout: bool = False, axes_bg: bool = True):
         """Recolour and rescale a finished matplotlib figure, including figures drawn by scanpy, squidpy and
         cell2location, so that one call gives e.g. white text on black (font_color='white', bg_color='black').
 
@@ -515,6 +518,7 @@ class SingleCell(object):
           are left as they are; white halos (path effects) around recoloured text -> bg_color;
         - every font size x fontsize_scale (tick labels through the axis, so new ticks get it too).
         relayout: re-run tight_layout (figures laid out with tight_layout before styling).
+        axes_bg=False: the axes keep their background (black density panels: additive colours need black).
         Defaults (black on white, scale 1) leave the figure unchanged. Returns fig."""
         from matplotlib.text import Text
         import matplotlib.patheffects as mpe
@@ -537,7 +541,7 @@ class SingleCell(object):
         tick_texts, skip_texts = set(), set()
 
         for ax in fig.axes:
-            if mpl.colors.to_hex(ax.get_facecolor(), keep_alpha=False) == fig_bg0:
+            if axes_bg and mpl.colors.to_hex(ax.get_facecolor(), keep_alpha=False) == fig_bg0:
                 ax.set_facecolor(bg_color)
             for sp_ in ax.spines.values():
                 if not dark_ok(sp_.get_edgecolor()):
@@ -957,16 +961,21 @@ class SingleCell(object):
 
     def plot_qc(self, groupby: Optional[str] = None, adata=None, fname: Optional[str] = "qc_violin.png",
                 title: str = "", thresholds: Optional[Dict[str, float]] = None, max_points: Optional[int] = None,
+                figsize: Tuple[float, float] = (16, 3.6),
+                font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
                 force: bool = False, verbose: bool = False):
         """Violins of n_genes_by_counts, total_counts, pct_counts_mt per group + counts-vs-genes scatter.
         thresholds: {'n_genes_by_counts': 5000, 'pct_counts_mt': 10} draws dashed lines."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         a = self._check_adata(adata)
         g = groupby or self.sample_col
         thresholds = thresholds or {}
         cols = ["n_genes_by_counts", "total_counts", "pct_counts_mt"]
         obs = a.obs
         cats = list(obs[g].astype("category").cat.categories) if g in obs else ["all"]
-        fig, axes = plt.subplots(1, 4, figsize=(16, 3.6), gridspec_kw=dict(wspace=0.35))
+        fig, axes = plt.subplots(1, 4, figsize=figsize, gridspec_kw=dict(wspace=0.35))
         for ax, c in zip(axes[:3], cols):
             data = [obs.loc[obs[g] == k, c].values for k in cats] if g in obs else [obs[c].values]
             parts = ax.violinplot(data, showextrema=False, showmedians=True)
@@ -987,6 +996,7 @@ class SingleCell(object):
         fig.colorbar(sca, ax=axes[3], fraction=0.05).set_label("pct_counts_mt")
         if title:
             fig.suptitle(title, x=0.02, ha="left", y=1.04)
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)
         self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 
@@ -1057,10 +1067,12 @@ class SingleCell(object):
         return d["images"][img_key], d["scalefactors"][f"tissue_{img_key}_scalef"]
 
     def hires_image_bg(self, library_id: Optional[str] = None, adata=None, bg_color: str = "#3a3a3a",
-                       white_min: float = 0.90, min_area: int = 5000, edge_px: int = 3, img_key: Optional[str] = None,
+                       white_min: Optional[float] = None, min_area: int = 5000, edge_px: int = 3, img_key: Optional[str] = None,
                        force: bool = False, verbose: bool = False) -> np.ndarray:
         """Copy of the hires image (float RGB in [0, 1]) with the glass background outside the tissue set to bg_color;
-        the image in adata is not changed. Tissue = connected areas of pixels with min(R, G, B) < white_min larger
+        the image in adata is not changed. white_min=None: estimated from the image border (median min(R, G, B) of
+        the outer 3% minus 0.08; 0.90 for a white slide, ~0.49 for the grey glass of the lymph node), capped at 0.90.
+        Tissue = connected areas of pixels with min(R, G, B) < white_min larger
         than min_area pixels, holes filled (ventricles stay as in the image); smaller blobs (fiducial frame, dust)
         become background. The last edge_px pixels inside the tissue edge are blended by whiteness (no white rim).
         Cached as files['hires_bg'] ({lib}, {color}) when registered (PNG, force=False: read it); otherwise kept in
@@ -1084,20 +1096,52 @@ class SingleCell(object):
             x = np.asarray(img[..., :3], dtype=np.float32)
             x = x / 255 if x.max() > 1.5 else x
             mn = x.min(2)
+            if white_min is None:                                   # glass level from the image border
+                h, w = mn.shape; b = max(5, int(0.03 * min(h, w)))
+                border = np.concatenate([mn[:b].ravel(), mn[-b:].ravel(), mn[:, :b].ravel(), mn[:, -b:].ravel()])
+                white_min = float(min(0.90, np.median(border) - 0.08))
             lab_, n = ndi.label(ndi.binary_closing(mn < white_min, iterations=2))
             sizes = ndi.sum(np.ones_like(mn), lab_, index=np.arange(1, n + 1))
             tissue = ndi.binary_fill_holes(np.isin(lab_, 1 + np.flatnonzero(sizes >= min_area)))
             band = tissue & ~ndi.binary_erosion(tissue, iterations=edge_px)
             alpha = np.where(tissue, 0.0, 1.0)
-            alpha[band] = np.clip((mn[band] - 0.75) / (white_min + 0.05 - 0.75), 0, 1)
+            lo = white_min - 0.15                                   # edge blend: tissue-like -> glass-like
+            alpha[band] = np.clip((mn[band] - lo) / (white_min + 0.05 - lo), 0, 1)
             bg = np.array(mpl.colors.to_rgb("#" + color), dtype=np.float32)
             out = (x * (1 - alpha[..., None]) + bg * alpha[..., None]).astype(np.float32)
             if reg:
                 from PIL import Image
                 Image.fromarray((np.clip(out, 0, 1) * 255).round().astype(np.uint8)).save(path)
                 if verbose:
-                    print(f"Saving {path} (tissue {tissue.mean():.0%} of the image)")
+                    print(f"Saving {path} (tissue {tissue.mean():.0%} of the image, white_min {white_min:.2f})")
         cache[key_mem] = out
+        return out
+
+    def _cached_frames(self, fnames: Dict[str, Optional[str]], compute, force: bool = False, verbose: bool = False,
+                       index_cols: Optional[Dict[str, str]] = None) -> Optional[Dict[str, pd.DataFrame]]:
+        """Cache of several tables a calc method returns. fnames: {name: key of self.files or a file name with an
+        extension in root_result}. All present and not force -> each table read with pdreadcsv (no computation);
+        otherwise compute() -> {name: DataFrame} is written with pdwritecsv and read back, so a computed and a cached
+        run return the same values. '.csv' -> comma separated, else tab. index_cols: {name: column} written as / set
+        back to the index. A None or unregistered entry is not written (and returned as computed); with any of
+        them the cache is not used. Returns {name: DataFrame}."""
+        index_cols = index_cols or {}
+        paths = {k: self._resolve_table(f) for k, f in fnames.items()}
+        sep = {k: "," if p is not None and p.suffix == ".csv" else "\t" for k, p in paths.items()}
+
+        def _read(k):
+            df = pdreadcsv(paths[k].name, paths[k].parent, sep=sep[k], verbose=verbose)
+            return df.set_index(index_cols[k]) if k in index_cols and index_cols[k] in df else df
+
+        if paths and not force and all(p is not None and p.exists() for p in paths.values()):
+            return {k: _read(k) for k in paths}
+        out = compute()
+        for k, p in paths.items():
+            if p is None:
+                continue
+            df = out[k].reset_index(names=index_cols[k]) if k in index_cols else out[k]
+            pdwritecsv(df, p.name, p.parent, sep=sep[k], verbose=verbose)
+            out[k] = _read(k)
         return out
 
     def _resolve_table(self, fname: Optional[str], root: Optional[Path] = None) -> Optional[Path]:
@@ -1116,9 +1160,38 @@ class SingleCell(object):
         fig.update_yaxes(tickfont=dict(size=fontsize_yticks, color=font_color))
         return fig
 
+    @contextlib.contextmanager
+    def _image_bg(self, adata, library_ids: Optional[Sequence[str]] = None, image_bg_color: Optional[str] = None):
+        """For plotters that read the H&E from adata.uns['spatial'] (scanpy, squidpy, cell2location): inside the
+        block the hires image of each library is the copy with the glass in image_bg_color (None = params; that None
+        too = unchanged); the original arrays are put back afterwards (also on error). Views: the parent's uns."""
+        color = self.get_param("image_bg_color", image_bg_color)
+        key = self.params["img_key"]
+        uns = adata._adata_ref.uns if adata.is_view else adata.uns
+        saved = {}
+        if color is not None and "spatial" in uns:
+            for lib in (library_ids or list(uns["spatial"].keys())):
+                imgs = uns["spatial"].get(lib, {}).get("images", {})
+                if key not in imgs:
+                    continue
+                orig = imgs[key]
+                new = self.hires_image_bg(lib, adata, bg_color=color)
+                new = (np.clip(new, 0, 1) * 255).astype(np.uint8) if orig.dtype == np.uint8 else new.astype(orig.dtype)
+                if orig.ndim == 3 and orig.shape[2] == 4 and new.shape[2] == 3:       # keep RGBA layout
+                    new = np.concatenate([new, orig[..., 3:]], axis=2)
+                saved[lib] = orig
+                imgs[key] = new
+        try:
+            yield
+        finally:
+            for lib, orig in saved.items():
+                uns["spatial"][lib]["images"][key] = orig
+
     def _map_image(self, library_id: str, adata_map, image_bg_color: Optional[str] = None, force: bool = False,
                    verbose: bool = False) -> np.ndarray:
-        """hires image of a map: the original, or the copy with the background set to image_bg_color."""
+        """hires image of a map: the original, or the copy with the glass background set to image_bg_color
+        (None = params['image_bg_color']; that None too = the original image)."""
+        image_bg_color = self.get_param("image_bg_color", image_bg_color)
         if image_bg_color is None:
             return self.hires_image(library_id, adata_map)[0]
         return self.hires_image_bg(library_id, adata_map, bg_color=image_bg_color, force=force, verbose=verbose)
@@ -1164,10 +1237,11 @@ class SingleCell(object):
         lib = library_id or self.library_id(a)
         figs = []
         for k, i in enumerate(range(0, len(kept), nframe)):
-            sq.pl.spatial_scatter(a, color=cols[i:i + nframe], title=kept[i:i + nframe],
-                                  img_res_key=self.params["img_key"], img_alpha=img_alpha,
-                                  size=self.get_param("spot_size", size), cmap=cmap or cmap_byr, ncols=ncols,
-                                  library_id=lib)
+            with self._image_bg(a, [lib]):                                   # H&E glass: params['image_bg_color']
+                sq.pl.spatial_scatter(a, color=cols[i:i + nframe], title=kept[i:i + nframe],
+                                      img_res_key=self.params["img_key"], img_alpha=img_alpha,
+                                      size=self.get_param("spot_size", size), cmap=cmap or cmap_byr, ncols=ncols,
+                                      library_id=lib)
             fig = self.style_figure(plt.gcf(), font_color, bg_color, fontsize_scale)
             figs.append(fig)
             if fname is not None:
@@ -1210,7 +1284,7 @@ class SingleCell(object):
     def train_reference(self, adata_ref: ad.AnnData, run_dir: Path, labels_key: str, batch_key: Optional[str] = None,
                         categorical_covariate_keys: Optional[List[str]] = None, max_epochs: Optional[int] = None,
                         accelerator: Optional[str] = None, fname: str = "sc.h5ad",
-                        force: bool = False) -> Tuple[ad.AnnData, pd.DataFrame]:
+                        force: bool = False, verbose: bool = False) -> Tuple[ad.AnnData, pd.DataFrame]:
         """cell2location RegressionModel (NB regression) -> reference signatures; cache-or-train in run_dir.
         Returns (adata_ref with posterior in varm, df_inf_aver genes x cell types)."""
         from cell2location.models import RegressionModel
@@ -1219,6 +1293,8 @@ class SingleCell(object):
         accelerator = self.get_param("accelerator", accelerator)
         if filename.exists() and not force:
             adata_ref = ad.read_h5ad(filename)
+            if verbose:
+                print(f"Reading {filename}")
         else:
             RegressionModel.setup_anndata(adata=adata_ref, batch_key=batch_key, labels_key=labels_key,
                                           categorical_covariate_keys=categorical_covariate_keys)
@@ -1229,6 +1305,8 @@ class SingleCell(object):
                                                             "accelerator": accelerator})
             mod.save(str(run_dir), overwrite=True)
             adata_ref.write_h5ad(filename)
+            if verbose:
+                print(f"RegressionModel trained; model and {filename} saved")
         df_inf_aver, _ = self.get_reference_signatures(adata_ref)
         return adata_ref, df_inf_aver
 
@@ -1262,7 +1340,7 @@ class SingleCell(object):
                       N_cells_per_location: Optional[float] = None, detection_alpha: Optional[float] = None,
                       batch_key: Optional[str] = None, max_epochs: Optional[int] = None,
                       accelerator: Optional[str] = None, fname: str = "sp.h5ad", force: bool = False,
-                      **model_kw) -> ad.AnnData:
+                      verbose: bool = False, **model_kw) -> ad.AnnData:
         """cell2location spatial mapping; cache-or-train (run_dir/fname + model).
 
         Genes are intersected between adata_vis and df_inf_aver. Posterior quantiles go to
@@ -1274,6 +1352,8 @@ class SingleCell(object):
         run_dir = create_dir(run_dir)
         filename = run_dir / fname
         if filename.exists() and not force:
+            if verbose:
+                print(f"Reading {filename}")
             return ad.read_h5ad(filename)
         accelerator = self.get_param("accelerator", accelerator)
         torch.set_num_threads(self.params["torch_threads"] or len(os.sched_getaffinity(0)))
@@ -1294,6 +1374,8 @@ class SingleCell(object):
                                      elbo_history=np.asarray(mod.history["elbo_train"]).ravel().astype(float))
         mod.save(str(run_dir), overwrite=True)
         a.write_h5ad(filename)
+        if verbose:
+            print(f"Cell2location trained ({len(genes):,} genes); model and {filename} saved")
         return a
 
     @staticmethod
@@ -1566,14 +1648,15 @@ class SingleCell(object):
     def posterior_samples_cached(self, mod, adata, run_dir: Path, fname: str = "posterior_samples_w_sf.npz",
                                  sites: Optional[Sequence[str]] = None, num_samples: Optional[int] = None,
                                  batch_size: Optional[int] = None, accelerator: Optional[str] = None,
-                                 verbose: bool = True) -> Dict[str, np.ndarray]:
+                                 force: bool = False, verbose: bool = True) -> Dict[str, np.ndarray]:
         """Posterior draws of selected sites (default w_sf, m_g, z_sr_groups_factors), cached in an npz with
-        obs/factor/var names (the cache is checked against adata.obs_names). Returns {site: array}."""
+        obs/factor/var names (the cache is checked against adata.obs_names); force: draw again and overwrite.
+        Returns {site: array}."""
         import scvi
-        filename = Path(run_dir) / fname
+        filename = create_dir(run_dir) / fname
         sites = list(self.get_param("c2l_posterior_sites", sites))
         meta = {"obs_names", "factor_names", "var_names"}
-        if filename.exists():
+        if filename.exists() and not force:
             with np.load(filename, allow_pickle=False) as z:
                 if len(z["obs_names"]) != adata.n_obs or not (z["obs_names"] == np.asarray(adata.obs_names, dtype=str)).all():
                     raise ValueError(f"{filename}: obs_names differ from adata")
@@ -1697,8 +1780,9 @@ class SingleCell(object):
         sc.pl.umap(a, color=self.sample_col, size=30, legend_loc="none", ax=axes[1], show=False, title=self.sample_col)
         lib = library_id or self.library_id(a)
         sub = a[a.obs[self.sample_col] == lib] if self.sample_col in a.obs else a
-        sc.pl.spatial(sub, color=key, library_id=lib, ax=axes[2], size=self.params["spot_size"],
-                      img_key=self.params["img_key"], alpha=0.5, title=lib, legend_loc="none", show=False)
+        with self._image_bg(a, [lib]):                                       # H&E glass: params['image_bg_color']
+            sc.pl.spatial(sub, color=key, library_id=lib, ax=axes[2], size=self.params["spot_size"],
+                          img_key=self.params["img_key"], alpha=0.5, title=lib, legend_loc="none", show=False)
         names = names if names is not None else self.region_names(a, key=key)
         self.legend_figure_bottom(fig, a, key, names=names, ncol=4)
         self.style_figure(fig, font_color, bg_color, fontsize_scale)          # constrained layout: re-laid out on draw
@@ -1732,14 +1816,16 @@ class SingleCell(object):
                               marker_size: float = 6, hover_extra: Optional[Dict[str, str]] = None,
                               fontsize_title: int = 17, fontsize_legend: int = 12, fontsize_hover: int = 12,
                               font_color: Optional[str] = None, bg_color: Optional[str] = None, marker_line_color: str = "black",
-                              fname: Optional[str] = None, force: bool = False, verbose: bool = False):
+                              image_bg_color: Optional[str] = None, fname: Optional[str] = None, include_plotlyjs=None,
+                              force: bool = False, verbose: bool = False):
         """Interactive (plotly) spatial map of a categorical key on the hires image.
 
         image_format: 'raw' embeds the pixel array (about 30 MB per HTML file), 'jpeg' an encoded image (about 6 MB);
         default params['plotly_image_format']. hover_extra: category -> extra hover text (e.g. signature genes).
         Font sizes: fontsize_title, fontsize_legend, fontsize_hover. Colours: font_color, bg_color (paper and plot),
-        marker_line_color (spot outline). fname: key of self.files or an .html name in root_figure (None = not
-        saved); an existing file is kept unless force."""
+        marker_line_color (spot outline), image_bg_color (H&E glass; None = params). fname: key of self.files ({lib} =
+        the section) or an .html name in root_figure (None = not saved), written here; include_plotlyjs: True =
+        self-contained HTML (default params['plotly_include_js']); an existing file is kept unless force."""
         font_color = self.get_param("font_color", font_color)   # style: None -> params
         bg_color = self.get_param("bg_color", bg_color)
         import base64
@@ -1758,7 +1844,7 @@ class SingleCell(object):
             cols = palette[:len(cats)]
             a.uns[f"{key}_colors"] = cols
         s = library_id or self.library_id(a)
-        img, _ = self.hires_image(s, a)
+        img = self._map_image(s, a, image_bg_color)
         if img.dtype != np.uint8:
             img = (np.clip(img, 0, 1) * 255).astype(np.uint8)
         m, xy = self.spot_xy(s, a)
@@ -1791,7 +1877,7 @@ class SingleCell(object):
                                       x=1.01, y=0.5, yanchor="middle"))
         fig.update_xaxes(visible=False, range=[0, img.shape[1]])
         fig.update_yaxes(visible=False, range=[img.shape[0], 0], scaleanchor="x")
-        self._save_figure(fig, fname, force, verbose)
+        self._save_figure(fig, fname, force, verbose, include_plotlyjs=include_plotlyjs, lib=s)
         return fig
 
     def plot_genes_per_cell_type(self, slide, genes, ctypes, q: Optional[float] = None, font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None):
@@ -1804,17 +1890,18 @@ class SingleCell(object):
         qf = self.get_param("density_quantile", None if q is None else q)
         fig, axs = plt.subplots(nrows=len(genes), ncols=len(ctypes) + 1,
                                 figsize=(4.5 * (len(ctypes) + 1) + 2, 5 * len(genes) + 1), squeeze=False)
-        for j, g in enumerate(genes):
-            gmask = (slide.var[self.symbol_col] == g).values
-            caps = np.array([np.quantile(slide.layers[n][:, gmask].toarray(), qf) for n in slide.uns["mod"]["factor_names"]])
-            cap = np.partition(caps.flatten(), -2)[-2]
-            sc.pl.spatial(slide, cmap=cmap_byr, color=g, gene_symbols=self.symbol_col, size=self.params["spot_size"],
-                          img_key=self.params["img_key"], vmin=0, vmax=f"p{100 * qf:g}", ax=axs[j, 0], show=False)
-            for i, ct in enumerate(ctypes):
-                sc.pl.spatial(slide, cmap=cmap_byr, color=g, layer=ct, gene_symbols=self.symbol_col,
-                              size=self.params["spot_size"], img_key=self.params["img_key"], vmin=0, vmax=cap,
-                              ax=axs[j, i + 1], show=False)
-                axs[j, i + 1].set_title(f"{g} {ct}")
+        with self._image_bg(slide):                                          # H&E glass: params['image_bg_color']
+            for j, g in enumerate(genes):
+                gmask = (slide.var[self.symbol_col] == g).values
+                caps = np.array([np.quantile(slide.layers[n][:, gmask].toarray(), qf) for n in slide.uns["mod"]["factor_names"]])
+                cap = np.partition(caps.flatten(), -2)[-2]
+                sc.pl.spatial(slide, cmap=cmap_byr, color=g, gene_symbols=self.symbol_col, size=self.params["spot_size"],
+                              img_key=self.params["img_key"], vmin=0, vmax=f"p{100 * qf:g}", ax=axs[j, 0], show=False)
+                for i, ct in enumerate(ctypes):
+                    sc.pl.spatial(slide, cmap=cmap_byr, color=g, layer=ct, gene_symbols=self.symbol_col,
+                                  size=self.params["spot_size"], img_key=self.params["img_key"], vmin=0, vmax=cap,
+                                  ax=axs[j, i + 1], show=False)
+                    axs[j, i + 1].set_title(f"{g} {ct}")
         self.style_figure(fig, font_color, bg_color, fontsize_scale)
         return fig, axs
 
@@ -1827,7 +1914,7 @@ class SingleCell(object):
         fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         from cell2location.plt import plot_spatial
         from matplotlib.patches import Patch
-        with mpl.rc_context({"figure.figsize": figsize}):
+        with mpl.rc_context({"figure.figsize": figsize}), self._image_bg(slide):      # H&E glass: params
             fig = plot_spatial(adata=slide, color=[str(i) for i in clust_labels], labels=clust_labels,
                                show_img=True, style="fast", max_color_quantile=self.params["density_quantile"],
                                circle_diameter=6, colorbar_position=None)
@@ -1850,7 +1937,7 @@ class SingleCell(object):
         bg_color = self.get_param("bg_color", bg_color)
         fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         q = self.get_param("clip_quantile", q)
-        with mpl.rc_context({"axes.facecolor": "black", "figure.figsize": list(figsize)}):
+        with mpl.rc_context({"axes.facecolor": "black", "figure.figsize": list(figsize)}), self._image_bg(slide):
             sc.pl.spatial(slide, cmap=cmap or cmap_byr, color=list(features), ncols=ncols,
                           size=self.params["spot_size"], img_key=self.params["img_key"], vmin=0, vmax=f"p{q:g}",
                           show=False)
@@ -1914,9 +2001,13 @@ class SingleCell(object):
                      row_labels: Optional[Dict[str, str]] = None, cmap: str = "RdPu", size_max: float = 90,
                      title: str = "", figsize: Optional[Tuple[float, float]] = None,
                      size_label: str = "fraction of cells\nin group (%)", color_label: str = "relative expression\nin group",
+                     font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
                      force: bool = False, verbose: bool = False):
         """Dot plot: dot size = df_frac (0-1), dot colour = df_rel (0-1); columns may repeat a gene.
         gene_groups = [(label, genes), ...] draws brackets above the columns (paper Fig 3B)."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         rows, cols = list(df_frac.index), list(df_frac.columns)
         row_labels = row_labels or {}
         nr, nc = len(rows), len(cols)
@@ -1949,6 +2040,7 @@ class SingleCell(object):
                   title_fontsize=7, labelspacing=0.9)
         if title:
             ax.set_title(title, loc="left", pad=70 if gene_groups else 6)
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)
         self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 

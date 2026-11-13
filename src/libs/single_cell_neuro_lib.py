@@ -196,9 +196,10 @@ NEURO_PARAMS: Dict[str, Any] = dict(
     c2l_tag_slideseq="cpu2000",               # results/c2l_slideseq_<tag>
     c2l_tag_allen="cpu3000",                  # results/c2l_allen_ssp_<tag>
     c2l_train_if_missing=False,               # True -> train in the notebook when the cache is missing (GPU recommended)
-    # --- figure style (mp_mouse_brain03-04): light text on dark grey
-    font_color="#f0f0f0",
-    bg_color="#3a3a3a",
+    # --- figure style (mp_mouse_brain01-04, as mp_lymphoid01-04): white text on a black background
+    font_color="white",
+    bg_color="black",
+    fontsize_scale=1.4,                       # x the font sizes set inside the matplotlib plot methods (as lymphoid)
 )
 
 
@@ -402,10 +403,14 @@ class SingleCellNeuro(SingleCell):
 
     def plot_umap_broad_subtypes(self, adata_umap: ad.AnnData, fname: Optional[str] = "fig2B_umap.png",
                                  subtype_col: Optional[str] = None, point_size: float = 0.6, figsize=(13, 6),
-                                 label_subtypes: bool = False, force: bool = False, verbose: bool = False):
+                                 label_subtypes: bool = False, font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                                 force: bool = False, verbose: bool = False):
         """
         Fig 2B: UMAP coloured by broad class (labels on data) and by the 59 subtypes.
         """
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
 
         bc = self.params["broad_col"]
         ct = subtype_col or self.params["celltype_col"]
@@ -442,6 +447,7 @@ class SingleCellNeuro(SingleCell):
                             va="center", fontweight="bold" if col == bc else "normal",
                             path_effects=[pe.withStroke(linewidth=2, foreground="white")])
         axes[0].text(0.0, -0.03, f"{adata_umap.n_obs:,} nuclei", transform=axes[0].transAxes, fontsize=7, va="top")
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)
         self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 
@@ -559,12 +565,17 @@ class SingleCellNeuro(SingleCell):
 
     def plot_regions_he(self, adata=None, library_id: Optional[str] = None, label_col: str = "region_label",
                         fname: Optional[str] = "fig2C_regions.png", figsize=(13, 6.5), spot_size: float = 11,
-                        spot_alpha: float = 0.9, force: bool = False, verbose: bool = False):
+                        spot_alpha: float = 0.9, font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                        image_bg_color: Optional[str] = None,
+                        force: bool = False, verbose: bool = False):
         """Fig 2C: H&E of one section (left) and the same section with spots coloured by anatomical region label
         (right), region names at the label medians."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         a = self._check_adata(adata)
         lib = library_id or self.library_id(a)
-        img, _ = self.hires_image(lib, a)
+        img = self._map_image(lib, a, image_bg_color)   # glass: image_bg_color / params
         m, xy = self.spot_xy(lib, a)
         lab = a.obs[label_col].astype(str).values[m]
         pal = self._region_palette(np.unique(lab))
@@ -583,6 +594,7 @@ class SingleCellNeuro(SingleCell):
             ax.set_title(t, fontsize=9)
             for s_ in ax.spines.values():
                 s_.set_visible(False)
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)
         self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 
@@ -609,15 +621,20 @@ class SingleCellNeuro(SingleCell):
     def plot_density_panels(self, panels: Dict[str, Sequence[str]], adata=None, library_id: Optional[str] = None,
                             df_abund: Optional[pd.DataFrame] = None, fname: Optional[str] = "fig2DEF_density.png",
                             q: Optional[float] = None, spot_size: Optional[float] = None, panel_size: float = 5.0,
-                            show_image: bool = False, force: bool = False, verbose: bool = False):
+                            show_image: bool = False, font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                            image_bg_color: Optional[str] = None,
+                            force: bool = False, verbose: bool = False):
         """Fig 2D-F style: one black panel per entry of `panels` (title -> cell types); every cell type in its own
         colour (density_colors), opacity = density / q-quantile (cells per spot). Legends with 0-cap scales."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         a = self._check_adata(adata)
         q = self.get_param("density_quantile", q)
         spot_size = self.get_param("density_spot_size", spot_size)
         lib = library_id or self.library_id(a)
         m, xy = self.spot_xy(lib, a)
-        img, _ = self.hires_image(lib, a)
+        img = self._map_image(lib, a, image_bg_color)
         df_abund = (df_abund if df_abund is not None else self.calc_df_abundance(a)).loc[a.obs_names[m]]
         cols = list(self.params["density_colors"])
         n = len(panels)
@@ -634,6 +651,7 @@ class SingleCellNeuro(SingleCell):
             ax.set_title(title, color="white", fontsize=11)
             self._density_legend(fig, ax, types, colors, caps)
             df_caps += [dict(panel=title, cell_type=t, cap_cells_per_spot=round(float(caps[t]), 3)) for t in types]
+        self.style_figure(fig, font_color, bg_color, fontsize_scale, axes_bg=False)
         self._savefig(fig, fname, force=force, verbose=verbose)
         fig.df_caps = pd.DataFrame(df_caps)
         return fig
@@ -707,8 +725,12 @@ class SingleCellNeuro(SingleCell):
     def plot_slideseq(self, adata_ss, df_abund: Optional[pd.DataFrame] = None, panels: Optional[Dict[str, Sequence[str]]] = None,
                       fname: Optional[str] = "fig2H_slideseq.png", q: Optional[float] = None,
                       spot_size: Optional[float] = None, panel_size: float = 6.0,
+                      font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
                       force: bool = False, verbose: bool = False):
         """Fig 2H: two black panels of Slide-seq bead densities (hippocampal + habenular types | cortical layers)."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         q = self.get_param("density_quantile", q)
         spot_size = self.get_param("slideseq_spot_size", spot_size)
         panels = panels or {"hippocampus / habenula": self.params["fig2H_left"],
@@ -727,6 +749,7 @@ class SingleCellNeuro(SingleCell):
             self._crop(ax, xy, pad=50)
             ax.set_title(title, color="white", fontsize=11)
             self._density_legend(fig, ax, types, colors, caps)
+        self.style_figure(fig, font_color, bg_color, fontsize_scale, axes_bg=False)
         self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 
@@ -837,13 +860,18 @@ class SingleCellNeuro(SingleCell):
     def plot_layer_workflow(self, adata=None, library_id: Optional[str] = None, df_allen_counts: Optional[pd.DataFrame] = None,
                             layer_col: str = "cortical_layer", fname: Optional[str] = "fig2I_layers.png",
                             figsize=(12, 5), spot_size: float = 10, n_types_shown: int = 12,
+                            font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                            image_bg_color: Optional[str] = None,
                             force: bool = False, verbose: bool = False):
         """Fig 2I (data version of the schematic): left = Allen SSp cells per dissected layer coloured by the
         most frequent cell types; right = Visium cortical-layer spots on the H&E."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         a = self._check_adata(adata)
         P = self.params
         lib = library_id or self.library_id(a)
-        img, _ = self.hires_image(lib, a)
+        img = self._map_image(lib, a, image_bg_color)
         m, xy = self.spot_xy(lib, a)
         lay = a.obs[layer_col].astype(str).values[m]
         fig, axes = plt.subplots(1, 2, figsize=figsize, gridspec_kw=dict(width_ratios=[1, 1.3], wspace=0.25))
@@ -874,14 +902,19 @@ class SingleCellNeuro(SingleCell):
         self._crop(ax, xy[ok] if ok.any() else xy, pad=80)
         ax.set_xticks([]); ax.set_yticks([])
         ax.set_title(f"Visium cortical-layer spots - {lib}", fontsize=9)
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)
         self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 
     def plot_layer_heatmaps(self, df_allen_prop: pd.DataFrame, df_c2l_prop: pd.DataFrame, types: Sequence[str],
                             fname: Optional[str] = "fig2J_layer_heatmap.png", vmin: float = 1e-3, vmax: float = 1.0,
-                            figsize=(11, 5.2), force: bool = False, verbose: bool = False) -> Tuple[plt.Figure, dict]:
+                            figsize=(11, 5.2), font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                            force: bool = False, verbose: bool = False) -> Tuple[plt.Figure, dict]:
         """Fig 2J: proportion of each cell type within each layer (log10 colour), Allen (top) vs cell2location
         (bottom); Pearson R2 over type x layer cells (linear and log10 scale)."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         types = list(types)
         layers = list(self.params["layers"])
         A = df_allen_prop.reindex(index=types, columns=layers).astype(float)
@@ -905,6 +938,7 @@ class SingleCellNeuro(SingleCell):
         cb.set_label("cell proportion in each layer (log10)", fontsize=7)
         fig.text(0.92, 0.95, f"R² = {stats['R2_linear']:.3f} (linear)\nR² = {stats['R2_log10']:.3f} (log10)",
                  fontsize=8, ha="left", va="top")
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)
         self._savefig(fig, fname, force=force, verbose=verbose)
         return fig, stats
 
@@ -941,8 +975,12 @@ class SingleCellNeuro(SingleCell):
         return dict(self.params["astro_colors"])
 
     def plot_astro_umap(self, adata_astro: ad.AnnData, fname: Optional[str] = "fig3A_astro_umap.png",
-                        figsize=(11, 5), point_size: float = 3, force: bool = False, verbose: bool = False):
+                        figsize=(11, 5), point_size: float = 3, font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                        force: bool = False, verbose: bool = False):
         """Fig 3A: UMAP of the 10 astrocyte subtypes (left) and of the 13 clusters before merging (right, Fig S11/S12)."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         U = adata_astro.obsm["X_umap"]
         col_m, col_p = self.params["astro_col"], self.params["astro_col_premerge"]
         cols_m = {self.astro_short(k): v for k, v in self.astro_colors(adata_astro).items()}
@@ -957,19 +995,26 @@ class SingleCellNeuro(SingleCell):
         self.plot_umap_labeled(axes[1], U, lab_p, cols_p, title=f"{len(cols_p)} clusters before merging",
                                point_size=point_size, fontsize=6.5, seed=self.params["seed"])
         axes[0].text(0.0, -0.08, f"{adata_astro.n_obs:,} astrocyte nuclei", transform=axes[0].transAxes, fontsize=7)
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)
         self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 
     def plot_astro_markers(self, adata_astro: ad.AnnData, fname: Optional[str] = "fig3B_astro_markers.png",
-                           markers: Optional[Sequence] = None, force: bool = False, verbose: bool = False):
+                           markers: Optional[Sequence] = None, cmap="RdPu", figsize: Optional[Tuple[float, float]] = None,
+                           font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                           force: bool = False, verbose: bool = False):
         """Fig 3B: marker dot plot (size = fraction of nuclei with count > 0, colour = mean log1p CP10k scaled to the
         maximum subtype per gene). Returns (fig, df_frac, df_rel)."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         markers = markers or self.params["fig3B_markers"]
         genes = [g for _, gl in markers for g in gl]
         order = list(self.params["astro_order"])
         df_frac, df_mean, df_rel = self.calc_df_dotplot(genes, self.params["astro_col"], adata=adata_astro, order=order)
         fig = self.plot_dotplot(df_frac, df_rel, gene_groups=markers, fname=fname,
-                                row_labels={t: self.astro_short(t) for t in order}, force=force, verbose=verbose)
+                                row_labels={t: self.astro_short(t) for t in order}, cmap=cmap, figsize=figsize,
+                                force=force, verbose=verbose, font_color=font_color, bg_color=bg_color, fontsize_scale=fontsize_scale)
         return fig, df_frac, df_rel
 
     def _density_he(self, ax, img, xy, v, cap, cmap, s: float = 9, min_alpha: float = 0.04):
@@ -985,9 +1030,13 @@ class SingleCellNeuro(SingleCell):
                                    colors: Optional[Dict[str, str]] = None, df_abund: Optional[pd.DataFrame] = None,
                                    label_col: str = "region_label", fname: Optional[str] = "fig3C_astro_regions.png",
                                    q: Optional[float] = None, panel_size: float = 5.5,
+                                   font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
                                    force: bool = False, verbose: bool = False):
         """Fig 3C: selected astrocyte subtype densities (left, black panel, one colour per subtype) and the brain
         regions from location clustering (right)."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         lib = library_id or self.library_id(adata_map)
         types = list(types or self.params["fig3C_types"])
         q = self.get_param("density_quantile", q)
@@ -1016,26 +1065,41 @@ class SingleCellNeuro(SingleCell):
             pts = xy[lab == l]; c = np.median(pts, 0); p = pts[np.argmin(((pts - c) ** 2).sum(1))]
             ax2.text(p[0], p[1], l, fontsize=6, ha="center", va="center", color="white", fontweight="bold",
                      path_effects=[pe.withStroke(linewidth=1.8, foreground="black")])
+        self.style_figure(fig, font_color, bg_color, fontsize_scale, axes_bg=False)
         self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 
     def calc_df_astro_region_density(self, adata_map, types: Optional[Sequence[str]] = None, label_col: str = "region_label",
-                                     df_abund: Optional[pd.DataFrame] = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
+                                     df_abund: Optional[pd.DataFrame] = None, fname: Optional[str] = None,
+                                     force: bool = False, verbose: bool = False) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Mean density (cells per spot) of each astrocyte subtype in each region (fig3D_areas order, both sections);
-        df_rel = df_mean / max over regions per subtype (Fig 3D scaling). Returns (df_mean, df_rel), rows = subtypes."""
+        df_rel = df_mean / max over regions per subtype (Fig 3D scaling). Returns (df_mean, df_rel), rows = subtypes.
+        fname (tsv, root_result) = df_mean: present and not force -> read with pdreadcsv (df_rel from it); otherwise
+        computed and written with pdwritecsv. verbose: pdreadcsv / pdwritecsv messages."""
         types = list(types or self.params["astro_order"])
         regions = [r for _, rl in self.params["fig3D_areas"] for r in rl]
-        df_abund = df_abund if df_abund is not None else self.calc_df_abundance(adata_map)
-        lab = adata_map.obs.loc[df_abund.index, label_col].astype(str).values
-        df_mean = df_abund[types].groupby(lab).mean().T.reindex(columns=regions)
+
+        def _compute():
+            ab = df_abund if df_abund is not None else self.calc_df_abundance(adata_map)
+            lab = adata_map.obs.loc[ab.index, label_col].astype(str).values
+            return {"mean": ab[types].groupby(lab).mean().T.reindex(columns=regions)}
+
+        df_mean = self._cached_frames({"mean": fname}, _compute, force, verbose,
+                                      index_cols={"mean": "astro_subtype"})["mean"]
+        df_mean = df_mean.reindex(index=types, columns=regions)
+        df_mean.index.name = None
         df_rel = df_mean.div(df_mean.max(1), axis=0)
         return df_mean, df_rel
 
     def plot_astro_region_dotplot(self, df_rel: pd.DataFrame, fname: Optional[str] = "fig3D_astro_region_dotplot.png",
                                   size_max: float = 110, cmap: str = "RdPu", figsize=(10, 4.6),
+                                  font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
                                   force: bool = False, verbose: bool = False):
         """Fig 3D: dot size and colour = relative density of each astrocyte subtype (rows) across regions (columns),
         scaled 0-1 per subtype; colour bars = broad areas (top) and regions (bottom)."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         areas = self.params["fig3D_areas"]
         rows, cols = list(df_rel.index), list(df_rel.columns)
         nr, nc = len(rows), len(cols)
@@ -1065,15 +1129,21 @@ class SingleCellNeuro(SingleCell):
                 s_.set_visible(False)
         cax = fig.add_axes([0.88, 0.3, 0.012, 0.52])
         fig.colorbar(sca, cax=cax).set_label("relative cell density in region", fontsize=7)
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)
         self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 
     def plot_diencephalic_astro(self, adata_map, types: Optional[Sequence[str]] = None, df_abund: Optional[pd.DataFrame] = None,
                                 label_col: str = "region_label", fname: Optional[str] = "fig3E_diencephalic_astro.png",
                                 q: Optional[float] = None, panel_size: float = 3.6,
+                                font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                                image_bg_color: Optional[str] = None,
                                 force: bool = False, verbose: bool = False):
         """Fig 3E: densities of the diencephalic astrocyte subtypes (columns) over the H&E of each section (rows);
         yellow outlines = thalamus (THAL + HAB) and hypothalamus (fig3E_outlines). Colour scale per subtype."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         types = list(types or self.params["fig3E_types"])
         q = self.get_param("density_quantile", q)
         df_abund = df_abund if df_abund is not None else self.calc_df_abundance(adata_map)
@@ -1083,7 +1153,7 @@ class SingleCellNeuro(SingleCell):
         fig, axes = plt.subplots(len(libs), len(types), figsize=(panel_size * len(types) + 0.8, panel_size * len(libs)),
                                  squeeze=False, gridspec_kw=dict(wspace=0.05, hspace=0.12))
         for i, lib in enumerate(libs):
-            img, _ = self.hires_image(lib, adata_map)
+            img = self._map_image(lib, adata_map, image_bg_color)
             m, xy = self.spot_xy(lib, adata_map)
             lab = adata_map.obs[label_col].astype(str).values[m]
             for j, t in enumerate(types):
@@ -1095,7 +1165,8 @@ class SingleCellNeuro(SingleCell):
                 for s_ in ax.spines.values():
                     s_.set_visible(False)
                 if i == 0:
-                    ax.set_title(self.astro_short(t), fontsize=11, color="#54278F", fontweight="bold")
+                    ax.set_title(self.astro_short(t), fontsize=11, fontweight="bold",
+                                 color="#54278F" if self._luminance(bg_color) > 0.5 else "#C9B3F5")   # purple readable on bg
                 if j == 0:
                     ax.set_ylabel(lib, fontsize=8)
         for j, t in enumerate(types):
@@ -1104,6 +1175,7 @@ class SingleCellNeuro(SingleCell):
             cb = fig.colorbar(mpl.cm.ScalarMappable(norm=mpl.colors.Normalize(0, caps[t]), cmap=cmap), cax=cax,
                               orientation="horizontal")
             cb.set_label("cells per spot", fontsize=6); cb.ax.tick_params(labelsize=6)
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)
         self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 
@@ -1120,11 +1192,15 @@ class SingleCellNeuro(SingleCell):
     def plot_diencephalic_markers(self, adata_map, markers: Optional[Dict[str, str]] = None, label_col: str = "region_label",
                                   fname: Optional[str] = "fig3F_diencephalic_markers.png", q: float = 99.0,
                                   panel_size: float = 3.6, spot_size: float = 14, smooth: Optional[bool] = None,
+                                  font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
                                   force: bool = False, verbose: bool = False):
         """Fig 3F substitute (the paper's smFISH images are not public): Visium expression (log1p CP10k) of the
         diencephalic subtype markers, diencephalon spots only (black panels). Spot expression includes every cell
         type in the spot, so it is not astrocyte-specific. smooth=True (params['fig3F_smooth']) shows the mean over
         each spot and its 6 neighbours, because single spots detect these genes rarely."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         smooth = self.get_param("fig3F_smooth", smooth)
         markers = markers or self.params["fig3F_markers"]
         genes = list(markers.values())
@@ -1161,27 +1237,35 @@ class SingleCellNeuro(SingleCell):
                 if j == 0:
                     ax.text(-0.02, 0.5, lib, transform=ax.transAxes, rotation=90, color="white", ha="right",
                             va="center", fontsize=8)
+        self.style_figure(fig, font_color, bg_color, fontsize_scale, axes_bg=False)
         self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 
     def calc_df_marker_density_rho(self, adata_map, markers: Optional[Dict[str, str]] = None,
                                    types: Optional[Sequence[str]] = None, label_col: str = "region_label",
-                                   df_abund: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+                                   df_abund: Optional[pd.DataFrame] = None, fname: Optional[str] = None,
+                                   force: bool = False, verbose: bool = False) -> pd.DataFrame:
         """Spearman rho, over diencephalon spots of both sections, between each marker's Visium expression and each
         diencephalic astrocyte subtype's density (rows = markers, columns = subtypes). A marker that tracks its own
-        subtype should have its highest rho on the diagonal."""
+        subtype should have its highest rho on the diagonal. df_rho.attrs['n_spots'] = diencephalon spots.
+        fname (tsv, root_result): present and not force -> read with pdreadcsv; otherwise computed and written with
+        pdwritecsv. verbose: pdreadcsv / pdwritecsv messages."""
         from scipy.stats import spearmanr
         markers = markers or self.params["fig3F_markers"]
         types = list(types or self.params["fig3E_types"])
-        df_abund = df_abund if df_abund is not None else self.calc_df_abundance(adata_map)
         d = adata_map.obs[label_col].astype(str).isin(self.params["diencephalon_regions"]).values
-        df_expr = self.spot_log1p_cp10k(adata_map, list(markers.values()))
-        rows = []
-        for t_m, g in markers.items():
-            rows.append({t: spearmanr(df_expr[g].values[d], df_abund[t].values[d])[0] for t in types})
-        df_rho = pd.DataFrame(rows, index=[f"{g} ({self.astro_short(t)})" for t, g in markers.items()])
-        df_rho.columns = [self.astro_short(t) for t in types]
+
+        def _compute():
+            ab = df_abund if df_abund is not None else self.calc_df_abundance(adata_map)
+            df_expr = self.spot_log1p_cp10k(adata_map, list(markers.values()))
+            rows = [{t: spearmanr(df_expr[g].values[d], ab[t].values[d])[0] for t in types} for g in markers.values()]
+            df = pd.DataFrame(rows, index=[f"{g} ({self.astro_short(t)})" for t, g in markers.items()])
+            df.columns = [self.astro_short(t) for t in types]
+            return {"rho": df.round(3)}
+
+        df_rho = self._cached_frames({"rho": fname}, _compute, force, verbose, index_cols={"rho": "marker"})["rho"]
+        df_rho.index.name = None
         df_rho.attrs["n_spots"] = int(d.sum())
-        return df_rho.round(3)
+        return df_rho
 
     # Subregions (mp_mouse_brain03): the methods are generic and live in SingleCell (single_cell_lib.py, section 8c).

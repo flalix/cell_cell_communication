@@ -154,6 +154,7 @@ LYMPHOID_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
         region_info=("data", "lymph_node_regions.tsv"),                           # curated region table (editable)
         subregion_descriptions=("data", "lymph_node_subregion_descriptions.tsv"), # curated subregion descriptions
         signatures=("result", "lymph_nodes_analysis/reference_signatures/sc.h5ad"),  # mapping signatures (means)
+        hires_bg=("data", "hires_bg/{lib}_bg_{color}.png"),                        # H&E with the glass recoloured (hires_image_bg)
         visium_raw=("root0", "notebooks_ccc_lymphoid_liana/data"),                # Space Ranger output (visium_sge)
         cell_type_annotation=("data", "cell_type_annotation.tsv"),                 # reference cell types (id, name, markers)
         c2l_ref_dir=("result", "lymph_nodes_analysis/reference_signatures"),       # sc.h5ad + model.pt (RegressionModel)
@@ -180,6 +181,7 @@ LYMPHOID_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
         fig_genes_celltype=("figure", "lymph01_genes_per_cell_type.png"),
         # tables (region_labels: inputs, written here)
         tsv_mln_panel=("result", "lymph01_mln_panel_by_celltype_age.tsv"),
+        tsv_mln_age=("result", "lymph01_mln_cells_donors_by_age.tsv"),                 # cache of calc_df_panel_celltype_age
         tsv_factor_load=("result", "lymph01_nmf_factor_loadings_n{n}.tsv"),
     ),
     "lymph02": dict(
@@ -206,6 +208,10 @@ LYMPHOID_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
         tsv_mln_panel=("result", "lymph02_mln_panel_by_celltype_age.tsv"),
         csv_aicda_subset=("result", "lymph02_aicda_by_subset_tissue.csv"),
         csv_aicda_gc=("result", "lymph02_aicda_gc_by_donor.csv"),
+        csv_aicda_summary=("result", "lymph02_aicda_by_subset.csv"),                  # cache of calc_gene_by_subset_tissue
+        csv_aicda_gc_share=("result", "lymph02_aicda_gc_share_by_tissue.csv"),
+        csv_aicda_stats=("result", "lymph02_aicda_stats.csv"),
+        tsv_mln_age=("result", "lymph02_mln_cells_donors_by_age.tsv"),                 # cache of calc_df_panel_celltype_age
         tsv_isg=("result", "lymph02_ifn_hotspot_celltype_enrichment.tsv"),
         tsv_rho=("result", "lymph02_gene_celltype_spatial_correlation.tsv"),
         tsv_factor_load=("result", "lymph02_nmf_factor_loadings_n{n}.tsv"),
@@ -537,7 +543,7 @@ class SingleCellLymphoid(SingleCell):
         bg_color = self.get_param("bg_color", bg_color)
         fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         
-        img, _ = self.hires_image(adata=adata_vis)
+        img = self._map_image(self.library_id(adata_vis), adata_vis)   # H&E glass: params['image_bg_color']
         _, xy = self.spot_xy(adata=adata_vis)
         q = self.params["clip_quantile"]
         nrows = math.ceil(len(focus) / ncols)
@@ -737,7 +743,7 @@ class SingleCellLymphoid(SingleCell):
         isg_score, hs = self.isg_hotspot(adata_vis, isg_genes)
         n_isg = int(self.symbols(adata_vis).isin(isg_genes).sum())
         df_abund = self.calc_df_abundance(adata_vis)
-        img, _ = self.hires_image(adata=adata_vis)
+        img = self._map_image(self.library_id(adata_vis), adata_vis)   # H&E glass: params['image_bg_color']
         _, xy = self.spot_xy(adata=adata_vis)
         pc = P["isg_pseudocount"]
         rows = []
@@ -831,16 +837,35 @@ class SingleCellLymphoid(SingleCell):
         return df_mean, df_frac, df_cells
 
     def calc_df_panel_celltype_age(self, genes: Sequence[str], tissue: Optional[str] = None, adata=None,
-                                   min_cells: Optional[int] = None, fname: Optional[str] = None
-                                   , force: bool = False, verbose: bool = False) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+                                   min_cells: Optional[int] = None, fname: Optional[str] = None,
+                                   fname_age: Optional[str] = None, force: bool = False,
+                                   verbose: bool = False) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """One tissue: per cell type x age group x gene: n_cells, n_donors, pct_expr, mean_log1p_cp10k
         (panel_lognorm, library size obs['n_counts']).
         Returns (df_long: all pairs, df_plot: cell types with >= min_cells in >= 2 age groups and pairs with
-        >= min_cells, df_age: cells and donors per age group). fname -> df_long saved in root_result (a record: always
-        computed, the file is kept when it exists unless force; verbose: print the file status)."""
-        a = self._check_adata(adata)
+        >= min_cells, df_age: cells and donors per age group).
+        Cache (tsv, root_result): fname = df_long (rounded to 4 decimals), fname_age = df_age; both present and not
+        force -> read with pdreadcsv and df_plot rebuilt (no expression step); otherwise computed and written with
+        pdwritecsv. verbose: pdreadcsv / pdwritecsv messages."""
         tissue = self.get_param("age_tissue", tissue)
         min_cells = self.get_param("panel_min_cells", min_cells)
+        fr = self._cached_frames({"long": fname, "age": fname_age},
+                                 lambda: self._calc_panel_celltype_age(genes, tissue, adata), force, verbose,
+                                 index_cols={"age": "age_group"})
+        df_long, df_age = fr["long"], fr["age"]
+        age_order = [g for g in self.params["age_order"] if g in set(df_age.index.astype(str))]
+        df_age = df_age.reindex(age_order)
+        df_age.attrs["tissue"] = tissue
+        df_long["age_group"] = pd.Categorical(df_long.age_group.astype(str), categories=age_order, ordered=True)
+        ok = (df_long.drop_duplicates(["cell_type", "age_group"]).query("n_cells >= @min_cells")
+              .groupby("cell_type").size())
+        keep_ct = ok[ok >= 2].index
+        df_plot = df_long[df_long.cell_type.isin(keep_ct) & (df_long.n_cells >= min_cells)].copy()
+        return df_long, df_plot, df_age
+
+    def _calc_panel_celltype_age(self, genes: Sequence[str], tissue: str, adata=None) -> Dict[str, pd.DataFrame]:
+        """Computation of calc_df_panel_celltype_age: {'long': df_long (4 decimals), 'age': df_age}."""
+        a = self._check_adata(adata)
         ct_col, dcol = self.params["celltype_col"], self.params["donor_col"]
         sub = a[(a.obs[self.params["tissue_col"]] == tissue).values]
         sub = sub.to_memory() if sub.isbacked else sub
@@ -857,15 +882,10 @@ class SingleCellLymphoid(SingleCell):
                                  pct_expr=100 * (X[idx, j] > 0).mean(), mean_log1p_cp10k=E[idx, j].mean()))
         df_long = pd.DataFrame(rows)
         df_long["age_group"] = pd.Categorical(df_long.age_group, categories=age_order, ordered=True)
-        ok = (df_long.drop_duplicates(["cell_type", "age_group"]).query("n_cells >= @min_cells")
-              .groupby("cell_type").size())
-        keep_ct = ok[ok >= 2].index
-        df_plot = df_long[df_long.cell_type.isin(keep_ct) & (df_long.n_cells >= min_cells)].copy()
         df_age = pd.DataFrame({"n_cells": obs.age_group.value_counts().reindex(age_order),
                                "n_donors": obs.groupby("age_group")[dcol].nunique().reindex(age_order)})
-        df_age.attrs["tissue"] = tissue
-        self._write_table(df_long.round(4), fname, force, verbose)     # kept when it exists, unless force
-        return df_long, df_plot, df_age
+        df_age.index.name = "age_group"
+        return {"long": df_long.round(4), "age": df_age}
 
     def plot_dotplot_celltype_age(self, df_plot: pd.DataFrame, lineage: Optional[Dict[str, Sequence[str]]] = None,
                                   df_age: Optional[pd.DataFrame] = None, cmaps: Optional[Dict[str, str]] = None,
@@ -1110,15 +1130,36 @@ class SingleCellLymphoid(SingleCell):
 
     def calc_gene_by_subset_tissue(self, gene: str, adata=None, groups: Optional[Sequence[str]] = None,
                                    gc_types: Optional[Sequence[str]] = None, min_gc: int = 20,
-                                   fname_subset: Optional[str] = None, fname_gc: Optional[str] = None
-                                   , force: bool = False, verbose: bool = False) -> Dict[str, Any]:
+                                   fname_subset: Optional[str] = None, fname_gc: Optional[str] = None,
+                                   fname_summary: Optional[str] = None, fname_gc_share: Optional[str] = None,
+                                   fname_stats: Optional[str] = None, force: bool = False,
+                                   verbose: bool = False) -> Dict[str, Any]:
         """Detection of one gene (raw counts > 0) in the B subsets by tissue, and within GC B cells per donor,
         study and chemistry (AICDA study). Returns dict:
         df_gc_share (GC B cells per tissue), df_subset (% positive and % single-UMI per subset),
         chem_tonsil_gc (% positive in tonsil GC B by Method), df_subset_tissue, df_gc_donor (>= min_gc GC cells),
-        n_pos, pct_pos_tonsil. fname_subset / fname_gc (csv, root_result): kept when they exist unless force; verbose."""
-        a = self._check_adata(adata)
+        n_pos, pct_pos_tonsil.
+        Cache (root_result; .csv comma, else tab): fname_subset = df_subset_tissue, fname_gc = GC B cells per donor x
+        study x method (all donors), fname_summary = df_subset, fname_gc_share = df_gc_share, fname_stats = n_pos,
+        pct_pos_tonsil, chem_tonsil_gc (key, value). All five present and not force -> read with pdreadcsv; otherwise
+        computed and written with pdwritecsv. verbose: pdreadcsv / pdwritecsv messages."""
         groups = list(groups or self.params["bcell_types"])
+        fr = self._cached_frames(dict(subset_tissue=fname_subset, gc=fname_gc, subset=fname_summary,
+                                      gc_share=fname_gc_share, stats=fname_stats),
+                                 lambda: self._calc_gene_by_subset_tissue(gene, adata, groups, gc_types), force, verbose,
+                                 index_cols=dict(subset="Subset", gc_share="Tissue"))
+        st = dict(zip(fr["stats"]["key"].astype(str), fr["stats"]["value"]))
+        df_gc = fr["gc"]
+        return dict(n_pos=int(st["n_pos"]), pct_pos_tonsil=float(st["pct_pos_tonsil"]),
+                    df_gc_share=fr["gc_share"], df_subset=fr["subset"].reindex(groups),
+                    chem_tonsil_gc={k.split(":", 1)[1]: float(v) for k, v in st.items() if k.startswith("chem_tonsil_gc:")},
+                    df_subset_tissue=fr["subset_tissue"],
+                    df_gc_donor=df_gc[df_gc.n_gc >= min_gc].sort_values(["Tissue", "Donor"]))
+
+    def _calc_gene_by_subset_tissue(self, gene: str, adata, groups: Sequence[str],
+                                    gc_types: Optional[Sequence[str]] = None) -> Dict[str, pd.DataFrame]:
+        """Computation of calc_gene_by_subset_tissue: {subset_tissue, gc, subset, gc_share, stats} tables."""
+        a = self._check_adata(adata)
         gc_types = list(gc_types or self.params["gc_types"])
         x = self.values(gene, a)                                         # raw UMI counts
         obs = a.obs
@@ -1142,11 +1183,10 @@ class SingleCellLymphoid(SingleCell):
         df_gc = d[d.GC].groupby(["Tissue", "Donor", "Study", "Method"]).agg(n_gc=("pos", "size"),
                                                                             pct_pos=("pos", "mean")).reset_index()
         df_gc["pct_pos"] = (100 * df_gc.pct_pos).round(1)
-        self._write_table(df_st, fname_subset, force, verbose, sep=",")     # kept when they exist, unless force
-        self._write_table(df_gc, fname_gc, force, verbose, sep=",")
-        out["df_subset_tissue"] = df_st
-        out["df_gc_donor"] = df_gc[df_gc.n_gc >= min_gc].sort_values(["Tissue", "Donor"])
-        return out
+        stats = [("n_pos", out["n_pos"]), ("pct_pos_tonsil", out["pct_pos_tonsil"])] + \
+                [(f"chem_tonsil_gc:{k}", v) for k, v in out["chem_tonsil_gc"].items()]
+        return dict(subset_tissue=df_st, gc=df_gc, subset=out["df_subset"], gc_share=out["df_gc_share"],
+                    stats=pd.DataFrame(stats, columns=["key", "value"]))
 
     # =====================================================================================================
     # NMF co-location factors: cell types grouped by lineage x factors
