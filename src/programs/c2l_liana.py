@@ -78,7 +78,8 @@ def _plain(df):        # niche_lr keeps numpy arrays in DataFrame.attrs -> break
 # Loading                                                                      #
 # --------------------------------------------------------------------------- #
 def load_c2l_spots(path, summary: str = "q05", region_labels=None, target_sum: float = 1e4):
-    """Read sp.h5ad without the per-cell-type layers (they are ~5 GB; use read_c2l_layers).
+    """
+    Read sp.h5ad without the per-cell-type layers (they are ~5 GB; use read_c2l_layers).
 
     Returns AnnData with
         var_names = gene symbols (made unique), var['gene_ids'] = Ensembl
@@ -89,6 +90,7 @@ def load_c2l_spots(path, summary: str = "q05", region_labels=None, target_sum: f
         uns['c2l_factor_names'], uns['spatial']
     """
     from anndata.io import read_elem
+
     with h5py.File(path, "r") as f:
         obs = read_elem(f["obs"])
         var = read_elem(f["var"])
@@ -97,20 +99,25 @@ def load_c2l_spots(path, summary: str = "q05", region_labels=None, target_sum: f
         spatial = read_elem(f["obsm/spatial"])
         uns_spatial = read_elem(f["uns/spatial"])
         factor_names = [str(x) for x in read_elem(f["uns/mod/factor_names"])]
+
     abund = pd.DataFrame(np.asarray(abund), index=obs.index) if not isinstance(abund, pd.DataFrame) else abund
     abund.columns = factor_names
+
     keep_obs = [c for c in ["in_tissue", "array_row", "array_col", "sample", "region_cluster"] if c in obs]
     sym = ad.utils.make_index_unique(pd.Index(var["symbol"].astype(str).values))     # MATR3 is duplicated
+
     adata_vis = ad.AnnData(X=sparse.csr_matrix(X, dtype=np.float32), obs=obs[keep_obs].copy(),
-                     var=pd.DataFrame({"gene_ids": var.index.values, "symbol": var["symbol"].astype(str).values},
-                                      index=sym),
+                     var=pd.DataFrame({"gene_ids": var.index.values, "symbol": var["symbol"].astype(str).values}, index=sym),
                      obsm={"spatial": np.asarray(spatial)}, uns={"spatial": uns_spatial})
+
     adata_vis.layers["counts"] = adata_vis.X.copy()
     tot = np.asarray(adata_vis.X.sum(1)).ravel()
     adata_vis.obs["total_counts"] = tot
     adata_vis.X = sparse.csr_matrix(sparse.diags(target_sum / np.maximum(tot, 1)) @ adata_vis.X)
     adata_vis.X.data = np.log1p(adata_vis.X.data)
+
     abund.index = adata_vis.obs_names
+
     adata_vis.obsm["c2l_abund"] = abund
     adata_vis.obsm["c2l_frac"] = abund.div(abund.sum(1), axis=0)
     adata_vis.obs["c2l_total_cells"] = abund.sum(1).values
@@ -123,6 +130,7 @@ def load_c2l_spots(path, summary: str = "q05", region_labels=None, target_sum: f
         adata_vis.obs["region_cluster"] = lab["region_cluster"].astype(str).astype("category").values
         if "region_name" in lab:
             adata_vis.obs["region_name_tutorial"] = lab["region_name"].astype(str).values
+
     return adata_vis
 
 
@@ -243,14 +251,17 @@ def _bh(p):
 
 def celltype_resolved_lr(E, genes, celltypes, lr: pd.DataFrame, W, n_perms: int = 200,
                          seed: int = 0, sep: str = "_") -> pd.DataFrame:
-    """For every LR pair (ligand, receptor columns; complexes joined by '_'):
+    """
+    For every LR pair (ligand, receptor columns; complexes joined by '_'):
         score[A, B] = mean_s ( (W_norm L_A)(s) * R_B(s) )
     L_A = ligand attributed to sender type A (niche-smoothed with row-normalised W),
     R_B = receptor attributed to receiver type B at the spot.
     Null: receptor spots permuted (n_perms) -> z, empirical p (p_emp), p (Gaussian tail of z
     when < 5 permutations reach the observed score) and BH-FDR of p over all tests.
     The score is high when A carries the ligand where B carries the receptor nearby; it
-    inherits the reference signatures (who can express L/R) and the c2l abundances (where)."""
+    inherits the reference signatures (who can express L/R) and the c2l abundances (where).
+    """
+    
     gpos = {g: i for i, g in enumerate(genes)}
     Wn = row_normalise(W)
     n, k = E.shape[0], E.shape[1]
@@ -441,7 +452,7 @@ def calc_liana_spacing(adata_pos: sc.AnnData, bandwidth:int = 150) -> pd.DataFra
     spacing = nl.spot_spacing(adata_pos.obsm['spatial'])
     um_per_px = 100 / spacing
     
-    li.ut.spatial_neighbors(adata_pos, bandwidth=bandwidth, cutoff=0.1, kernel='gaussian', set_diag=True)
+    li.pp.spatial_neighbors(adata_pos, bandwidth=bandwidth, cutoff=0.1, kernel='gaussian', set_diag=True)
     W = adata_pos.obsp['spatial_connectivities'].tocsr()
     W.eliminate_zeros()
 
@@ -914,7 +925,7 @@ def calc_misty(adata_pos, df_frac, celltypes,
 
 def plot_misty(misty: li.mt.MistyData, root_fig_liana: Path, dpi:int=300, figure_size:tuple=(10, 8)):
     
-    fig1 = li.pl.contributions(misty, figure_size=figure_size, return_fig=True)
+    fig1 = li.pl.misty_contributions(misty, figure_size=figure_size, return_fig=True)
 
     filefig = root_fig_liana / 'misty_c2l_contributions.png'
     fig1.save(filefig, dpi=dpi, verbose=False)      # plotnine figure

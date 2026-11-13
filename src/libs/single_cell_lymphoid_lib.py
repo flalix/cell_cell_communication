@@ -142,6 +142,7 @@ LYMPHOID_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
         reference=("data", "lymphoid_organ_sc.h5ad"),                             # scRNA reference
         region_info=("data", "lymph_node_regions.tsv"),                           # curated region table (editable)
         subregion_descriptions=("data", "lymph_node_subregion_descriptions.tsv"), # curated subregion descriptions
+        signatures=("result", "lymph_nodes_analysis/reference_signatures/sc.h5ad"),  # mapping signatures (means)
     ),
     "lymph03": dict(
         # tables (cached)
@@ -162,6 +163,34 @@ LYMPHOID_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
         fig_ref_heatmap=("figure", "lymph03_subregion_ref_celltype_heatmap.html"),
         fig_ref_umap=("figure", "lymph03_ref_umap_subregion_scores.png"),
     ),
+    "lymph04": dict(
+        # subregions of lymph03 (read: same parameters; run_subregions reuses its cached subsets)
+        subregion_grid=("result", "lymph03_subcluster_resolution_grid.tsv"),
+        subregion_adata=("result", "lymph03_subregions/{region}.h5ad"),
+        subregion_table_lymph03=("result", "lymph03_subregion_table.tsv"),
+        # tables / caches
+        spatial_weights=("result", "lymph04_spatial_weights.tsv"),
+        liana_bivariate=("result", "lymph04_liana_bivariate.h5ad"),
+        liana_global=("result", "lymph04_liana_bivariate_global.tsv"),
+        lr_by_region=("result", "lymph04_lr_by_region.tsv"),
+        lr_by_subregion=("result", "lymph04_lr_by_subregion.tsv"),
+        celltype_lr_tissue=("result", "lymph04_celltype_lr_tissue.tsv.gz"),
+        celltype_lr_by_group=("result", "lymph04_celltype_lr_by_group.tsv.gz"),
+        celltype_links_by_group=("result", "lymph04_celltype_links_by_group.tsv"),
+        liana_reference=("result", "lymph04_liana_reference_rank_aggregate.tsv"),
+        liana_reference_supported=("result", "lymph04_liana_reference_supported.tsv"),
+        ccc_by_region=("result", "lymph04_ccc_consensus_by_region.tsv"),
+        ccc_by_subregion=("result", "lymph04_ccc_consensus_by_subregion.tsv"),
+        # figures
+        fig_lr_top=("figure", "lymph04_lr_top_local_scores_{lib}.png"),
+        fig_lr_regions=("figure", "lymph04_lr_region_top_local_scores_{lib}.png"),
+        fig_lr_region_hm=("figure", "lymph04_lr_by_region_heatmap.html"),
+        fig_lr_sub_hm=("figure", "lymph04_lr_by_subregion_heatmap.html"),
+        fig_sender_recv=("figure", "lymph04_celltype_lr_sender_receiver.png"),
+        fig_links_region=("figure", "lymph04_celltype_links_by_region.html"),
+        fig_links_sub=("figure", "lymph04_celltype_links_by_subregion.html"),
+        fig_coloc=("figure", "lymph04_celltype_colocalisation.html"),
+    ),
 }
 
 
@@ -173,7 +202,7 @@ class SingleCellLymphoid(SingleCell):
 
     def __init__(self, ROOT0, project: str = "lymphoid_tissue", symbol_col: str = "symbol",
                  sample_col: str = "sample", mt_prefix: str = "MT-", **kw):
-        """analysis= key of LYMPHOID_FILES ('lymph03') whose output files are registered (caching on); files= adds or
+        """analysis= key of LYMPHOID_FILES ('lymph03', 'lymph04') whose output files are registered (caching on); files= adds or
         overrides single entries."""
         super().__init__(ROOT0, project, symbol_col=symbol_col, sample_col=sample_col, mt_prefix=mt_prefix, **kw)
 
@@ -1184,8 +1213,9 @@ class SingleCellLymphoid(SingleCell):
         """Reference signatures used by the cell2location map (genes x 34 cell types) from the trained reference
         (results/lymph_nodes_analysis/reference_signatures/sc.h5ad, varm '<summary>_per_cluster_mu_fg'), indexed
         by gene symbol (var[symbol_col]; duplicated symbols: first kept). With 'means' and q05 abundances,
-        calc_celltype_expr reproduces the per-cell-type layers of sp.h5ad."""
-        path = Path(root or self.root_result) / fname
+        calc_celltype_expr reproduces the per-cell-type layers of sp.h5ad. fname: file in (root or root_result), or a
+        key of self.files (e.g. 'signatures')."""
+        path = self._resolve_path(fname, root, self.root_result)
         a = ad.read_h5ad(path, backed="r")
         df_sig, _ = self.get_reference_signatures(a, prefer=(summary,))
         df_sig.index = a.var.loc[df_sig.index, self.symbol_col].astype(str).values

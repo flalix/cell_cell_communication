@@ -2774,7 +2774,7 @@ class SingleCell(object):
             step = float(np.median(cKDTree(xy).query(xy, k=2)[0][:, 1]))
             tmp = ad.AnnData(obs=pd.DataFrame(index=a.obs_names[idx]))
             tmp.obsm["spatial"] = xy
-            li.ut.spatial_neighbors(tmp, bandwidth=bw * step, cutoff=cutoff, kernel="gaussian", set_diag=True,
+            li.pp.spatial_neighbors(tmp, bandwidth=bw * step, cutoff=cutoff, kernel="gaussian", set_diag=True,
                                     max_neighbours=max_neighbours)
             Wl = sp.coo_matrix(tmp.obsp["spatial_connectivities"])
             k = Wl.data >= cutoff
@@ -2801,13 +2801,16 @@ class SingleCell(object):
                         nz_prop: Optional[float] = None, fname: Optional[str] = "liana_bivariate",
                         fname_global: Optional[str] = "liana_global", force: bool = False,
                         verbose: bool = False, **kw) -> Tuple[pd.DataFrame, ad.AnnData]:
-        """LIANA bivariate on log-normalised X with obsp['spatial_connectivities'] (spatial_weights is called when
+        """
+        LIANA bivariate on log-normalised X with obsp['spatial_connectivities'] (spatial_weights is called when
         missing): global Moran's R (permutation p) + local score (cosine) with categories (1 = high-high) and local
         p-values. Cached as h5ad: fname = key of self.files or a file name in root_result (force=False: read it).
         The global table (df_inter) is written to files[fname_global] when registered. Returns (df_inter sorted by
         Moran's R, with morans_fdr (BH over all tested pairs), adata_lr: spots x LR pairs, X = local score, layers
-        'cats', 'pvals')."""
+        'cats', 'pvals').
+        """
         import liana as li
+        
         a = self._check_adata(adata)
         path = self._resolve_table(fname)
         computed = False
