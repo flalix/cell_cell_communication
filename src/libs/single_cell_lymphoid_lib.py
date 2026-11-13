@@ -49,8 +49,8 @@ from matplotlib.lines import Line2D
 import anndata as ad
 import scanpy as sc
 
-from libs.Basic import pdwritecsv
-from libs.single_cell_lib import DEFAULT_PARAMS, SingleCell, cmap_byr
+from libs.Basic import pdreadcsv, pdwritecsv
+from libs.single_cell_lib import DEFAULT_PARAMS, SingleCell, cmap_byr, cmap_lbwr
 from libs.matplotlib_figure_style import apply_figure_style
 
 __version__ = "1.2.0"
@@ -60,8 +60,7 @@ LYMPHOID_LINEAGE: Dict[str, List[str]] = {
     "GC B":        ["B_GC_DZ", "B_GC_LZ", "B_GC_prePB", "B_Cycling", "B_preGC"],
     "naive/mem B": ["B_naive", "B_activated", "B_IFN", "B_mem"],
     "plasma":      ["B_plasma"],
-    "T":           ["T_CD4+_naive", "T_CD4+", "T_CD4+_TfH", "T_CD4+_TfH_GC", "T_TfR", "T_Treg", "T_TIM3+",
-                    "T_CD8+_naive", "T_CD8+_cytotoxic", "T_CD8+_CD161+"],
+    "T":           ["T_CD4+_naive", "T_CD4+", "T_CD4+_TfH", "T_CD4+_TfH_GC", "T_TfR", "T_Treg", "T_TIM3+", "T_CD8+_naive", "T_CD8+_cytotoxic", "T_CD8+_CD161+"],
     "NK/ILC":      ["NK", "NKT", "ILC"],
     "myeloid":     ["Monocytes", "Macrophages_M1", "Macrophages_M2", "DC_cDC1", "DC_cDC2", "DC_pDC", "DC_CCR7+", "Mast"],
     "stromal":     ["FDC", "Endo", "VSMC"],
@@ -84,8 +83,7 @@ LYMPHOID_PARAMS: Dict[str, Any] = dict(
     age_tissue="mLN",
     panel_min_cells=20,                # (cell type, age group) shown when it has >= this many cells
     # --- B-cell subset markers (within-B comparison)
-    bcell_types=("B_GC_DZ", "B_GC_LZ", "B_GC_prePB", "B_Cycling", "B_preGC",
-                 "B_naive", "B_activated", "B_IFN", "B_mem", "B_plasma"),
+    bcell_types=("B_GC_DZ", "B_GC_LZ", "B_GC_prePB", "B_Cycling", "B_preGC", "B_naive", "B_activated", "B_IFN", "B_mem", "B_plasma"),
     gc_types=("B_GC_DZ", "B_GC_LZ", "B_GC_prePB", "B_Cycling"),
     marker_min_gene_frac=0.01,         # genes detected in >= 1% of the subset's cells are tested
     marker_padj=0.05,
@@ -129,10 +127,23 @@ LYMPHOID_PARAMS: Dict[str, Any] = dict(
     ref_sig_n_genes=25,                # top subregion signature genes scored on the scRNA reference
     ref_sig_min_genes=3,               # subregions with fewer signature genes (found in the reference) are not scored
     ref_score_clip=99.0,               # percentile cap of the cell scores in the UMAP grid
+    # --- dataset and figure style (mp_lymphoid01-04)
+    visium_id="V1_Human_Lymph_Node",   # Space Ranger sample (one lymph node section, one donor)
+    ref_symbol_col=None,               # reference LIANA (rank_aggregate): symbols are the var_names
+    font_color="white",                # white text on a black background
+    bg_color="black",
+    fontsize_scale=1.4,                # x the font sizes set inside the matplotlib plot methods
 )
 
+# Per-analysis parameters (SingleCellLymphoid(..., analysis='lymph02')): only the values that differ from LYMPHOID_PARAMS.
+LYMPHOID_ANALYSIS_PARAMS: Dict[str, Dict[str, Any]] = {
+    "lymph01": dict(panel_cmap_num=2),         # gene panels in blue-yellow-red, as the Visium plots
+    "lymph02": dict(coloc_n_facts=(12,)),      # NMF co-location: the 12-factor run of mp_lymphoid01 only
+}
 
-# Files of the lymphoid project: key -> (root, name); root 'data' | 'result' | 'figure' (folders of ROOT0/project).
+
+# Files of the lymphoid project: key -> (root, name); root 'data' | 'result' | 'figure' (folders of ROOT0/project)
+# or 'root0' (ROOT0: inputs outside the project).
 # 'inputs' are always registered; an analysis (SingleCellLymphoid(..., analysis='lymph03')) adds its outputs, which
 # turns on the caching of its methods (force=False: read the file when it exists).
 LYMPHOID_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
@@ -143,6 +154,61 @@ LYMPHOID_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
         region_info=("data", "lymph_node_regions.tsv"),                           # curated region table (editable)
         subregion_descriptions=("data", "lymph_node_subregion_descriptions.tsv"), # curated subregion descriptions
         signatures=("result", "lymph_nodes_analysis/reference_signatures/sc.h5ad"),  # mapping signatures (means)
+        visium_raw=("root0", "notebooks_ccc_lymphoid_liana/data"),                # Space Ranger output (visium_sge)
+        cell_type_annotation=("data", "cell_type_annotation.tsv"),                 # reference cell types (id, name, markers)
+        c2l_ref_dir=("result", "lymph_nodes_analysis/reference_signatures"),       # sc.h5ad + model.pt (RegressionModel)
+        c2l_map_dir=("result", "lymph_nodes_analysis/cell2location_map"),          # sp.h5ad + model.pt + posterior samples
+    ),
+    "lymph01": dict(
+        # figures
+        fig_genes_visium=("figure", "lymph01_visium_genes.png"),
+        fig_mln_dotplot=("figure", "lymph01_mln_panel_by_celltype_age.png"),
+        fig_panel_umap=("figure", "lymph01_bcell_genes_umap_by_tissue_age.png"),
+        fig_ref_history=("figure", "lymph01_ref_training_history.png"),
+        fig_ref_qc=("figure", "lymph01_ref_qc.png"),                               # plot_c2l_qc: _1, _2, ... per figure
+        fig_map_history=("figure", "lymph01_map_training_history.png"),
+        fig_map_qc=("figure", "lymph01_map_qc.png"),
+        fig_abundance=("figure", "lymph01_celltype_abundance_8types.png"),
+        fig_slide_3types=("figure", "lymph01_spatial_Tnaive_Bnaive_FDC.png"),
+        fig_slide_4types=("figure", "lymph01_spatial_Tnaive_Bnaive_Mast_FDC.png"),
+        fig_slide_tnaive=("figure", "lymph01_spatial_Tcd4naive_Tcd8naive.png"),
+        fig_regions=("figure", "lymph01_umap_region_sample.png"),
+        fig_regions_html=("figure", "lymph01_regions_spatial.html"),
+        fig_umap_dotplot=("figure", "lymph01_celltype_umap_dotplot.png"),
+        fig_median_mean=("figure", "lymph01_posterior_median_vs_mean.png"),
+        fig_factor_dotplot=("figure", "lymph01_nmf_factors_lineage_dotplot_n{n}.png"),
+        fig_genes_celltype=("figure", "lymph01_genes_per_cell_type.png"),
+        # tables (region_labels: inputs, written here)
+        tsv_mln_panel=("result", "lymph01_mln_panel_by_celltype_age.tsv"),
+        tsv_factor_load=("result", "lymph01_nmf_factor_loadings_n{n}.tsv"),
+    ),
+    "lymph02": dict(
+        # figures
+        fig_bcell_dotplot=("figure", "lymph02_bcell_subset_markers_dotplot.png"),
+        fig_genes_visium=("figure", "lymph02_visium_genes_{k}.png"),                 # {k}: figure number (8 genes each)
+        fig_mln_dotplot=("figure", "lymph02_mln_panel_by_celltype_age.png"),
+        fig_panel_umap=("figure", "lymph02_genes_umap_by_tissue_age.png"),
+        fig_ref_history=("figure", "lymph02_ref_training_history.png"),
+        fig_ref_qc=("figure", "lymph02_ref_qc.png"),
+        fig_map_history=("figure", "lymph02_map_training_history.png"),
+        fig_map_qc=("figure", "lymph02_map_qc.png"),
+        fig_abundance=("figure", "lymph02_celltype_abundance_8types.png"),
+        fig_slide_3types=("figure", "lymph02_spatial_Tnaive_Bnaive_FDC.png"),
+        fig_isg=("figure", "lymph02_ifn_hotspot_summary.png"),
+        fig_umap_dotplot=("figure", "lymph02_celltype_umap_dotplot.png"),
+        fig_spatial_maps=("figure", "lymph02_celltype_spatial_maps.png"),
+        fig_rho=("figure", "lymph02_gene_celltype_spatial_correlation.png"),
+        fig_factor_dotplot=("figure", "lymph02_nmf_factors_lineage_dotplot_n{n}.png"),
+        # tables
+        csv_bcell_markers=("result", "lymph02_bcell_subset_unique_markers.csv"),
+        tsv_bcell_markers_all=("result", "lymph02_bcell_subset_markers_all.tsv.gz"),      # cache: every gene x subset
+        tsv_bcell_donor_counts=("result", "lymph02_bcell_subset_donor_counts.tsv"),       # cache: cells per donor x subset
+        tsv_mln_panel=("result", "lymph02_mln_panel_by_celltype_age.tsv"),
+        csv_aicda_subset=("result", "lymph02_aicda_by_subset_tissue.csv"),
+        csv_aicda_gc=("result", "lymph02_aicda_gc_by_donor.csv"),
+        tsv_isg=("result", "lymph02_ifn_hotspot_celltype_enrichment.tsv"),
+        tsv_rho=("result", "lymph02_gene_celltype_spatial_correlation.tsv"),
+        tsv_factor_load=("result", "lymph02_nmf_factor_loadings_n{n}.tsv"),
     ),
     "lymph03": dict(
         # tables (cached)
@@ -199,11 +265,12 @@ class SingleCellLymphoid(SingleCell):
 
     default_params = {**DEFAULT_PARAMS, **LYMPHOID_PARAMS}
     analysis_files = LYMPHOID_FILES
+    analysis_params = LYMPHOID_ANALYSIS_PARAMS
 
     def __init__(self, ROOT0, project: str = "lymphoid_tissue", symbol_col: str = "symbol",
                  sample_col: str = "sample", mt_prefix: str = "MT-", **kw):
-        """analysis= key of LYMPHOID_FILES ('lymph03', 'lymph04') whose output files are registered (caching on); files= adds or
-        overrides single entries."""
+        """analysis= key of LYMPHOID_FILES ('lymph01' ... 'lymph04') whose output files are registered (caching on) and of
+        LYMPHOID_ANALYSIS_PARAMS (its parameter values); files= / params= add or override single entries."""
         super().__init__(ROOT0, project, symbol_col=symbol_col, sample_col=sample_col, mt_prefix=mt_prefix, **kw)
 
     # =====================================================================================================
@@ -317,9 +384,16 @@ class SingleCellLymphoid(SingleCell):
         return LinearSegmentedColormap.from_list("expr", ["#e6e6e6", "#fdbb84", "#e34a33", "#7f0000"])
 
     def plot_panel_umap_by_tissue_age(self, genes: Sequence[str], adata=None, fname: Optional[str] = None,
-                                      q: Optional[float] = None, basis: str = "X_umap",
-                                      n_bg: Optional[int] = None, cmap_num: Optional[int] = None, dpi: int = 200):
-        """UMAP grid: rows = genes, columns = tissue x age groups; colour = log1p(CP10k) clipped per gene."""
+                                      q: Optional[float] = None, basis: str = "X_umap", figsize:tuple=(15, 30),
+                                      n_bg: Optional[int] = None, cmap_num: Optional[int] = None, dpi: int = 200,
+                                      font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                                      bg_point_color: Optional[str] = None, force: bool = False, verbose: bool = False):
+        """UMAP grid: rows = genes, columns = tissue x age groups; colour = log1p(CP10k) clipped per gene.
+        Style (None = params): font_color, bg_color, fontsize_scale (style_figure); bg_point_color = the other cells (default light
+        grey on a light background, dark grey on a dark one). force: rewrite an existing file; verbose: print the file status."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         a = self._check_adata(adata)
         q = self.get_param("clip_quantile", q)
         labels = self.params["gene_labels"]
@@ -334,14 +408,17 @@ class SingleCellLymphoid(SingleCell):
         cmap = self._panel_cmap(self.get_param("panel_cmap_num", cmap_num))
         tcol, dcol = self.params["tissue_col"], self.params["donor_col"]
         nr, nc = len(found), len(order)
-        fig, axes = plt.subplots(nr, nc, figsize=(1.35 * nc + 0.9, 1.2 * nr + 0.8), squeeze=False,
-                                 gridspec_kw=dict(wspace=0.04, hspace=0.06))
+        if bg_point_color is None:
+            bg_point_color = "#f2f2f2" if self._luminance(bg_color) > 0.5 else "#3a3a3a"
+
+        fig, axes = plt.subplots(nr, nc, figsize=figsize, squeeze=False, gridspec_kw=dict(wspace=0.04, hspace=0.06))
+        
         for j, (t, g) in enumerate(order):
             m = np.where(((obs[tcol] == t) & (obs.age_group == g)).values)[0]
             nd = obs[dcol].iloc[m].nunique() if dcol in obs else 0
             for i, gene in enumerate(found):
                 ax = axes[i, j]
-                ax.scatter(U[bg, 0], U[bg, 1], s=0.3, c="#f2f2f2", lw=0, rasterized=True)
+                ax.scatter(U[bg, 0], U[bg, 1], s=0.3, c=bg_point_color, lw=0, rasterized=True)
                 v = C[m, i]
                 o = np.argsort(v)
                 ax.scatter(U[m[o], 0], U[m[o], 1], s=0.6, c=v[o], cmap=cmap, vmin=0, vmax=cap[i], lw=0, rasterized=True)
@@ -360,7 +437,8 @@ class SingleCellLymphoid(SingleCell):
             cb.ax.tick_params(labelsize=6, length=2)
         fig.text(0.5, 0.075, f"colour = log1p(CP10k) clipped at the {q}th percentile per gene, one scale per row. "
                  "Grey = all other cells.", ha="center", fontsize=7)
-        self._savefig(fig, fname, dpi=dpi)
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)
+        self._savefig(fig, fname, dpi=dpi, force=force, verbose=verbose)
         return fig
 
     # =====================================================================================================
@@ -378,11 +456,19 @@ class SingleCellLymphoid(SingleCell):
 
     def umap_cell_type_plot(self, adata_ref, genes, lineage, focus, cmaps=None, 
                             sizes=(8, 7, 6), figsize=(14, 8),
-                            fname: Optional[str] = "celltype_umap_dotplot.png") -> pd.DataFrame:
+                            fname: Optional[str] = "celltype_umap_dotplot.png",
+                            font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                            force: bool = False, verbose: bool = False) -> pd.DataFrame:
         """
         Reference UMAP coloured by cell type + dot plot of the panel genes by cell type.
+        Style (None = params): font_color, bg_color, fontsize_scale (style_figure; non-focus cell types in a muted grey that
+        follows bg_color). force: rewrite an existing file; verbose: print the file status.
         Returns df_groups (per tissue x age group panel table).
         """
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
+        muted = self._muted(bg_color)
         apply_figure_style(sizes=sizes)
         cmaps = cmaps or self.params["lineage_cmaps"]
 
@@ -408,7 +494,8 @@ class SingleCellLymphoid(SingleCell):
         ax.scatter(U[o, 0], U[o, 1], s=0.4, c=[col[c] for c in ct[o]], lw=0, rasterized=True)
         for c in focus:
             x, y = np.median(U[ct == c], 0)
-            ax.text(x, y, c, fontsize=7, ha="center", va="center", path_effects=[pe.withStroke(linewidth=2.2, foreground="white")])
+            ax.text(x, y, c, fontsize=7, ha="center", va="center", color=font_color,
+                    path_effects=[pe.withStroke(linewidth=2.2, foreground=bg_color)])
         ax.set_xticks([]); ax.set_yticks([])
         for s_ in ax.spines.values():
             s_.set_visible(False)
@@ -419,39 +506,52 @@ class SingleCellLymphoid(SingleCell):
         ax2 = axes[1]
         yy, xx = np.meshgrid(np.arange(len(order)), np.arange(len(found)), indexing="ij")
         sca = ax2.scatter(xx.ravel(), yy.ravel(), s=(df_P.values.ravel() / 100) * 60, c=df_M.values.ravel(),
-                          cmap="magma_r", vmin=0, vmax=np.nanmax(df_M.values), lw=0)
+                          cmap=cmap_lbwr, vmin=0, vmax=np.nanmax(df_M.values), lw=0)   # cmap="magma_r"
         ax2.set_xticks(range(len(found)))
         ax2.set_xticklabels([labels.get(g, g) for g in found], rotation=90, style="italic")
         ax2.set_yticks(range(len(order)))
         ax2.set_yticklabels([f"{c} (n={n_ct[c]:,})" for c in order], fontsize=6)
         for t, c in zip(ax2.get_yticklabels(), order):
-            t.set_color(col[c] if c in focus else "#555555")
+            t.set_color(col[c] if c in focus else muted)
             t.set_fontweight("bold" if c in focus else "normal")
         ax2.set_xlim(-0.6, len(found) - 0.4)
         ax2.set_ylim(len(order) - 0.4, -0.6)
         ax2.set_title("Panel genes by reference cell type", loc="left", fontsize=8)
         fig.colorbar(sca, ax=ax2, fraction=0.03, pad=0.02).set_label("mean log1p(CP10k)", fontsize=7)
         for p in (25, 50, 100):
-            ax2.scatter([], [], s=p / 100 * 60, c="#555555", label=f"{p}%")
+            ax2.scatter([], [], s=p / 100 * 60, c=muted, label=f"{p}%")
         ax2.legend(title="% cells >0", loc="upper left", bbox_to_anchor=(1.18, 0.35), frameon=False, fontsize=6, title_fontsize=7)
-        self._savefig(fig, fname)
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)
+        self._savefig(fig, fname, force=force, verbose=verbose)
         return df_groups
 
-    def spatial_plot_cell_types(self, adata_vis, focus, lineage, cmaps=None, ncols: int = 4,
-                                fname: Optional[str] = "celltype_spatial_maps.png"):
-        """One spatial panel per cell type in focus (q05 abundance clipped at clip_quantile)."""
+    def spatial_plot_cell_types(self, adata_vis, focus, lineage, cmaps=None, ncols: int = 4, figsize:tuple=(20,16),
+                                fname: Optional[str] = "celltype_spatial_maps.png",
+                                font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                                force: bool = False, verbose: bool = False):
+        """
+        One spatial panel per cell type in focus (q05 abundance clipped at clip_quantile).
+        Style (None = params): font_color, bg_color, fontsize_scale (style_figure). force: rewrite an existing file; verbose: print the file status.
+        """
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
+        
         img, _ = self.hires_image(adata=adata_vis)
         _, xy = self.spot_xy(adata=adata_vis)
         q = self.params["clip_quantile"]
         nrows = math.ceil(len(focus) / ncols)
-        fig, axes = plt.subplots(nrows, ncols, figsize=(3 * ncols, 3.2 * nrows), squeeze=False,
-                                 gridspec_kw=dict(wspace=0.08, hspace=0.18))
+        
+        fig, axes = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False, gridspec_kw=dict(wspace=0.08, hspace=0.18))
+        
         x0, x1 = xy[:, 0].min() - 40, xy[:, 0].max() + 40
         y0, y1 = xy[:, 1].min() - 40, xy[:, 1].max() + 40
         df_abund = self.calc_df_abundance(adata_vis)
         col = self.lineage_colors(lineage, cmaps)
+
         for ax in axes.ravel()[len(focus):]:
             ax.set_visible(False)
+
         for ax, c in zip(axes.ravel(), focus):
             v = df_abund[c].values
             vmax = np.percentile(v, q)
@@ -465,55 +565,85 @@ class SingleCellLymphoid(SingleCell):
             cb = fig.colorbar(s_, ax=ax, fraction=0.04, pad=0.01)
             cb.set_ticks([0, round(vmax, 1)])
             cb.ax.tick_params(labelsize=6, length=2)
-        self._savefig(fig, fname)
+
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)
+        self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 
-    def spatial_plot_cell_abundance(self, adata_vis, adata_ref, genes, focus, lineage, cmaps=None,
+    def spatial_plot_cell_abundance(self, adata_vis, adata_ref, genes, focus, lineage, cmaps=None, figsize: tuple = (20, 15),
                                     fname_fig: Optional[str] = "gene_celltype_spatial_correlation.png",
-                                    fname_tsv: Optional[str] = "gene_celltype_spatial_correlation.tsv") -> pd.DataFrame:
-        """Spearman rho across spots: Visium gene expression (log1p CP10k) vs mapped q05 abundance.
-        Caveat: abundances were inferred from the same counts; read it as consistency, not validation."""
+                                    fname_tsv: Optional[str] = "gene_celltype_spatial_correlation.tsv",
+                                    font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = 2.4,
+                                    force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """
+        Spearman rho across spots: Visium gene expression (log1p CP10k) vs mapped q05 abundance.
+        Caveat: abundances were inferred from the same counts; read it as consistency, not validation.
+        Style (None = params): font_color, bg_color, fontsize_scale (style_figure; the cell values keep their colours).
+        force: rewrite an existing figure; verbose: print the file status.
+        """
+
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
+
         found, _ = self.resolve_gene_ids(genes, adata_ref)
         gene_found, gene_ids = self.resolve_gene_ids(found, adata_vis)
+
         X = adata_vis[:, gene_ids].X
         X = X.toarray() if sp.issparse(X) else np.asarray(X)
+
         tot = np.asarray(adata_vis.X.sum(1)).ravel()
         df_abund = self.calc_df_abundance(adata_vis)
+
         E = np.log1p(X / tot[:, None] * self.params["target_sum"])
         df_rho = pd.DataFrame([[spearmanr(E[:, i], df_abund[c].values)[0] for c in focus] for i in range(len(gene_found))],
                               index=gene_found, columns=focus)
         vmax = self.params["rho_vmax"]
         labels = self.params["gene_labels"]
-        fig, ax = plt.subplots(figsize=(12, 8))
+
+        fig, ax = plt.subplots(figsize=figsize)
+
         im = ax.imshow(df_rho.values, cmap="RdBu_r", vmin=-vmax, vmax=vmax, aspect="auto")
+
         for i in range(df_rho.shape[0]):
             for j in range(df_rho.shape[1]):
                 r = df_rho.values[i, j]
                 ax.text(j, i, f"{r:.2f}", ha="center", va="center", fontsize=5.5, color="white" if abs(r) > 0.5 else "black")
+        
         ax.set_xticks(range(len(focus))); ax.set_xticklabels(focus, rotation=60, ha="right")
         col = self.lineage_colors(lineage, cmaps)
+        
         for t, c in zip(ax.get_xticklabels(), focus):
             t.set_color(col.get(c, "black"))
+        
         ax.set_yticks(range(len(gene_found)))
         ax.set_yticklabels([labels.get(g, g) for g in gene_found], style="italic")
         fig.colorbar(im, ax=ax, fraction=0.04, pad=0.02).set_label("Spearman ρ across spots", fontsize=7)
         ax.set_title(f"Visium gene expression vs mapped cell-type abundance (n = {adata_vis.n_obs:,} spots)", loc="left", fontsize=8)
-        self._savefig(fig, fname_fig)
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)
+        self._savefig(fig, fname_fig, force=force, verbose=verbose)
+        
         df_rho = df_rho.round(3)
         if fname_tsv:
-            pdwritecsv(df_rho.reset_index(names='gene'), fname_tsv, self.root_result)
+            self._write_table(df_rho.reset_index(names='gene'), fname_tsv, force, verbose)
         return df_rho
 
     def dotplot_markers(self, adata_sub, markers: Dict[str, Sequence[str]], groupby: Optional[str] = None,
-                        fname: Optional[str] = "bcell_subset_markers_dotplot.png", figsize=(15, 5)):
-        """scanpy dot plot of marker genes (group label -> genes in var_names), scaled 0-1 per gene."""
+                        fname: Optional[str] = "bcell_subset_markers_dotplot.png", figsize=(15, 5), cmap=cmap_lbwr,
+                        font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                        force: bool = False, verbose: bool = False):
+        """scanpy dot plot of marker genes (group label -> genes in var_names), scaled 0-1 per gene.
+        Style (None = params): font_color, bg_color, fontsize_scale (style_figure). force: rewrite an existing file; verbose: print the file status."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         apply_figure_style(sizes=(8, 7, 6))
         groupby = groupby or self.params["celltype_col"]
         miss = [g for v in markers.values() for g in v if g not in adata_sub.var_names]
         if miss:
             print("missing:", miss)
         markers = {k: [g for g in v if g in adata_sub.var_names] for k, v in markers.items()}
-        dp = sc.pl.dotplot(adata_sub, markers, groupby=groupby, standard_scale="var", cmap="RdBu_r", show=False,
+        dp = sc.pl.dotplot(adata_sub, markers, groupby=groupby, standard_scale="var", cmap=cmap, show=False,
                            figsize=figsize, var_group_rotation=30, colorbar_title="mean expression\n(scaled 0-1 per gene)",
                            size_title="% cells expressing")
         fig = plt.gcf()
@@ -523,7 +653,8 @@ class SingleCellLymphoid(SingleCell):
         n_groups = adata_sub.obs[groupby].nunique()
         fig.suptitle(f"Markers separating the {n_groups} subsets (within-subset comparison; {adata_sub.n_obs:,} cells)",
                      ha="left", fontsize=8, x=0.02, y=1.06)
-        self._savefig(fig, fname, dpi=200)
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)
+        self._savefig(fig, fname, dpi=200, force=force, verbose=verbose)
         return dp
 
     def donor_consistency(self, adata_sub, gene, group, groups, donors, grp, Xn, df_cnt: pd.DataFrame,
@@ -592,9 +723,15 @@ class SingleCellLymphoid(SingleCell):
         return score, hs
 
     def run_isg_hotspot(self, adata_vis, isg_genes: Sequence[str], fname_fig: Optional[str] = "ifn_hotspot_summary.png",
-                        fname_tsv: Optional[str] = "ifn_hotspot_celltype_enrichment.tsv") -> pd.DataFrame:
+                        fname_tsv: Optional[str] = "ifn_hotspot_celltype_enrichment.tsv",
+                        font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                        force: bool = False, verbose: bool = False) -> pd.DataFrame:
         """ISG hotspot detection, cell-type enrichment in the hotspot (Mann-Whitney U, BH FDR) and summary figure.
+        Style (None = params): font_color, bg_color, fontsize_scale (style_figure). force: rewrite an existing figure; verbose: print the file status.
         Returns df_hot (per cell type: mean_hot, mean_rest, log2fc, p, padj)."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         from statsmodels.stats.multitest import multipletests
         P = self.params
         isg_score, hs = self.isg_hotspot(adata_vis, isg_genes)
@@ -644,13 +781,14 @@ class SingleCellLymphoid(SingleCell):
         ax.set_yticks(range(len(df_sel))); ax.set_yticklabels(df_sel.index)
         for i, (fc, pa) in enumerate(zip(df_sel.log2fc, df_sel.padj)):
             if pa >= P["isg_fdr"]:
-                ax.text(fc + 0.05, i, "n.s.", va="center", ha="left", fontsize=6, color="#555")
+                ax.text(fc + 0.05, i, "n.s.", va="center", ha="left", fontsize=6, color=self._muted(bg_color))
         ax.set_xlabel("log2 fold change, hotspot vs rest\n(mapped q05 abundance)")
         ax.set_title("Cell types enriched / depleted in the hotspot", loc="left", fontsize=8)
         fig.text(0.1, 0.03, f"Dashed cyan = hull of the hotspot ({hs.sum()} of {adata_vis.n_obs:,} spots).", fontsize=7)
-        self._savefig(fig, fname_fig, dpi=200)
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)
+        self._savefig(fig, fname_fig, dpi=200, force=force, verbose=verbose)
         if fname_tsv:
-            pdwritecsv(df_hot.round(4), fname_tsv, self.root_result)
+            self._write_table(df_hot.round(4), fname_tsv, force, verbose)
         return df_hot
 
     # =====================================================================================================
@@ -694,11 +832,12 @@ class SingleCellLymphoid(SingleCell):
 
     def calc_df_panel_celltype_age(self, genes: Sequence[str], tissue: Optional[str] = None, adata=None,
                                    min_cells: Optional[int] = None, fname: Optional[str] = None
-                                   ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+                                   , force: bool = False, verbose: bool = False) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """One tissue: per cell type x age group x gene: n_cells, n_donors, pct_expr, mean_log1p_cp10k
         (panel_lognorm, library size obs['n_counts']).
         Returns (df_long: all pairs, df_plot: cell types with >= min_cells in >= 2 age groups and pairs with
-        >= min_cells, df_age: cells and donors per age group). fname -> df_long saved in root_result."""
+        >= min_cells, df_age: cells and donors per age group). fname -> df_long saved in root_result (a record: always
+        computed, the file is kept when it exists unless force; verbose: print the file status)."""
         a = self._check_adata(adata)
         tissue = self.get_param("age_tissue", tissue)
         min_cells = self.get_param("panel_min_cells", min_cells)
@@ -725,20 +864,25 @@ class SingleCellLymphoid(SingleCell):
         df_age = pd.DataFrame({"n_cells": obs.age_group.value_counts().reindex(age_order),
                                "n_donors": obs.groupby("age_group")[dcol].nunique().reindex(age_order)})
         df_age.attrs["tissue"] = tissue
-        if fname:
-            pdwritecsv(df_long.round(4), fname, self.root_result)
+        self._write_table(df_long.round(4), fname, force, verbose)     # kept when it exists, unless force
         return df_long, df_plot, df_age
 
     def plot_dotplot_celltype_age(self, df_plot: pd.DataFrame, lineage: Optional[Dict[str, Sequence[str]]] = None,
                                   df_age: Optional[pd.DataFrame] = None, cmaps: Optional[Dict[str, str]] = None,
-                                  cmap: str = "Reds", fname: Optional[str] = None, 
+                                  cmap=cmap_lbwr, fname: Optional[str] = None, 
                                   fontsize_ticks:int=11, fontsize_title:int=14, fontsize_text:int=12,
                                   fontsize_bar:int=10, fontsize_perc_cells:int=10,
-                                  fontsize_lineage:int=10, figsize: tuple = (12, 9)):
+                                  fontsize_lineage:int=10, figsize: tuple = (12, 9),
+                                  font_color: Optional[str] = None, bg_color: Optional[str] = None,
+                                  force: bool = False, verbose: bool = False):
         """
         Dot plot: rows = cell types in lineage order (labels coloured by lineage), column blocks = genes,
         columns inside a block = age groups. Size = % cells > 0; colour = mean log1p(CP10k) / max per gene.
+        cmap: colormap or name (default cmap_lbwr: light blue -> white -> light red, white = half of the gene's max).
+        Font sizes: fontsize_*; colours: font_color, bg_color (style_figure). force: rewrite an existing file; verbose: print the file status.
         """
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
 
         lineage = lineage or LYMPHOID_LINEAGE
         col = self.lineage_colors(lineage, cmaps)
@@ -804,10 +948,10 @@ class SingleCellLymphoid(SingleCell):
             title = f"{df_age.attrs.get('tissue', '')}: {title}\n" + "   ".join(
                 f"{a_}: {int(r.n_cells):,} cells, {int(r.n_donors)} donor(s)" for a_, r in df_age.iterrows())
         ax.set_title(title, pad=28, fontsize=fontsize_title)
-        
+        self.style_figure(fig, font_color, bg_color)
         fig.tight_layout()
 
-        self._savefig(fig, fname)
+        self._savefig(fig, fname, force=force, verbose=verbose)
 
         return fig
 
@@ -850,17 +994,41 @@ class SingleCellLymphoid(SingleCell):
 
     def calc_df_subset_markers(self, adata_sub, df_pct: pd.DataFrame, df_mean: pd.DataFrame,
                                groups: Optional[Sequence[str]] = None, groupby: Optional[str] = None,
-                               fname: Optional[str] = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        """Marker tiers for every subset vs the other subsets:
+                               fname: Optional[str] = None, fname_all: Optional[str] = None,
+                               fname_donors: Optional[str] = None, force: bool = False,
+                               verbose: bool = False) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Marker tiers for every subset vs the other subsets:
         unique            : padj < marker_padj, pct_in >= marker_min_pct_in, max % in every other subset <=
                             unique_max_pct_other, log2FC vs the next-highest subset (mean CP10k) >= unique_min_log2fc;
         enriched (shared) : same with shared_max_pct_other / shared_min_log2fc (and not unique).
         Candidates get donors_top = 'k/n' (donor_consistency: donors where the gene is highest in that subset).
-        Returns (df_all: every gene x subset, df_markers: tiered genes sorted by subset, tier, log2fc).
-        fname -> df_markers saved (csv, root_result)."""
+        Returns (df_all: every gene x subset, df_markers: tiered genes sorted by subset, tier, log2fc);
+        df_all.attrs['df_donor_counts'] = cells per donor x subset.
+
+        Files (keys of self.files or names in root_result): fname = df_markers (csv, rounded, for reading);
+        fname_all = df_all (full precision) and fname_donors = the donor counts (tsv) are the cache: when fname,
+        fname_all and fname_donors all exist and not force, they are read and returned (df_markers rebuilt from
+        df_all) instead of recomputed (the donor-consistency loop is the slow part). force: recompute and rewrite;
+        verbose: print the file status. The cache holds the result of the parameters that wrote it: use force=True
+        after changing marker_* / unique_* / shared_* / donor_min_cells or the subsets.
+        """
+        
         P = self.params
+
         groups = list(groups or P["bcell_types"])
         groupby = groupby or P["celltype_col"]
+        paths = {k: self._resolve_path(f, None, self.root_result) for k, f in
+                 (("markers", fname), ("all", fname_all), ("donors", fname_donors)) if f}
+        
+        if len(paths) == 3 and not force and all(p.exists() for p in paths.values()):
+            txt = ["gene", "group", "tier", "donors_top", "next_pct_type", "next_mean_type"]
+            df_all = pdreadcsv(paths["all"].name, paths["all"].parent, dtype={c: str for c in txt}, verbose=verbose)
+            df_all[txt] = df_all[txt].fillna("")
+            df_all.attrs["df_donor_counts"] = pdreadcsv(paths["donors"].name, paths["donors"].parent,
+                                                        dtype={"donor": str}, index_col=0, verbose=verbose)
+            return df_all, self._subset_markers_from_all(df_all, groups)
+
         rgg = adata_sub.uns["rank_genes_groups"]
         eps = P["marker_eps"]
         rows = []
@@ -879,27 +1047,46 @@ class SingleCellLymphoid(SingleCell):
         strict = base & (df_all.max_pct_other <= P["unique_max_pct_other"]) & (df_all.log2fc_vs_next >= P["unique_min_log2fc"])
         relax = base & (df_all.max_pct_other <= P["shared_max_pct_other"]) & (df_all.log2fc_vs_next >= P["shared_min_log2fc"]) & ~strict
         df_all["tier"] = np.where(strict, "unique", np.where(relax, "enriched (shared)", ""))
+
         obs = adata_sub.obs
         donors = obs[P["donor_col"]].astype(str).values
         grp = obs[groupby].astype(str).values
         df_cnt = pd.crosstab(donors, grp)
+
         for g in groups:
             if g not in df_cnt.columns:
                 df_cnt[g] = 0
         cand = df_all[df_all.tier != ""]
+
         dc = [self.donor_consistency(adata_sub, r.gene, r.group, groups, donors, grp, adata_sub.X, df_cnt)
               for r in cand.itertuples()]
+
         df_all["donors_top"] = ""
         df_all.loc[cand.index, "donors_top"] = [f"{a_}/{b_}" for a_, b_ in dc]
-        df_markers = df_all[df_all.tier != ""].copy()
-        df_markers["group"] = pd.Categorical(df_markers.group, groups)
-        df_markers = df_markers.sort_values(["group", "tier", "log2fc_vs_next"], ascending=[True, False, False])
-        df_all.attrs["df_donor_counts"] = df_cnt.reindex(columns=groups)
+        df_markers = self._subset_markers_from_all(df_all, groups)
+        df_cnt = df_cnt.reindex(columns=groups).rename_axis(index="donor", columns=None)
+        df_all.attrs["df_donor_counts"] = df_cnt
+
         if fname:
             cols = ["group", "gene", "tier", "pct_in", "max_pct_other", "next_pct_type", "log2fc_vs_next",
                     "next_mean_type", "lfc_vs_rest", "padj", "donors_top"]
-            pdwritecsv(df_markers[cols].round(3), fname, self.root_result, sep=",")
+            pdwritecsv(df_markers[cols].round(3), paths["markers"].name, paths["markers"].parent, sep=",", verbose=verbose)
+    
+        if "all" in paths:                       # float32 -> float64: written in full, read back identical
+            f32 = {c: "float64" for c, t in df_all.dtypes.items() if t == np.float32}
+            pdwritecsv(df_all.astype(f32), paths["all"].name, paths["all"].parent, verbose=verbose)
+    
+        if "donors" in paths:
+            pdwritecsv(df_cnt.reset_index(), paths["donors"].name, paths["donors"].parent, verbose=verbose)
+
         return df_all, df_markers
+
+    @staticmethod
+    def _subset_markers_from_all(df_all: pd.DataFrame, groups: Sequence[str]) -> pd.DataFrame:
+        """Tiered genes of df_all (tier != ''), group in subset order, sorted by group, tier, log2fc_vs_next."""
+        df_markers = df_all[df_all.tier != ""].copy()
+        df_markers["group"] = pd.Categorical(df_markers.group, list(groups))
+        return df_markers.sort_values(["group", "tier", "log2fc_vs_next"], ascending=[True, False, False])
 
     @staticmethod
     def print_subset_markers(df_markers: pd.DataFrame, groups: Sequence[str], n_unique: int = 12, n_enriched: int = 6):
@@ -924,12 +1111,12 @@ class SingleCellLymphoid(SingleCell):
     def calc_gene_by_subset_tissue(self, gene: str, adata=None, groups: Optional[Sequence[str]] = None,
                                    gc_types: Optional[Sequence[str]] = None, min_gc: int = 20,
                                    fname_subset: Optional[str] = None, fname_gc: Optional[str] = None
-                                   ) -> Dict[str, Any]:
+                                   , force: bool = False, verbose: bool = False) -> Dict[str, Any]:
         """Detection of one gene (raw counts > 0) in the B subsets by tissue, and within GC B cells per donor,
         study and chemistry (AICDA study). Returns dict:
         df_gc_share (GC B cells per tissue), df_subset (% positive and % single-UMI per subset),
         chem_tonsil_gc (% positive in tonsil GC B by Method), df_subset_tissue, df_gc_donor (>= min_gc GC cells),
-        n_pos, pct_pos_tonsil."""
+        n_pos, pct_pos_tonsil. fname_subset / fname_gc (csv, root_result): kept when they exist unless force; verbose."""
         a = self._check_adata(adata)
         groups = list(groups or self.params["bcell_types"])
         gc_types = list(gc_types or self.params["gc_types"])
@@ -955,10 +1142,8 @@ class SingleCellLymphoid(SingleCell):
         df_gc = d[d.GC].groupby(["Tissue", "Donor", "Study", "Method"]).agg(n_gc=("pos", "size"),
                                                                             pct_pos=("pos", "mean")).reset_index()
         df_gc["pct_pos"] = (100 * df_gc.pct_pos).round(1)
-        if fname_subset:
-            pdwritecsv(df_st, fname_subset, self.root_result, sep=",")
-        if fname_gc:
-            pdwritecsv(df_gc, fname_gc, self.root_result, sep=",")
+        self._write_table(df_st, fname_subset, force, verbose, sep=",")     # kept when they exist, unless force
+        self._write_table(df_gc, fname_gc, force, verbose, sep=",")
         out["df_subset_tissue"] = df_st
         out["df_gc_donor"] = df_gc[df_gc.n_gc >= min_gc].sort_values(["Tissue", "Donor"])
         return out
@@ -967,14 +1152,24 @@ class SingleCellLymphoid(SingleCell):
     # NMF co-location factors: cell types grouped by lineage x factors
     # =====================================================================================================
     def plot_factor_dotplot(self, adata_vis, n_fact: int, lineage: Optional[Dict[str, Sequence[str]]] = None,
-                            cmaps: Optional[Dict[str, str]] = None, size_max: float = 140, cmap: str = "RdPu",
-                            min_show: float = 0.02, fname: Optional[str] = None, fname_tsv: Optional[str] = None
+                            cmaps: Optional[Dict[str, str]] = None, figsize:tuple=(15,12), size_max: float = 140, cmap: str = "RdPu",
+                            min_show: float = 0.02, fname: Optional[str] = None, fname_tsv: Optional[str] = None,
+                            font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                            force: bool = False, verbose: bool = False
                             ) -> Tuple[Any, pd.DataFrame]:
-        """Dot plot of the NMF cell-type loadings (calc_df_coloc_loadings, each cell type's weights summed to 1 over
+        """
+        Dot plot of the NMF cell-type loadings (calc_df_coloc_loadings, each cell type's weights summed to 1 over
         factors): rows = cell types in lineage order (labels coloured by lineage), columns = factors ordered by the
         row of their top cell type, labelled with their top-2 cell types. Size and colour = relative weight;
-        weights < min_show are not drawn. Returns (fig, df_load in plotting order)."""
+        weights < min_show are not drawn. Style (None = params): font_color, bg_color, fontsize_scale (style_figure); force: rewrite
+        an existing figure. Returns (fig, df_load in plotting order).
+        """
+        
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         lineage = lineage or LYMPHOID_LINEAGE
+
         df_load = self.calc_df_coloc_loadings(adata_vis, n_fact, normalize=True)
         rows = [c for c in self.lineage_order(lineage) if c in df_load.index]
         rows += [c for c in df_load.index if c not in rows]
@@ -986,7 +1181,9 @@ class SingleCellLymphoid(SingleCell):
         col = self.lineage_colors(lineage, cmaps)
         lin_of = self.lineage_of(lineage)
         nr, nc = df_load.shape
-        fig, ax = plt.subplots(figsize=(0.55 * nc + 4.2, 0.27 * nr + 2.6))
+        
+        fig, ax = plt.subplots(figsize=figsize)
+        
         yy, xx = np.meshgrid(np.arange(nr), np.arange(nc), indexing="ij")
         V = df_load.values
         m = V.ravel() >= min_show
@@ -1013,9 +1210,10 @@ class SingleCellLymphoid(SingleCell):
         ax.legend(title="weight", loc="lower left", bbox_to_anchor=(1.02, 0.0), frameon=False, fontsize=7,
                   title_fontsize=7, labelspacing=1.1)
         ax.set_title(f"NMF co-location: {nr} cell types (by lineage) x {nc} factors", loc="left")
-        self._savefig(fig, fname)
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)
+        self._savefig(fig, fname, force=force, verbose=verbose)
         if fname_tsv:
-            pdwritecsv(df_load.round(4).reset_index(names="cell_type"), fname_tsv, self.root_result)
+            self._write_table(df_load.round(4).reset_index(names="cell_type"), fname_tsv, force, verbose)
         return fig, df_load
 
     # =====================================================================================================
@@ -1122,14 +1320,17 @@ class SingleCellLymphoid(SingleCell):
                                      width: Optional[int] = None, fontsize_title: int = 17, fontsize_xticks: int = 9,
                                      fontsize_yticks: int = 9, fontsize_colorbar: int = 12, fontsize_lineage: int = 10,
                                      fontsize_hover: int = 13, colorscale: str = "RdBu_r", lineage_line_color: str = "#444444",
-                                     lineage_line_width: float = 1.0, font_color: str = "#2a3f5f", bg_color: str = "white",
-                                     fname: Optional[str] = "fig_ref_heatmap", force: bool = False, verbose: bool = False):
+                                     lineage_line_width: float = 1.0, font_color: Optional[str] = None, bg_color: Optional[str] = None,
+                                     fname: Optional[str] = "fig_ref_heatmap",
+                                     force: bool = False, verbose: bool = False):
         """Heatmap subregion (rows, grouped by region) x reference cell type (columns, lineage order): mean cell score
         of the subregion signature. Hover: signature genes, status.
 
         Font sizes: fontsize_title, fontsize_xticks (cell types), fontsize_yticks (subregions), fontsize_colorbar,
         fontsize_lineage (lineage labels on top), fontsize_hover. Colours: colorscale (diverging, symmetric at the 99th
         percentile of |score|), lineage_line_color / lineage_line_width (separators), font_color, bg_color."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
         import plotly.graph_objects as go
         cols = [c for c in (self.lineage_order(lineage) if lineage else df_ref_score.columns) if c in df_ref_score.columns]
         Z = df_ref_score[cols]
@@ -1167,14 +1368,17 @@ class SingleCellLymphoid(SingleCell):
                                        panel_size: float = 3.2, point_size: float = 0.3, fontsize_title: float = 8,
                                        fontsize_suptitle: float = 9, fontsize_colorbar: float = 6,
                                        cmap_colors: Sequence[str] = ("#e6e6e6", "#fdbb84", "#d7301f", "#7f0000"),
-                                       font_color: str = "black", bg_color: str = "white",
-                                       fname: Optional[str] = "fig_ref_umap", force: bool = False, verbose: bool = False):
+                                       font_color: Optional[str] = None, bg_color: Optional[str] = None,
+                                       fname: Optional[str] = "fig_ref_umap",
+                                       force: bool = False, verbose: bool = False):
         """Reference UMAP (obsm['X_umap']) coloured by the signature score of each subregion (one panel per subregion,
         own scale clipped at the q-th percentile, values < 0 grey). Title: subregion + top reference cell type.
 
         Sizes: panel_size (inches per panel), point_size. Font sizes: fontsize_title (panel titles), fontsize_suptitle,
         fontsize_colorbar (tick labels). Colours: cmap_colors (low -> high; the first is the colour of scores <= 0),
         font_color, bg_color (figure and panel background)."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
         q = self.get_param("ref_score_clip", q)
         U = adata_ref.obsm["X_umap"]
         subregions = [s_id for s_id in subregions if s_id in df_cell_score.columns]
@@ -1223,10 +1427,23 @@ class SingleCellLymphoid(SingleCell):
         return df_sig[~df_sig.index.duplicated()]
 
     # aliases with the names used in ccc01 / ccc02 (cell2location_lib)
-    def spatial_plot_bcell_types(self, adata_vis, focus, lineage, cmaps=None, ncols: int = 4,
-                                 fname: Optional[str] = "celltype_spatial_maps.png"):
-        return self.spatial_plot_cell_types(adata_vis, focus, lineage, cmaps=cmaps, ncols=ncols, fname=fname)
+    def spatial_plot_bcell_types(self, adata_vis, focus, lineage, cmaps=None, ncols: int = 4, figsize:tuple=(20,16),
+                                 fname: Optional[str] = "celltype_spatial_maps.png",
+                                 font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                                 force: bool = False, verbose: bool = False):
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
+        return self.spatial_plot_cell_types(adata_vis, focus, lineage, cmaps=cmaps, ncols=ncols, figsize=figsize,
+                                            fname=fname, font_color=font_color, bg_color=bg_color, fontsize_scale=fontsize_scale,
+                                            force=force, verbose=verbose)
 
     def dotplot_bcell_markers(self, adata_sub, markers: Dict[str, Sequence[str]], groupby: Optional[str] = None,
-                              fname: Optional[str] = "bcell_subset_markers_dotplot.png", figsize=(15, 5)):
-        return self.dotplot_markers(adata_sub, markers, groupby=groupby, fname=fname, figsize=figsize)
+                              fname: Optional[str] = "bcell_subset_markers_dotplot.png", figsize=(15, 5), cmap=cmap_lbwr,
+                              font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                              force: bool = False, verbose: bool = False):
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
+        return self.dotplot_markers(adata_sub, markers, groupby=groupby, fname=fname, figsize=figsize, cmap=cmap,
+                                    font_color=font_color, bg_color=bg_color, fontsize_scale=fontsize_scale, force=force, verbose=verbose)

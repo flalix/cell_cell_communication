@@ -83,6 +83,7 @@ __version__ = "1.4.0"
 
 colors_byr = ("#57a4e2", "#ebd246", "#f30707")
 cmap_byr = LinearSegmentedColormap.from_list("blue_yellow_red", list(colors_byr))
+cmap_lbwr = LinearSegmentedColormap.from_list("lightblue_white_lightred", ["#6baed6", "#ffffff", "#fb6a4a"])  # blue -> white -> red (mid tones)
 
 # Kelly's colours of maximum contrast, without near-white and near-black
 KELLY_COLORS = ['#F3C300', '#875692', '#F38400', '#A1CAF1', '#BE0032', '#C2B280',
@@ -258,6 +259,10 @@ DEFAULT_PARAMS: Dict[str, Any] = dict(
     spot_size=1.3,
     img_key="hires",
     dpi=300,
+    # --- figure style: defaults of the plot methods' font_color / bg_color / fontsize_scale (argument None = these)
+    font_color="black",
+    bg_color="white",
+    fontsize_scale=1.0,            # x the font sizes set inside the matplotlib plot methods (style_figure)
 )
 
 
@@ -279,6 +284,7 @@ class SingleCell(object):
     default_params: Dict[str, Any] = DEFAULT_PARAMS
     default_files: Dict[str, Tuple[str, str]] = {}      # key -> (root, name); see file_path
     analysis_files: Dict[str, Dict[str, Tuple[str, str]]] = {}   # {'inputs': {...}, '<analysis>': {...}} (subclasses)
+    analysis_params: Dict[str, Dict[str, Any]] = {}              # {'<analysis>': {param: value}} (subclasses)
 
     def __init__(self, ROOT0: Path, project: str, adata: Optional[ad.AnnData] = None,
                  data_dir: str = "data", figure_dir: str = "figures", result_dir: str = "results",
@@ -299,14 +305,17 @@ class SingleCell(object):
         self.sample_col = sample_col
         self.mt_prefix = mt_prefix
         self.name = name or project
-        self.params = copy.deepcopy(self.default_params)
-        if params:
-            self.set_params(**params)
         # files: analysis_files['inputs'] always; an analysis (e.g. 'lymph03', 'mb03') adds its outputs, which turns on
         # the caching of its methods (force=False: read the file when it exists); files= adds or overrides entries
         if analysis is not None and analysis not in self.analysis_files:
             raise KeyError(f"analysis {analysis!r} not in {sorted(k for k in self.analysis_files if k != 'inputs')}")
         self.analysis = analysis
+        # params: default_params (DEFAULT_PARAMS + project) < analysis_params[analysis] < params=
+        self.params = copy.deepcopy(self.default_params)
+        if analysis in self.analysis_params:
+            self.set_params(**copy.deepcopy(self.analysis_params[analysis]))
+        if params:
+            self.set_params(**params)
         self.files: Dict[str, Tuple[str, str]] = {**copy.deepcopy(self.default_files),
                                                   **self.analysis_files.get("inputs", {}),
                                                   **(self.analysis_files[analysis] if analysis else {}), **(files or {})}
@@ -351,17 +360,31 @@ class SingleCell(object):
     # -----------------------------------------------------------------------------------------------------
     def file_path(self, key: str, **fmt) -> Path:
         """Path of a registered file. self.files[key] = (root, name): root 'data' | 'result' | 'figure' (the project
-        folders); name may contain sub-folders and {placeholders} filled from fmt (e.g. lib=..., region=...)."""
+        folders) or 'root0' (ROOT0, inputs outside the project); name may contain sub-folders and {placeholders}
+        filled from fmt (e.g. lib=..., region=...)."""
         if key not in self.files:
             raise KeyError(f"file key {key!r} is not registered; known: {sorted(self.files)}")
         root, name = self.files[key]
-        roots = {"data": self.root_data, "result": self.root_result, "figure": self.root_figure}
+        roots = {"data": self.root_data, "result": self.root_result, "figure": self.root_figure, "root0": self.ROOT0}
         fmt = {k: str(v).replace("/", "-") for k, v in fmt.items()}      # 'CTX_L2/3' -> 'CTX_L2-3' (no sub-folder)
         return Path(roots[root]) / name.format(**fmt)
 
+    def fname(self, key: str, **fmt) -> str:
+        """Name of a registered file relative to its root folder, for the methods that take a file name in root_data /
+        root_figure / root_result (fname=, fname_tsv=, ...). Placeholders in fmt are filled ('/' -> '-'); the others
+        are kept for the method that writes the file (e.g. '{k}', the figure number of spatial_scatter_genes)."""
+        if key not in self.files:
+            raise KeyError(f"file key {key!r} is not registered; known: {sorted(self.files)}")
+
+        class _Keep(dict):
+            def __missing__(self, k):
+                return "{" + k + "}"
+
+        return self.files[key][1].format_map(_Keep({k: str(v).replace("/", "-") for k, v in fmt.items()}))
+
     def create_file_dirs(self) -> List[Path]:
         """create_dir for the sub-folders of the registered files (e.g. results/lymph03_subregions); called by __init__."""
-        roots = {"data": self.root_data, "result": self.root_result, "figure": self.root_figure}
+        roots = {"data": self.root_data, "result": self.root_result, "figure": self.root_figure, "root0": self.ROOT0}
         subs = sorted({(root, str(Path(name).parent)) for root, name in self.files.values() if str(Path(name).parent) != "."})
         return [create_dir(roots[root], sub) for root, sub in subs]
 
@@ -403,7 +426,8 @@ class SingleCell(object):
             raise IOError(f"could not write {path}")
         return path
 
-    def _save_figure(self, fig, fname: Optional[str], force: bool = False, verbose: bool = False, **fmt) -> Optional[Path]:
+    def _save_figure(self, fig, fname: Optional[str],
+    force: bool = False, verbose: bool = False, **fmt) -> Optional[Path]:
         """Save a figure inside its plot method. fname: key of self.files ({placeholders} from fmt, e.g. lib=..., region=...)
         or a file name with an extension in root_figure; None, or a key that is not registered (e.g. another analysis),
         -> not saved. An existing file is kept unless force (as _savefig). Plotly -> write_html (params['plotly_include_js']),
@@ -444,13 +468,137 @@ class SingleCell(object):
         filename = self._resolve_path(fname, root_figure, self.root_figure)
 
         if filename.exists() and not force:
-            print(f"File already exists: {filename}")
+            if verbose:
+                print(f"File already exists: {filename}")
         else:
-            fig.savefig(filename, dpi=self.get_param("dpi", dpi), bbox_inches="tight")
+            fig.savefig(filename, dpi=self.get_param("dpi", dpi), bbox_inches="tight", facecolor=fig.get_facecolor())
             if verbose:
                 print(f"Saving figure to {filename}")
 
         return filename
+
+    def _write_table(self, df: pd.DataFrame, fname: Optional[str], force: bool = False, verbose: bool = False,
+                     sep: str = "\t") -> Optional[Path]:
+        """Write a table a method returns (key of self.files or a name in root_result; None = not written). As the
+        figures (_savefig), an existing file is kept unless force; pdwritecsv prints with verbose."""
+        if fname is None:
+            return None
+        path = self._resolve_path(fname, None, self.root_result)
+        if path.exists() and not force:
+            if verbose:
+                print(f"File already exists: {path}")
+            return path
+        pdwritecsv(df, path.name, path.parent, sep=sep, verbose=verbose)
+        return path
+
+    # ---- colours and font scale of a finished matplotlib figure -------------------------------------------------
+    def _muted(self, bg_color: str = "white") -> str:
+        """Muted grey readable on bg_color: dark grey on a light background, light grey on a dark one."""
+        return "#555555" if self._luminance(bg_color) > 0.5 else "#AAAAAA"
+
+    @staticmethod
+    def _luminance(color) -> float:
+        """Relative luminance (0 = black, 1 = white) of a matplotlib colour."""
+        r, g, b = mpl.colors.to_rgb(mpl.colors.to_rgba(color))
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    def style_figure(self, fig, font_color: str = "black", bg_color: str = "white", fontsize_scale: float = 1.0,
+                     min_contrast: float = 0.3, relayout: bool = False):
+        """Recolour and rescale a finished matplotlib figure, including figures drawn by scanpy, squidpy and
+        cell2location, so that one call gives e.g. white text on black (font_color='white', bg_color='black').
+
+        - figure background, legend frames and every axes whose background was the figure background -> bg_color
+          (axes with their own background, e.g. the black panels of the spatial plots, keep it);
+        - texts (titles, labels, tick labels, legends, colour bars, figure texts), tick marks and spines whose
+          colour is too close to bg_color (|luminance difference| < min_contrast) -> font_color; coloured labels
+          (lineage colours) keep their colour; annotations inside image axes (heatmap values, labels on the H&E)
+          are left as they are; white halos (path effects) around recoloured text -> bg_color;
+        - every font size x fontsize_scale (tick labels through the axis, so new ticks get it too).
+        relayout: re-run tight_layout (figures laid out with tight_layout before styling).
+        Defaults (black on white, scale 1) leave the figure unchanged. Returns fig."""
+        from matplotlib.text import Text
+        import matplotlib.patheffects as mpe
+
+        if fig is None:
+            return fig
+        lum_bg = self._luminance(bg_color)
+
+        def dark_ok(c):
+            """Keep colour c: transparent, saturated (lineage colours, even dark ones) or visible on bg_color."""
+            rgba = mpl.colors.to_rgba(c)
+            mx, mn = max(rgba[:3]), min(rgba[:3])
+            saturated = mx > 0 and (mx - mn) / mx >= 0.35
+            return rgba[3] == 0 or saturated or abs(self._luminance(rgba) - lum_bg) >= min_contrast
+        if font_color == "black" and bg_color == "white" and fontsize_scale == 1:
+            return fig
+
+        fig_bg0 = mpl.colors.to_hex(fig.get_facecolor(), keep_alpha=False)
+        fig.patch.set_facecolor(bg_color)
+        tick_texts, skip_texts = set(), set()
+
+        for ax in fig.axes:
+            if mpl.colors.to_hex(ax.get_facecolor(), keep_alpha=False) == fig_bg0:
+                ax.set_facecolor(bg_color)
+            for sp_ in ax.spines.values():
+                if not dark_ok(sp_.get_edgecolor()):
+                    sp_.set_edgecolor(font_color)
+            for axis in (ax.xaxis, ax.yaxis):
+                for which in ("major", "minor"):
+                    ticks = axis.get_major_ticks() if which == "major" else axis.get_minor_ticks()
+                    if not ticks:
+                        continue
+                    labs = [t.label1 for t in ticks] + [t.label2 for t in ticks]
+                    tick_texts.update(map(id, labs))
+                    kw = {}
+                    if not dark_ok(ticks[0].tick1line.get_color()):
+                        kw["color"] = font_color
+                    shown = [l for l in labs if l.get_text()]       # colour-bar labels are filled at draw time
+                    if (not shown and not dark_ok(labs[0].get_color())) or \
+                            (shown and all(not dark_ok(l.get_color()) for l in shown)):
+                        kw["labelcolor"] = font_color                       # persists for ticks created later
+                    else:
+                        for l in shown:
+                            if not dark_ok(l.get_color()):
+                                l.set_color(font_color)
+                    if fontsize_scale != 1:
+                        kw["labelsize"] = ticks[0].label1.get_fontsize() * fontsize_scale
+                    if kw:
+                        sizes = [l.get_fontsize() for l in labs]
+                        axis.set_tick_params(which=which, **kw)
+                        if fontsize_scale != 1:                            # keep per-label sizes, if they differ
+                            for l, s in zip(labs, sizes):
+                                l.set_fontsize(s * fontsize_scale)
+            if ax.images:                                                   # heatmap values, labels on the H&E
+                skip_texts.update(id(t) for t in ax.texts)
+
+        for leg in list(fig.legends) + [ax.get_legend() for ax in fig.axes if ax.get_legend() is not None]:
+            fr = leg.get_frame()
+            fr.set_facecolor(bg_color)
+            if not dark_ok(fr.get_edgecolor()):
+                fr.set_edgecolor(font_color)
+
+        seen = set()
+        for t in fig.findobj(Text):
+            if id(t) in seen:
+                continue
+            seen.add(id(t))
+            if fontsize_scale != 1 and id(t) not in tick_texts:
+                t.set_fontsize(t.get_fontsize() * fontsize_scale)
+            if id(t) in skip_texts or id(t) in tick_texts:
+                continue
+            if not dark_ok(t.get_color()):
+                t.set_color(font_color)
+            for p in (t.get_path_effects() or []):                          # halo of the text colour -> bg
+                gc = getattr(p, "_gc", None)
+                if isinstance(gc, dict) and "foreground" in gc and not \
+                        abs(self._luminance(gc["foreground"]) - self._luminance(t.get_color())) >= min_contrast:
+                    gc["foreground"] = bg_color
+        if relayout:
+            try:
+                fig.tight_layout()
+            except Exception:
+                pass
+        return fig
 
 
     # =====================================================================================================
@@ -765,16 +913,21 @@ class SingleCell(object):
 
     def filter_genes_c2l(self, adata=None, cell_count_cutoff: Optional[int] = None,
                          cell_percentage_cutoff2: Optional[float] = None, nonz_mean_cutoff: Optional[float] = None,
-                         figsize=(3, 4), inplace: bool = True):
+                         figsize=(3, 4), inplace: bool = True, font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None):
         """
         cell2location permissive gene selection (keeps rare-cell-type markers). Returns (AnnData, genes).
+        Style of the filter plot: font_color, bg_color, fontsize_scale (style_figure).
         """
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         from cell2location.utils.filtering import filter_genes
 
         a = self._check_adata(adata)
         selected = filter_genes(a, cell_count_cutoff=self.get_param("c2l_cell_count_cutoff", cell_count_cutoff),
                                 cell_percentage_cutoff2=self.get_param("c2l_cell_percentage_cutoff2", cell_percentage_cutoff2),
                                 nonz_mean_cutoff=self.get_param("c2l_nonz_mean_cutoff", nonz_mean_cutoff), figsize=figsize)
+        self.style_figure(plt.gcf(), font_color, bg_color, fontsize_scale)
         out = a[:, selected].copy()
         if inplace and adata is None:
             self.adata = out
@@ -803,7 +956,8 @@ class SingleCell(object):
         return df_qc.round(2)
 
     def plot_qc(self, groupby: Optional[str] = None, adata=None, fname: Optional[str] = "qc_violin.png",
-                title: str = "", thresholds: Optional[Dict[str, float]] = None, max_points: Optional[int] = None):
+                title: str = "", thresholds: Optional[Dict[str, float]] = None, max_points: Optional[int] = None,
+                force: bool = False, verbose: bool = False):
         """Violins of n_genes_by_counts, total_counts, pct_counts_mt per group + counts-vs-genes scatter.
         thresholds: {'n_genes_by_counts': 5000, 'pct_counts_mt': 10} draws dashed lines."""
         a = self._check_adata(adata)
@@ -833,7 +987,7 @@ class SingleCell(object):
         fig.colorbar(sca, ax=axes[3], fraction=0.05).set_label("pct_counts_mt")
         if title:
             fig.suptitle(title, x=0.02, ha="left", y=1.04)
-        self._savefig(fig, fname)
+        self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 
     # =====================================================================================================
@@ -993,10 +1147,16 @@ class SingleCell(object):
     def spatial_scatter_genes(self, genes: Sequence[str], adata=None, library_id: Optional[str] = None,
                               ncols: int = 4, nframe: Optional[int] = None, q: Optional[float] = None,
                               img_alpha: float = 0.6, size: Optional[float] = None, cmap=None,
-                              fname: Optional[str] = None) -> Tuple[List[str], List[Any]]:
+                              font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                              fname: Optional[str] = None,
+                              force: bool = False, verbose: bool = False) -> Tuple[List[str], List[Any]]:
         """squidpy spatial_scatter of genes (symbols or obs columns), each clipped at its q-th percentile
         (clip_for_plot), nframe panels per figure. fname may contain '{k}' (figure number, 1-based).
+        Style (None = params): font_color, bg_color, fontsize_scale (style_figure). force: rewrite an existing file; verbose: print the file status.
         Returns (features plotted, figures)."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         import squidpy as sq
         a = self._check_adata(adata)
         kept, cols = self.clip_for_plot(list(genes), a, q=q)
@@ -1008,10 +1168,10 @@ class SingleCell(object):
                                   img_res_key=self.params["img_key"], img_alpha=img_alpha,
                                   size=self.get_param("spot_size", size), cmap=cmap or cmap_byr, ncols=ncols,
                                   library_id=lib)
-            fig = plt.gcf()
+            fig = self.style_figure(plt.gcf(), font_color, bg_color, fontsize_scale)
             figs.append(fig)
-
-            self._savefig(fig, fname.format(k=k + 1) if "{k}" in fname else fname)
+            if fname is not None:
+                self._savefig(fig, fname.format(k=k + 1) if "{k}" in fname else fname, force=force, verbose=verbose)
 
         return kept, figs
 
@@ -1272,7 +1432,9 @@ class SingleCell(object):
             if verbose:
                 print(f"RegressionModel loaded from {run_dir}")
         
-        if not all(f"{q}_per_cluster_mu_fg" in adata_ref.varm for q in quantiles):
+        # a loaded model has no mod.samples (not saved with the model): re-export also when varm already has the
+        # quantiles (e.g. the cell re-run with adata_ref = mod.adata of the previous run), else plot_QC fails
+        if not all(f"{q}_per_cluster_mu_fg" in adata_ref.varm for q in quantiles) or not getattr(mod, "samples", None):
             adata_ref = mod.export_posterior(adata_ref, use_quantiles=True, add_to_varm=quantiles,
                                              sample_kwargs={"batch_size": self.params["ref_batch_size"],
                                                             "accelerator": accelerator})
@@ -1354,24 +1516,38 @@ class SingleCell(object):
         return list(df_abund.columns)
 
     def plot_c2l_history(self, mod, iter_start: int = 0, label: Optional[str] = None, figsize=(5, 3.5),
-                         fname: Optional[str] = None):
-        """ELBO loss history (mod.plot_history) on a new figure, first iter_start epochs omitted."""
+                         font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                         fname: Optional[str] = None, force: bool = False, verbose: bool = False):
+        """ELBO loss history (mod.plot_history) on a new figure, first iter_start epochs omitted.
+        Style (None = params): font_color, bg_color, fontsize_scale (style_figure). force: rewrite an existing file; verbose: print the file status."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         fig, ax = plt.subplots(figsize=figsize)
         mod.plot_history(iter_start, ax=ax)
         if label:
             ax.legend(labels=[label])
-        self._savefig(fig, fname)
+        self.style_figure(fig, font_color, bg_color, fontsize_scale, relayout=True)
+        self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 
     def plot_c2l_qc(self, mod, summary_name: str = "q50", figsize=(3, 3), use_n_obs: int = 1000,
-                    fname: Optional[str] = None) -> list:
-        """mod.plot_QC(summary_name) with every figure kept (cell2location calls plt.show() internally).
-        fname='x.png' saves x_1.png, x_2.png, ... Returns the figures."""
+                    font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                    fname: Optional[str] = None, force: bool = False, verbose: bool = False) -> list:
+        """mod.plot_QC(summary_name) with every figure kept (cell2location calls plt.show() internally; each
+        figure is styled before it is shown). fname='x.png' saves x_1.png, x_2.png, ... Returns the figures.
+        Style (None = params): font_color, bg_color, fontsize_scale (style_figure). force: rewrite an existing file; verbose: print the file status."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
+        if not getattr(mod, "samples", None):
+            raise RuntimeError("mod.samples is missing (model loaded from disk without its posterior): use the model "
+                               "returned by fit_or_load_reference / fit_or_load_mapping, which re-export it")
         figs = []
         show = plt.show
 
         def _show(*a, **k):
-            figs.append(plt.gcf())
+            figs.append(self.style_figure(plt.gcf(), font_color, bg_color, fontsize_scale, relayout=True))
             show(*a, **k)
 
         plt.show = _show
@@ -1381,10 +1557,10 @@ class SingleCell(object):
         finally:
             plt.show = show
         if not figs:
-            figs = [plt.gcf()]
+            figs = [self.style_figure(plt.gcf(), font_color, bg_color, fontsize_scale, relayout=True)]
         if fname:
             for i, f in enumerate(figs):
-                self._savefig(f, fname.replace(".png", f"_{i + 1}.png"))
+                self._savefig(f, fname.replace(".png", f"_{i + 1}.png"), force=force, verbose=verbose)
         return figs
 
     def posterior_samples_cached(self, mod, adata, run_dir: Path, fname: str = "posterior_samples_w_sf.npz",
@@ -1417,9 +1593,14 @@ class SingleCell(object):
         return ps
 
     def plot_posterior_median_vs_mean(self, mod, ps: Optional[Dict[str, np.ndarray]] = None, site: str = "w_sf",
-                                      accelerator: Optional[str] = None, figsize=(4, 4), fname: Optional[str] = None):
+                                      accelerator: Optional[str] = None, figsize=(4, 4), font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                                      fname: Optional[str] = None, force: bool = False, verbose: bool = False):
         """Posterior median (mod.posterior_quantile q=0.5) vs posterior mean of one site (from mod.samples
-        'post_sample_means' when present, otherwise the mean of the draws in ps)."""
+        'post_sample_means' when present, otherwise the mean of the draws in ps).
+        Style (None = params): font_color, bg_color, fontsize_scale (style_figure). force: rewrite an existing file; verbose: print the file status."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         medians = mod.posterior_quantile(q=0.5, batch_size=mod.adata.n_obs,
                                          accelerator=self.get_param("accelerator", accelerator))
         if "post_sample_means" in getattr(mod, "samples", {}):
@@ -1433,7 +1614,8 @@ class SingleCell(object):
                    edgecolors="black", linewidths=0.3, alpha=0.8, rasterized=True)
         ax.set_xlabel("posterior median"); ax.set_ylabel("posterior mean")
         ax.set_title(f"{site}: median vs mean", loc="left")
-        self._savefig(fig, fname)
+        self.style_figure(fig, font_color, bg_color, fontsize_scale, relayout=True)
+        self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 
     def run_colocation_cached(self, adata_vis: ad.AnnData, run_dir: Path, n_facts: Optional[Sequence[int]] = None,
@@ -1500,8 +1682,14 @@ class SingleCell(object):
 
     def umap_spatial_3plot(self, adata=None, names: Optional[Dict[str, str]] = None, 
                            figsize: Tuple[float, float] = (15, 6.5), key: Optional[str] = None,
-                           fname: Optional[str] = "umap_region_sample.png", library_id: Optional[str] = None):
-        """UMAP by region, UMAP by sample, spatial map by region (one library) with a shared legend."""
+                           fname: Optional[str] = "umap_region_sample.png", library_id: Optional[str] = None,
+                           font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                           force: bool = False, verbose: bool = False):
+        """UMAP by region, UMAP by sample, spatial map by region (one library) with a shared legend.
+        Style (None = params): font_color, bg_color, fontsize_scale (style_figure). force: rewrite an existing file; verbose: print the file status."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         a = self._check_adata(adata)
         key = self.get_param("region_key", key)
         fig, axes = plt.subplots(1, 3, figsize=figsize, layout="constrained")
@@ -1513,11 +1701,13 @@ class SingleCell(object):
                       img_key=self.params["img_key"], alpha=0.5, title=lib, legend_loc="none", show=False)
         names = names if names is not None else self.region_names(a, key=key)
         self.legend_figure_bottom(fig, a, key, names=names, ncol=4)
-        self._savefig(fig, fname)
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)          # constrained layout: re-laid out on draw
+        self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 
     def plot_spatial_visium(self, names: Dict[str, str], adata=None, key: Optional[str] = None,
-                            library_id: Optional[str] = None, figsize=(8, 4), fname: Optional[str] = None):
+                            library_id: Optional[str] = None, figsize=(8, 4), fname: Optional[str] = None,
+                            force: bool = False, verbose: bool = False):
         """Spatial map of a categorical key on the hires image with a 'cluster – name' legend."""
         a = self._check_adata(adata)
         key = self.get_param("region_key", key)
@@ -1533,17 +1723,25 @@ class SingleCell(object):
                               label=f"{k} – {names.get(k, '')}") for k, c in zip(cats, cols)]
             fig.legend(handles=handles, loc="center left", ncol=1, fontsize=6, frameon=False,
                        bbox_to_anchor=(0.92, 0.5), handletextpad=0.3)
-        self._savefig(fig, fname)
+        self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 
     def plotly_spatial_visium(self, names: Dict[str, str], adata=None, key: Optional[str] = None,
                               library_id: Optional[str] = None, set_colors: bool = False,
                               width: int = 1400, height: int = 900, image_format: Optional[str] = None,
-                              marker_size: float = 6, hover_extra: Optional[Dict[str, str]] = None):
+                              marker_size: float = 6, hover_extra: Optional[Dict[str, str]] = None,
+                              fontsize_title: int = 17, fontsize_legend: int = 12, fontsize_hover: int = 12,
+                              font_color: Optional[str] = None, bg_color: Optional[str] = None, marker_line_color: str = "black",
+                              fname: Optional[str] = None, force: bool = False, verbose: bool = False):
         """Interactive (plotly) spatial map of a categorical key on the hires image.
 
         image_format: 'raw' embeds the pixel array (about 30 MB per HTML file), 'jpeg' an encoded image (about 6 MB);
-        default params['plotly_image_format']. hover_extra: category -> extra hover text (e.g. signature genes)."""
+        default params['plotly_image_format']. hover_extra: category -> extra hover text (e.g. signature genes).
+        Font sizes: fontsize_title, fontsize_legend, fontsize_hover. Colours: font_color, bg_color (paper and plot),
+        marker_line_color (spot outline). fname: key of self.files or an .html name in root_figure (None = not
+        saved); an existing file is kept unless force."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
         import base64
         import io
         import plotly.graph_objects as go
@@ -1583,17 +1781,26 @@ class SingleCell(object):
             extra = f"<br>{hover_extra[k]}" if k in hover_extra else ""
             fig.add_trace(go.Scattergl(x=xy[mk, 0], y=xy[mk, 1], mode="markers", name=label, text=spot_names[mk],
                                        marker=dict(size=marker_size, color=c, opacity=0.9,
-                                                   line=dict(width=0.5, color="black")),
+                                                   line=dict(width=0.5, color=marker_line_color)),
                                        hovertemplate=f"<b>{label}</b>{extra}<br>spot: %{{text}}<extra></extra>"))
-        fig.update_layout(title=s, width=width, height=height, plot_bgcolor="black", margin=dict(l=10, r=10, t=40, b=10),
-                          legend=dict(font=dict(size=12), itemsizing="constant", x=1.01, y=0.5, yanchor="middle"))
+        fig.update_layout(title=dict(text=s, font=dict(size=fontsize_title, color=font_color)), width=width, height=height,
+                          font=dict(color=font_color), paper_bgcolor=bg_color, plot_bgcolor=bg_color,
+                          margin=dict(l=10, r=10, t=40 + fontsize_title, b=10),
+                          hoverlabel=dict(font=dict(size=fontsize_hover)),
+                          legend=dict(font=dict(size=fontsize_legend, color=font_color), itemsizing="constant",
+                                      x=1.01, y=0.5, yanchor="middle"))
         fig.update_xaxes(visible=False, range=[0, img.shape[1]])
         fig.update_yaxes(visible=False, range=[img.shape[0], 0], scaleanchor="x")
+        self._save_figure(fig, fname, force, verbose)
         return fig
 
-    def plot_genes_per_cell_type(self, slide, genes, ctypes, q: Optional[float] = None):
+    def plot_genes_per_cell_type(self, slide, genes, ctypes, q: Optional[float] = None, font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None):
         """Total expression (column 0) and cell-type-specific expected expression (layers[<cell type>]) per gene.
-        Requires slide.layers[<cell type>] from mod.module.model.compute_expected_per_cell_type."""
+        Requires slide.layers[<cell type>] from mod.module.model.compute_expected_per_cell_type.
+        Style (None = params): font_color, bg_color, fontsize_scale (style_figure). Not saved: returns (fig, axs)."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         qf = self.get_param("density_quantile", None if q is None else q)
         fig, axs = plt.subplots(nrows=len(genes), ncols=len(ctypes) + 1,
                                 figsize=(4.5 * (len(ctypes) + 1) + 2, 5 * len(genes) + 1), squeeze=False)
@@ -1608,10 +1815,16 @@ class SingleCell(object):
                               size=self.params["spot_size"], img_key=self.params["img_key"], vmin=0, vmax=cap,
                               ax=axs[j, i + 1], show=False)
                 axs[j, i + 1].set_title(f"{g} {ct}")
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)
         return fig, axs
 
-    def plot_slide_loc_cell_types(self, slide, clust_labels, c2l_colors, figsize=(5, 5), fname: Optional[str] = None):
-        """cell2location.plt.plot_spatial for up to 6 cell types in one panel (legend outside, right)."""
+    def plot_slide_loc_cell_types(self, slide, clust_labels, c2l_colors, figsize=(5, 5), font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                                  fname: Optional[str] = None, force: bool = False, verbose: bool = False):
+        """cell2location.plt.plot_spatial for up to 6 cell types in one panel (legend outside, right).
+        Style (None = params): font_color, bg_color, fontsize_scale (style_figure). force: rewrite an existing file; verbose: print the file status."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         from cell2location.plt import plot_spatial
         from matplotlib.patches import Patch
         with mpl.rc_context({"figure.figsize": figsize}):
@@ -1623,20 +1836,27 @@ class SingleCell(object):
                            fontsize=10, title_fontsize=11, frameon=False, borderaxespad=0)
         if fname is None:
             fname = "spatial_" + "_".join(str(c).replace("+", "pos").replace("/", "-") for c in clust_labels) + ".png"
-        self._savefig(fig, fname)
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)
+        self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 
     def plot_spatial_features(self, slide, features: Sequence[str], ncols: int = 4, figsize=(4.5, 5),
-                              q: Optional[float] = None, cmap=None, fname: Optional[str] = None):
+                              q: Optional[float] = None, cmap=None, font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                              fname: Optional[str] = None, force: bool = False, verbose: bool = False):
         """sc.pl.spatial of several obs features (e.g. cell-type abundances) on a black background, colour scale
-        clipped at the q-th percentile of each feature (cell2location tutorial style)."""
+        clipped at the q-th percentile of each feature (cell2location tutorial style).
+        Style (None = params): font_color, bg_color, fontsize_scale (style_figure). force: rewrite an existing file; verbose: print the file status."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         q = self.get_param("clip_quantile", q)
         with mpl.rc_context({"axes.facecolor": "black", "figure.figsize": list(figsize)}):
             sc.pl.spatial(slide, cmap=cmap or cmap_byr, color=list(features), ncols=ncols,
                           size=self.params["spot_size"], img_key=self.params["img_key"], vmin=0, vmax=f"p{q:g}",
                           show=False)
             fig = plt.gcf()
-        self._savefig(fig, fname)
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)
+        self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 
     @staticmethod
@@ -1693,7 +1913,8 @@ class SingleCell(object):
                      gene_groups: Optional[Sequence[Tuple[str, Sequence[str]]]] = None, fname: Optional[str] = None,
                      row_labels: Optional[Dict[str, str]] = None, cmap: str = "RdPu", size_max: float = 90,
                      title: str = "", figsize: Optional[Tuple[float, float]] = None,
-                     size_label: str = "fraction of cells\nin group (%)", color_label: str = "relative expression\nin group"):
+                     size_label: str = "fraction of cells\nin group (%)", color_label: str = "relative expression\nin group",
+                     force: bool = False, verbose: bool = False):
         """Dot plot: dot size = df_frac (0-1), dot colour = df_rel (0-1); columns may repeat a gene.
         gene_groups = [(label, genes), ...] draws brackets above the columns (paper Fig 3B)."""
         rows, cols = list(df_frac.index), list(df_frac.columns)
@@ -1728,7 +1949,7 @@ class SingleCell(object):
                   title_fontsize=7, labelspacing=0.9)
         if title:
             ax.set_title(title, loc="left", pad=70 if gene_groups else 6)
-        self._savefig(fig, fname)
+        self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 
     @staticmethod
@@ -2110,7 +2331,8 @@ class SingleCell(object):
 
     def calc_df_region_table(self, adata_expr, df_rank_region: pd.DataFrame, region_sig: Dict[str, set],
                              df_abund: pd.DataFrame, df_region_info: Optional[pd.DataFrame] = None,
-                             label_col: str = "region_label", force: bool = False, verbose: bool = False) -> pd.DataFrame:
+                             label_col: str = "region_label",
+                             force: bool = False, verbose: bool = False) -> pd.DataFrame:
         """Cached in files 'region_table' (see _calc_df_region_table). n_subregions is empty until the subregions exist:
         update it with update_region_table_subregions."""
         return self._cached_table("region_table",
@@ -2372,7 +2594,7 @@ class SingleCell(object):
                                  fontsize_hover: int = 13, subregion_colors: Optional[Dict[str, str]] = None,
                                  section_colors: Optional[Dict[str, str]] = None, umi_colorscale=LIGHT_SEQUENTIAL,
                                  marker_line_color: str = "black", marker_line_width: float = 0.4,
-                                 font_color: str = "#2a3f5f", bg_color: str = "white", webgl: bool = False,
+                                 font_color: Optional[str] = None, bg_color: Optional[str] = None, webgl: bool = False,
                                  image_bg_color: Optional[str] = None,
                                  fname: Optional[str] = "fig_region_sub", force: bool = False, verbose: bool = False):
         """One region: UMAP by subregion | UMAP by section (one section: by log10 UMIs, the depth confounder) |
@@ -2388,6 +2610,8 @@ class SingleCell(object):
         fontsize_hover. Colours (light by default): subregion_colors (subregion -> colour; others from subregion_palette =
         REGION_COLORS), section_colors (section -> colour; others REGION_COLORS), umi_colorscale (Plotly scale name or
         list of colours; default LIGHT_SEQUENTIAL), marker_line_color / marker_line_width (H&E spot outline), font_color, bg_color."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
         import plotly.graph_objects as go
         from plotly.subplots import make_subplots
         Scatter = go.Scattergl if webgl else go.Scatter      # SVG by default: browsers keep only ~16 WebGL contexts per page
@@ -2480,7 +2704,7 @@ class SingleCell(object):
                              fontsize_title: int = 17, fontsize_legend: int = 10, fontsize_legend_title: int = 10,
                              fontsize_hover: int = 13, region_colors: Optional[Dict[str, str]] = None,
                              skip_color: str = "#dddddd", marker_line_color: str = "black", marker_line_width: float = 0.3,
-                             font_color: str = "#2a3f5f", bg_color: str = "white", legend_ncols: int = 1,
+                             font_color: Optional[str] = None, bg_color: Optional[str] = None, legend_ncols: int = 1,
                              image_bg_color: Optional[str] = None,
                              legend_col_width: int = 110,
                              fname: Optional[str] = "fig_subregion_map", force: bool = False, verbose: bool = False):
@@ -2492,6 +2716,8 @@ class SingleCell(object):
         subregion_skip), marker_line_color / marker_line_width (spot outline), font_color, bg_color.
         Legend: legend_ncols columns side by side on the right (regions kept whole, split in order into columns of about
         equal length; each column is a separate Plotly legend), legend_col_width pixels per column."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
         import plotly.graph_objects as go
         key = self.params["subregion_key"]
         img = self._map_image(library_id, adata_map, image_bg_color, force, verbose)
@@ -2566,7 +2792,7 @@ class SingleCell(object):
                           width: int = 1300, height: int = 950, fontsize_legend: int = 11, fontsize_title: int = 18,
                           fontsize_hover: int = 13, n_genes_hover: int = 8, region_colors: Optional[Dict[str, str]] = None,
                           marker_line_color: str = "black", marker_line_width: float = 0.3,
-                          marker_opacity: Optional[float] = None, font_color: str = "#2a3f5f", bg_color: str = "white",
+                          marker_opacity: Optional[float] = None, font_color: Optional[str] = None, bg_color: Optional[str] = None,
                           image_bg_color: Optional[str] = None,
                           fname: Optional[str] = "fig_region_map", force: bool = False, verbose: bool = False):
         """All regions of one section on the H&E (one trace per region, colours = _region_palette, as in the subregion map).
@@ -2576,6 +2802,8 @@ class SingleCell(object):
 
         Font sizes: fontsize_title, fontsize_legend, fontsize_hover. Colours: region_colors (region -> colour; others from
         _region_palette), marker_line_color / marker_line_width (spot outline), marker_opacity, font_color, bg_color."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
         import plotly.graph_objects as go
         mm, xy = self.spot_xy(library_id, adata_map)
         names_lb = adata_map.obs_names[mm]
@@ -2632,12 +2860,13 @@ class SingleCell(object):
     def plotly_subregion_diagnostics(self, df_sub_table: pd.DataFrame, height: int = 520, width: Optional[int] = None,
                                      fontsize_title: int = 17, fontsize_axis: int = 14, fontsize_ticks: int = 12,
                                      fontsize_legend: int = 12, fontsize_legend_title: int = 12, fontsize_hover: int = 13,
-                                     region_colors: Optional[Dict[str, str]] = None, font_color: str = "#2a3f5f",
+                                     region_colors: Optional[Dict[str, str]] = None, font_color: Optional[str] = None,
                                      line_color: str = "#888888", line_width: float = 1.5,
                                      marker_line_color: str = "#333333", marker_line_width: float = 0.0,
-                                     marker_opacity: Optional[float] = None, bg_color: str = "white",
+                                     marker_opacity: Optional[float] = None, bg_color: Optional[str] = None,
                                      grid_color: str = "#EBF0F8", size_max: int = 28,
-                                     fname: Optional[str] = "fig_diagnostics", force: bool = False, verbose: bool = False):
+                                     fname: Optional[str] = "fig_diagnostics",
+                                     force: bool = False, verbose: bool = False):
         """Subregion size vs spatial coherence ratio (marker size = number of subregion signature genes, colour = region);
         dashed line = coherence_min_ratio.
 
@@ -2646,6 +2875,8 @@ class SingleCell(object):
         _region_palette), font_color (all text), line_color / line_width (threshold line), marker_line_color /
         marker_line_width (marker outline; 0 = none), marker_opacity, bg_color (plot + paper), grid_color.
         Defaults reproduce the plotly_white look."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
         import plotly.express as px
         d = df_sub_table.copy()
         d["n_sig_plot"] = d.n_subregion_signature.clip(lower=1)
@@ -2678,12 +2909,15 @@ class SingleCell(object):
                                         label_col: str = "region_label", height: int = 700, width: Optional[int] = None,
                                         fontsize_title: int = 17, fontsize_xticks: int = 12, fontsize_yticks: int = 9,
                                         fontsize_colorbar: int = 12, fontsize_hover: int = 13, colorscale: str = "RdBu_r",
-                                        font_color: str = "#2a3f5f", bg_color: str = "white",
-                                        fname: Optional[str] = "fig_region_heatmap", force: bool = False, verbose: bool = False):
+                                        font_color: Optional[str] = None, bg_color: Optional[str] = None,
+                                        fname: Optional[str] = "fig_region_heatmap",
+                                        force: bool = False, verbose: bool = False):
         """Mean log1p(CP10k) of the top region signature genes (rows) in every region (columns), z-scored per gene.
 
         Font sizes: fontsize_title, fontsize_xticks (regions), fontsize_yticks (genes), fontsize_colorbar, fontsize_hover.
         Colours: colorscale (diverging, centred at 0), font_color, bg_color."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
         import plotly.graph_objects as go
         regions = list(adata_expr.obs[label_col].cat.categories)
         genes = []
@@ -3234,7 +3468,7 @@ class SingleCell(object):
                         outlines: Optional[Sequence[np.ndarray]] = None, cmap=None, point_size: float = 4,
                         image_alpha: float = 0.5, image_bg_color: Optional[str] = None, outline_color: str = "#00E5FF",
                         outline_width: float = 1.0, fontsize_title: float = 8, fontsize_suptitle: float = 9,
-                        fontsize_colorbar: float = 6, font_color: str = "black", bg_color: str = "white",
+                        fontsize_colorbar: float = 6, font_color: Optional[str] = None, bg_color: Optional[str] = None,
                         fname: Optional[str] = "lr_local_scores.png", force: bool = False, verbose: bool = False):
         """LIANA local scores of LR pairs on the H&E of one section (colour 2nd-99.5th percentile). One panel per
         entry of interactions (repeats allowed); titles / outlines (boolean masks over adata.obs_names, e.g. the
@@ -3244,6 +3478,8 @@ class SingleCell(object):
         Sizes: point_size, outline_width. Font sizes: fontsize_title (panels), fontsize_suptitle,
         fontsize_colorbar. Colours: cmap, outline_color, font_color, bg_color (figure and panels).
         fname: key of self.files ({lib}) or a file name in root_figure; an existing file is kept unless force."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
         
         lib = library_id or self.library_ids(adata)[0]
         img = self._map_image(lib, adata, image_bg_color, verbose=verbose)
@@ -3289,12 +3525,14 @@ class SingleCell(object):
                                 group_names: Optional[Dict[str, str]] = None, height: int = 900, width: int = 1200,
                                 fontsize_title: int = 17, fontsize_xticks: int = 8, fontsize_yticks: int = 9,
                                 fontsize_colorbar: int = 12, fontsize_hover: int = 13, colorscale: str = "RdBu_r",
-                                font_color: str = "#2a3f5f", bg_color: str = "white",
+                                font_color: Optional[str] = None, bg_color: Optional[str] = None,
                                 fname: Optional[str] = None, force: bool = False, verbose: bool = False):
         """Groups (rows) x LR pairs (columns: union of each group's top-n enriched pairs, display filter): AUROC of
         the local score (0.5 = as elsewhere). Hover: high-high fraction in / out.
         Font sizes: fontsize_title, fontsize_xticks (LR pairs), fontsize_yticks (groups), fontsize_colorbar,
         fontsize_hover. Colours: colorscale (diverging at 0.5), font_color, bg_color. fname: key ('fig_lr_region_hm')."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
         import plotly.graph_objects as go
         groups = list(groups) if groups is not None else list(pd.unique(df_lr_group.group))
         d = df_lr_group[df_lr_group.enriched & df_lr_group.interaction.isin(set(self._lr_display(df_lr_group.interaction.unique())))]
@@ -3323,14 +3561,16 @@ class SingleCell(object):
                                     group_names: Optional[Dict[str, str]] = None, exclude_self: bool = True,
                                     height: Optional[int] = None, width: Optional[int] = None, fontsize_title: int = 17,
                                     fontsize_xticks: int = 8, fontsize_yticks: int = 9, fontsize_colorbar: int = 12,
-                                    fontsize_hover: int = 13, colorscale: str = "Reds", font_color: str = "#2a3f5f",
-                                    bg_color: str = "white", fname: Optional[str] = None, force: bool = False,
+                                    fontsize_hover: int = 13, colorscale: str = "Reds", font_color: Optional[str] = None,
+                                    bg_color: Optional[str] = None, fname: Optional[str] = None, force: bool = False,
                                     verbose: bool = False):
         """Groups (rows) x the n_links sender -> receiver links with most LR pairs over all groups (columns):
         number of LR pairs (calc_df_group_celltype_links). Hover: the LR pairs. exclude_self: links between
         different cell types only.
         Font sizes: fontsize_title, fontsize_xticks (links), fontsize_yticks (groups), fontsize_colorbar, fontsize_hover.
         Colours: colorscale, font_color, bg_color. fname: key ('fig_links_region', 'fig_links_sub')."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
         import plotly.graph_objects as go
         groups = list(groups) if groups is not None else list(pd.unique(df_links.group))
         if exclude_self:
@@ -3354,12 +3594,14 @@ class SingleCell(object):
     def plot_sender_receiver_heatmaps(self, df_ct: pd.DataFrame, interactions: Sequence[str], n_top: int = 10,
                                       ncols: int = 3, panel_size: Tuple[float, float] = (4.6, 4.0), cmap: str = "Reds",
                                       fontsize_title: float = 8, fontsize_ticks: float = 6, fontsize_label: float = 7,
-                                      fontsize_colorbar: float = 6, font_color: str = "black", bg_color: str = "white",
+                                      fontsize_colorbar: float = 6, font_color: Optional[str] = None, bg_color: Optional[str] = None,
                                       fname: Optional[str] = "celltype_lr_sender_receiver.png", force: bool = False,
                                       verbose: bool = False):
         """One heatmap per LR pair: the n_top senders (rows) x n_top receivers (columns) by total score.
         Font sizes: fontsize_title, fontsize_ticks (cell types), fontsize_label (axis labels), fontsize_colorbar.
         Colours: cmap, font_color, bg_color. fname: key of self.files or a file name; kept unless force."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
         interactions = [i for i in interactions if i in set(df_ct.interaction)]
         nrows = int(np.ceil(len(interactions) / ncols))
         fig, axes = plt.subplots(nrows, ncols, figsize=(panel_size[0] * ncols, panel_size[1] * nrows), squeeze=False,
@@ -3388,12 +3630,14 @@ class SingleCell(object):
 
     def plotly_coloc_heatmap(self, df_coloc: pd.DataFrame, height: int = 800, width: Optional[int] = None,
                              fontsize_title: int = 17, fontsize_ticks: int = 8, fontsize_colorbar: int = 12,
-                             fontsize_hover: int = 13, colorscale: str = "RdBu_r", font_color: str = "#2a3f5f",
-                             bg_color: str = "white", fname: Optional[str] = "fig_coloc", force: bool = False,
+                             fontsize_hover: int = 13, colorscale: str = "RdBu_r", font_color: Optional[str] = None,
+                             bg_color: Optional[str] = None, fname: Optional[str] = "fig_coloc", force: bool = False,
                              verbose: bool = False):
         """Cell-type co-localisation (symmetric), rows / columns ordered by hierarchical clustering.
         Font sizes: fontsize_title, fontsize_ticks (cell types), fontsize_colorbar, fontsize_hover.
         Colours: colorscale (diverging at 0), font_color, bg_color. fname: key of self.files."""
+        font_color = self.get_param("font_color", font_color)   # style: None -> params
+        bg_color = self.get_param("bg_color", bg_color)
         import plotly.graph_objects as go
         from scipy.cluster.hierarchy import linkage, leaves_list
         o = leaves_list(linkage(df_coloc.values, "average", metric="euclidean"))
