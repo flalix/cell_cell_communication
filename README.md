@@ -127,6 +127,6 @@ Scanpy, AnnData and Squidpy are part of [scverse®](https://scverse.org/), a pro
 
 ## Author
 
-Flavio Lichtenstein, PhD — bioinformatics & systems biology.
-email: flalix@gmail.com
-phone: +55-11-96560-1960
+Flavio Lichtenstein, PhD — bioinformatics & systems biology.  
+email: flalix@gmail.com  
+phone: +55-11-96560-1960  
