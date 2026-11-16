@@ -147,6 +147,7 @@ dmypy.json
 
 # data
 data/
+colab/
 c2l_test_out/
 
 # Vim .swp
@@ -163,13 +164,25 @@ _version.py
 
 *.h5ad
 *.npz
+*.pt
+*.tsv.gz
 
 figures/c2l_liana
 
-figures/c2l_liana/liana_bivariate_top.png
-figures/c2l_liana/c2l_abundance_maps.png
-figures/celltype_spatial_maps.png
-figures/liana_spatial_LR.png
-figures/visium_hne_image.tiff
+visium_hne_image.tiff
+c2l_liana/liana_bivariate_top.png
+c2l_liana/c2l_abundance_maps.png
+celltype_spatial_maps.png
+liana_spatial_LR.png
+mb04_lr_region_top_local_scores_ST8059048.png
+mb04_lr_region_top_local_scores_ST8059051.png
+mb04_lr_top_local_scores_ST8059048.png
+mb04_lr_top_local_scores_ST8059051.png
 
-mouse_brain/results/mb04_liana_reference_rank_aggregate.tsv
+spatial_clusters.pngliana_cluster_results.tsv
+liana_cluster_top_specific.tsv
+mb04_liana_reference_rank_aggregate.tsv
+mb04_liana_reference_supported.tsv
+mb04_lr_by_subregion.tsv
+heart04_liana_reference_rank_aggregate.tsv
+

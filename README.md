@@ -33,6 +33,7 @@ Visium (H&E / IF) ────► Scanpy / Squidpy ──► spatial graphs, nei
 | new | notebooks_multiproject/ | mp_%s01_prepare.ipynb | all | complete study, new structure |
 | new | %s 1) lymphoid | mp_%s02_regions.ipynb | all | deeper study, IFN region |
 | new | %s 2) mouse_brain | mp_%s03_subregions.ipynb | all | subregions |
+| new | %s 3) heart_dvlp | (heart_dvlp: mp_heart_dvlp02_regions.ipynb) | all | regions in space and time (PCW 6-12) |
 | new |  | mp_%s04_liana_regions.ipynb | all | liana: ligand x receivers |
 | old | notebooks_ccc_liana/ | ccc01_tutorial.ipynb | cell2location | cell2location tutorial (reproduced) |
 | old | | ccc02_study.ipynb | cell2location | cell2location applied study |
@@ -48,7 +49,7 @@ Visium (H&E / IF) ────► Scanpy / Squidpy ──► spatial graphs, nei
 |---|---|---|
 | mouse_brain | mouse | brain study |
 | lymphoid_tissue | human | secondary lymphoid tissue study |
-| heart | human | embrionic heart study - Univ. Sweden |
+| heart_dvlp | human | developing human heart (Lázár et al., Nat Genet 2025; KTH / Karolinska, Sweden): 38 Visium sections, 16 hearts, PCW 6-12, scRNA reference 76,991 cells; lib **single_cell_heart_dvlp_lib.py** |
 | pancreas_cancer | human | my study --> support AI Agent project |
 
 

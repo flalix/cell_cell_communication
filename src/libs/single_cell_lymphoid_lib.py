@@ -1,7 +1,8 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-single_cell_lymphoid_lib.py - SingleCellLymphoid(SingleCell): human lymph node Visium + lymphoid-organ scRNA reference
+single_cell_lymphoid_lib.py - SingleCellLymphoid(SingleCell)
+human lymph node Visium + lymphoid-organ scRNA reference
 (Kleshchevnikov et al., Fig 4; lymphoid_organ_sc.h5ad, 73,260 cells; V1_Human_Lymph_Node).
 
 Methods ported from libs/cell2location_lib.py (that file is kept unchanged for ccc01/ccc02):
@@ -25,7 +26,7 @@ Every DataFrame variable starts with 'df_'.
 @created on 2026/11/05
 @updated on 2026/11/10  (mp_lymphoid01 / mp_lymphoid02 lymphoid notebooks)
 @updated on 2026/11/11  (mp_lymphoid03 subregions)
-@author: Flavio Lichtenstein
+@author: Flavio Lichtenstein & Claude-Science Opus 5.5
 """
 
 import math
