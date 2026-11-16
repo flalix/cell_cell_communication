@@ -10,7 +10,7 @@ results/c2l_<tag>/cell2location_map; fit_or_load_reference / fit_or_load_mapping
     mode all       : both
 
 Usage (GPU, full epochs; tag 'gpu' = HEART_PARAMS['c2l_tag'], the folder the notebooks read):
-    python src/programs/run_c2l_heart_dvlp.py --mode all --tag gpu --ref_epochs 250 --map_epochs 30000 --accelerator gpu
+    python src/programs/run_c2l_heart_dvlp.py --mode all --tag gpu --ref_epochs 250 --map_epochs 6000 --accelerator gpu
     (default batch: HEART_PARAMS c2l_batch_size = 10000 spots; full data and 20000 run out of memory on a 24 GB GPU)
 CPU (reference only, ~160 s per epoch; mapping > 25 min per full-data epoch); notebooks then need params=dict(c2l_tag='cpu'):
     python src/programs/run_c2l_heart_dvlp.py --mode reference --tag cpu --ref_epochs 100 --num_samples 200 --accelerator cpu
@@ -33,7 +33,7 @@ p = argparse.ArgumentParser()
 p.add_argument("--mode", choices=["reference", "mapping", "all"], default="all")
 p.add_argument("--tag", default="gpu", help="results/c2l_<tag>/ (HEART_PARAMS['c2l_tag'])")
 p.add_argument("--ref_epochs", type=int, default=250)
-p.add_argument("--map_epochs", type=int, default=30000)
+p.add_argument("--map_epochs", type=int, default=6000)
 p.add_argument("--accelerator", default="auto")
 p.add_argument("--N_cells_per_location", type=float, default=None)
 p.add_argument("--detection_alpha", type=float, default=None)

@@ -1,0 +1,72 @@
+{
+  "version": 3,
+  "created_at": "2026-11-16T18:17:50.785Z",
+  "task_summary": "PDAC (Chen 2025) spatial pipeline: h5ad build, lib, four notebooks",
+  "agents": [],
+  "phases": [
+    {
+      "name": "Plan",
+      "delegations": [
+        {
+          "steps": [
+            {
+              "title": "Read base class and sibling libs in depth",
+              "description": "Read src/libs/single_cell_lib.py (SingleCell: constructor, params/files registry, _cached_table, read_h5ad, cell2location fit_or_load_reference, subregion and LIANA methods), single_cell_lymphoid_lib.py and single_cell_neuro_lib.py (how subclasses override), c2l_liana.py, run_c2l_heart_dvlp.py, heart_dvlp_build_h5ad.py. Produce a short internal API map so the PDAC lib reuses existing methods instead of duplicating them. No artifacts besides notes."
+            },
+            {
+              "title": "Build the two complete h5ad files",
+              "description": "Write src/programs/pdac_build_h5ad.py. Visium: unpack double-gzipped spatial folders to pdac/data/visium/<section>/, read the 21 filtered h5 + spatial (sq.read.visium-style; one uns['spatial'] per section), obs = section, patient, NI status (high/low), technique (FF / FFPE / CytAssist), GSM; var = symbols + gene_ids + in_panel flags for the 3 panels; raw counts; save pdac_visium_21sections.h5ad and pdac_sections.tsv (one row per section with platform, NI, n_spots, median UMIs/genes, matched sc/sn patient, representative flag). Reference: GSE278688 sc + GSE278689 sn MTX + metadata -> pdac_sc_sn_reference.h5ad (raw counts, obs: tissue, patient, technology sc5p/snFlex, all_celltype, sample_id). Verify cell/spot counts vs paper (199,184 / 32,005 / 81,846 pre-QC vs 81,714)."
+            },
+            {
+              "title": "Re-annotate key subclusters in the reference",
+              "description": "On tissue cells (PBMC excluded): sub-cluster Ductal, CAF+Stellate, Myeloid and Schwann (HVG, BBKNN or scanpy-harmony by sample, Leiden), and assign the paper's labels (D01-D09, F01-F07, M01-M0x incl. M07_Macro-NLRP3, S01-S03) using marker panels from the paper text / Fig. S1F (try to fetch Table S2 from the publisher; if blocked, request access or use the text markers). Store obs['cell_type'] (14 major + re-derived subclusters) and obs['cell_subtype_score']. Figures: marker dot plots per compartment; saved as pdac01_ref_subcluster_*.png; tables pdac01_ref_subcluster_markers.tsv."
+            },
+            {
+              "title": "Create single_cell_pdac_lib.py",
+              "description": "Class SingleCellPDAC(SingleCell) with PDAC_PARAMS (NI col/order, technique col, library_main='PA98', panel intersection, c2l_tag, rctd paths, nerve-calling thresholds, ring sizes), PDAC_LINEAGE, PDAC_GENES (marker panel: KRT19, CFTR, CEACAM5/6, GABRP, APOA2, S100B, PLP1, SOX10, NGFR, TGFBI, MMP11, DPT, NLRP3, IL1B, CXCL13, MS4A1, CD3E...), PDAC_FILES registry 'pdac01'..'pdac04'. Methods modelled on SingleCellHeart (section table, gallery, QC, gene x section panels, get_abundance with c2l|rctd|auto, regions, region-vs-niche-rules naming, NI-group shares, ridge/PCA plots), plus nerve methods (call_nerve_spots, call_invasion, nerve_rings) and paper-panel plots. Unit smoke tests on a 2-section subset."
+            },
+            {
+              "title": "Deconvolution programs: cell2location and RCTD",
+              "description": "src/programs/run_c2l_pdac.py (same CLI as run_c2l_heart_dvlp.py; reference NB regression labels cell_type, batch sample_id, covariate technology; mapping batch=section, shared genes). Create a conda R env (r-base, spacexr, Matrix, hdf5 IO) and src/programs/run_rctd_pdac.R (full mode, per section, shared genes) -> results/rctd/pdac_rctd_weights.tsv.gz. Run RCTD here on CPU (background); dry-run c2l reference for a few epochs on CPU only to validate the code; the GPU command is documented for you."
+            },
+            {
+              "title": "Notebook mp_pdac01_prepare",
+              "description": "Sections: data + section table + H&E gallery; Visium QC per section/platform; reference QC, composition by tissue/patient; Fig. 1B-like UMAP + marker dot plot; marker genes on representative sections (one per platform x NI); cell2location reference + mapping (cached, GPU) and RCTD weights; abundance maps; c2l vs RCTD agreement (when both); regions = Leiden on abundances, named by composition rules toward the paper's 12 niches (N01_TLS ... N12_Nerve); UMAP + spatial maps; Plotly HTML. Executed with nbconvert; figures pdac01_*, tables pdac01_*."
+            },
+            {
+              "title": "Notebook mp_pdac02_regions",
+              "description": "Region table; region x cell-type heatmap (Fig. 1F analogue); region shares per section and by NI group: ridge plot (Fig. 2E/3D), PCA of niche proportions (Fig. 3C), boxplots of TLS cell types high vs low NI (Fig. 3B); malignant subtype composition and Shannon diversity per section (Fig. 2J), spots >80% one malignant subtype (Fig. 2C); co-occurrence network (Fig. 3I analogue); marker dot plot per region; interactive maps."
+            },
+            {
+              "title": "Notebook mp_pdac03_subregions plus nerve layers",
+              "description": "Heart-style subregions (expression subclustering per region, ComBat/batch by section on shared genes, gene-set partition, coherence/depth diagnostics, reference scoring). New nerve section: nerve spots from Schwann abundance + nerve markers, invaded vs non-invaded from malignant abundance, rings juxta 1-2 / peri 3-5; Fig. 4A (subtypes enriched near invaded vs non-invaded), Fig. 4B (niche proportion vs distance), Fig. 2L (malignant subtypes by ring), Fig. 6A (Schwann subsets vs distance to ductal niches); H&E overlays for PA98 to compare with Fig. 1E. Nerve-call TSV with a manual-override hook."
+            },
+            {
+              "title": "Notebook mp_pdac04_liana_ccc",
+              "description": "As mp_heart_dvlp04 with the age axis replaced: spatial weights per section; LIANA bivariate (resource consensus and CellChatDB for paper alignment); LR enriched per region, subregion, NI group and nerve ring (invaded vs non-invaded juxta-neural, cf. Fig. 4F/4G COMMOT); sender->receiver by abundance x signature; reference rank_aggregate with co-localisation support; focus panel TGFB1/TGFBI axis to S02_Schwann-TGFBI and CXCL12-CXCR4 around non-invaded nerves (Fig. 4H). Consensus tables."
+            },
+            {
+              "title": "Execute, verify and document",
+              "description": "Run the four notebooks end to end (RCTD abundances; c2l sections show the GPU command until your run exists), check every figure renders and caches work with force=False, compare reproduced panels to the paper qualitatively in a 'Differences from the paper' cell per notebook, and write pdac/README_pdac.md (data provenance, GPU command, known limitations). Save key figures and the README as artifacts."
+            }
+          ]
+        }
+      ],
+      "id": "phase-0"
+    }
+  ],
+  "desired_outputs": [
+    "pdac/data/pdac_visium_21sections.h5ad",
+    "pdac/data/pdac_sc_sn_reference.h5ad",
+    "pdac/data/pdac_sections.tsv",
+    "src/libs/single_cell_pdac_lib.py",
+    "src/programs/pdac_build_h5ad.py, run_c2l_pdac.py, run_rctd_pdac.R",
+    "notebooks_multiproject/mp_pdac01_prepare.ipynb … mp_pdac04_liana_ccc.ipynb (executed)",
+    "pdac/figures/pdac0*_*.png|html and pdac/results/pdac0*_*.tsv",
+    "pdac/README_pdac.md (differences from the paper, how to run GPU step)"
+  ],
+  "feasibility": {
+    "confidence": "medium",
+    "rationale": "All raw data (Visium 21 sections, sc+sn MTX) are downloaded. Risks: (1) paper subclusters and niche and nerve annotations are not public, so they are re-derived and compared only qualitatively with the figures; (2) cell2location mapping needs your GPU run, so RCTD (CPU) carries the notebooks until then; (3) the three Visium chemistries limit joint analysis to the shared probe genes."
+  }
+}

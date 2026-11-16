@@ -110,7 +110,7 @@ HEART_PARAMS: Dict[str, Any] = dict(
     c2l_tag="gpu",                     # results/c2l_<tag>/: run src/programs/run_c2l_heart_dvlp.py --tag gpu first
     c2l_N_cells_per_location=20,       # dense fetal myocardium; estimate from H&E nuclei counts if possible
     c2l_detection_alpha=20,
-    c2l_max_epochs=30000,
+    c2l_max_epochs=6000,               # minibatch (7 x 10000 spots per epoch): 6000 epochs = 42,000 steps (tutorial full data: 30,000)
     c2l_batch_size=10000,              # spots per step; full data (None) and 20000 run out of memory on a 24 GB GPU (~1.1 GB per 1000 spots)
     c2l_train_if_missing=False,        # notebooks: train when the cache is missing (long; normally the program does it)
     ref_max_epochs=250,

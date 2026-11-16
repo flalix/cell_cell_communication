@@ -62,7 +62,6 @@ backup/
 
 
 # Django stuff:
-*.log
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
@@ -149,6 +148,7 @@ dmypy.json
 data/
 colab/
 c2l_test_out/
+.R_lib/
 
 # Vim .swp
 *.swp
@@ -162,6 +162,7 @@ pixi.lock
 
 _version.py
 
+*.log
 *.h5ad
 *.npz
 *.pt
