@@ -1,0 +1,21 @@
+region_label	region_name	n_spots	n_sections	ages	median_UMIs	top_share	top_enriched	paper_best	paper_share	n_shared
+R00	Endocardium and endocardial cushions	2518	38	w6, w7, w7.5, w8, w9, w10, w10.5, w11, w12	8904.5	Mat_vCM (37%), EndocCush_EC (16%), Endoc_EC (16%)	EndocCush_EC (8.5x), Endoc_EC (4.4x), Valve_MC (3.0x)	EN	0.44	1361.0
+R01	Ventricular subepicardium and small vessels	3911	38	w6, w7, w7.5, w8, w9, w10, w10.5, w11, w12	7959.0	Mat_vCM (51%), MicroVasc_EC (6%), MetAct_vCM_1 (6%)	EPDC (2.3x), EpC (2.3x), Int_FB (2.3x)	mixed: SCV / LV_C	0.186	1717.0
+R02	Trabecular ventricular myocardium	6289	38	w6, w7, w7.5, w8, w9, w10, w10.5, w11, w12	9062.0	Mat_vCM (63%), Endoc_EC (12%), Prol_CM (3%)	Endoc_EC (3.6x), Mat_vCM (1.7x), EndocCush_EC (1.4x)	RV_T	0.305	3953.0
+R03	Compact ventricular myocardium, capillary-rich	5672	38	w6, w7, w7.5, w8, w9, w10, w10.5, w11, w12	8365.0	Mat_vCM (64%), MicroVasc_EC (10%), MetAct_vCM_1 (6%)	MicroVasc_EC (3.8x), MetAct_vCM_1 (2.0x), Mat_vCM (1.7x)	LV_C	0.465	2393.0
+R04	Compact myocardium, metabolically active CM (MetAct_vCM_1)	1191	32	w7, w7.5, w8, w9, w10, w10.5, w11, w12	2717.0	Mat_vCM (53%), MetAct_vCM_1 (21%), Prol_CM (3%)	MetAct_vCM_1 (6.7x), TMSB10high_C_2 (2.5x), Int_FB (1.9x)	LV_C	0.353	207.0
+R05	Compact ventricular myocardium	5987	37	w6, w7, w7.5, w8, w9, w10, w10.5, w11, w12	6285.0	Mat_vCM (71%), MetAct_vCM_1 (4%), MacroVasc_EC (4%)	Mat_vCM (2.0x), MacroVasc_EC (1.8x), Int_FB (1.6x)	LV_C	0.492	2191.0
+R06	Valve mesenchyme	2687	37	w6, w7, w7.5, w8, w9, w10, w10.5, w11, w12	6673.0	Mat_vCM (32%), Valve_MC (31%), OFT_SMC (6%)	Valve_MC (13.7x), EndocCush_EC (2.1x), AnnFibr_FB (1.6x)	VM	0.382	1193.0
+R07	Compact myocardium with PDE4C-high EC	5681	38	w6, w7, w7.5, w8, w9, w10, w10.5, w11, w12	9519.0	Mat_vCM (62%), PDE4Chigh_EC (12%), MetAct_vCM_1 (6%)	PDE4Chigh_EC (7.5x), MetAct_vCM_1 (1.8x), Mat_vCM (1.7x)	LV_C	0.461	2412.0
+R08	Large coronary vessels	1035	38	w6, w7, w7.5, w8, w9, w10, w10.5, w11, w12	6574.0	Mat_vCM (36%), MacroVasc_EC (20%), CA_SMC (11%)	CA_SMC (10.2x), MacroVasc_EC (9.6x), PC (3.4x)	LCV	0.42	374.0
+R09	Ventricular myocardium, MetAct_vCM_2	3348	36	w6, w7, w7.5, w8, w9, w10, w10.5, w11, w12	3496.5	Mat_vCM (56%), MetAct_vCM_2 (15%), Prol_CM (3%)	MetAct_vCM_2 (10.0x), TMSB10high_C_2 (1.7x), Int_FB (1.6x)	mixed: LV_C / LV_T	0.27	1142.0
+R10	Atrial epicardium and atrioventricular fibrous tissue	2382	38	w6, w7, w7.5, w8, w9, w10, w10.5, w11, w12	4853.0	Mat_aCM (20%), EpC (10%), AnnFibr_FB (10%)	EPDC (10.4x), AnnFibr_FB (8.5x), EpC (7.1x)	A_EP	0.447	528.0
+R11	Great-artery wall (media-adventitia)	2125	31	w6, w7, w7.5, w8, w9, w10, w10.5, w11, w12	3111.0	OFT_SMC (45%), OFT_FB (19%), Mat_vCM (5%)	OFT_FB (5.7x), OFT_SMC (5.6x), CA_SMC (2.3x)	TA	0.526	454.0
+R12	Great-vessel adventitia with lymphatics and nerves	4853	32	w6, w7, w7.5, w8, w9, w10, w10.5, w11, w12	2569.0	OFT_FB (27%), OFT_SMC (10%), LEC (8%)	OFT_FB (9.2x), LEC (6.2x), SCP-GC (5.5x)	TA	0.89	537.0
+R13	Atrioventricular junction myocardium	3109	37	w6, w7, w7.5, w8, w9, w10, w10.5, w11, w12	5936.0	Mat_aCM (30%), Mat_vCM (26%), MetAct_aCM (6%)	Mat_aCM (1.8x), AnnFibr_FB (1.5x), MetAct_aCM (1.5x)	RA	0.321	1102.0
+R14	Atrial myocardium, endocardial (pectinate)	4090	36	w6, w7, w7.5, w8, w9, w10, w10.5, w11, w12	6022.0	Mat_aCM (47%), Endoc_EC (13%), MetAct_aCM (12%)	MetAct_aCM (4.2x), Mat_aCM (3.9x), Endoc_EC (3.7x)	RA	0.721	1610.0
+R15	Atrial myocardium	6765	36	w6, w7, w7.5, w8, w9, w10, w10.5, w11, w12	7636.0	Mat_aCM (57%), MetAct_aCM (9%), MicroVasc_EC (4%)	Mat_aCM (4.9x), MetAct_aCM (3.2x), Peric_MC (1.9x)	RA	0.451	2208.0
+R16	Cardiac ganglia and nerves	602	27	w7, w7.5, w8, w9, w10, w10.5, w11, w12	4539.5	NB-N (39%), OFT_FB (11%), Mat_aCM (9%)	NB-N (37.4x), SCP-GC (6.4x), OFT_FB (3.7x)	TA	0.931	72.0
+R17	Great-artery tunica media	4218	29	w6, w7, w7.5, w8, w9, w10, w10.5, w11, w12	3109.5	OFT_SMC (69%), Mat_vCM (5%), CA_SMC (4%)	OFT_SMC (9.9x), CA_SMC (3.8x), EndocCush_EC (1.6x)	TM	0.918	1098.0
+R18	Atrial CM outlier spots (MetAct_aCM)	20	5	w7, w8, w10.5, w11, w12	22.0	MetAct_aCM (97%), MyC (1%), MacroVasc_EC (1%)	MetAct_aCM (34.5x), MyC (1.0x), LEC (0.6x)			
+R19	Ventricular myocardium with immature CM	2632	35	w7, w7.5, w8, w9, w10, w10.5, w11, w12	6100.5	Mat_vCM (64%), Immat_CM (10%), MetAct_vCM_1 (5%)	Immat_CM (15.0x), Mat_vCM (1.7x), MetAct_vCM_1 (1.6x)	LV_C	0.518	757.0
