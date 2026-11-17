@@ -71,7 +71,7 @@ PDAC_MAJOR_MARKERS: Dict[str, List[str]] = {
     "Plasma": ["MZB1", "JCHAIN"],
 }
 
-# 24 PDAC / neural-invasion genes shown on the reference UMAP and on the Visium sections (symbol -> role)
+# 26 PDAC / neural-invasion genes shown on the reference UMAP and on the Visium sections (symbol -> role)
 PDAC_GENES: Dict[str, str] = {
     "KRT19":   "ductal epithelium",
     "CFTR":    "non-malignant ductal (D01)",
@@ -97,6 +97,8 @@ PDAC_GENES: Dict[str, str] = {
     "MS4A1":   "B cells / TLS",
     "CXCL13":  "Tfh-like T cells / TLS",
     "CXCL12":  "CXCL12+ fibroblasts around non-invaded nerves",
+    "CD3E":    "T cells",
+    "MZB1":    "plasma cells",
 }
 
 # neural-invasion-related genes of malignant cells (STAR Methods, 'Signature score calculation', Figure 2M)
@@ -217,6 +219,7 @@ PDAC_PARAMS: Dict[str, Any] = dict(
     font_color="white",
     bg_color="black",
     fontsize_scale=1.4,
+    image_bg_color=None,               # H&E as is: the glass mask of DEFAULT_PARAMS blackens the pale CytAssist H&E
 )
 
 PDAC_ANALYSIS_PARAMS: Dict[str, Dict[str, Any]] = {"pdac01": dict(), "pdac02": dict(coloc_n_facts=(12,))}
@@ -241,10 +244,126 @@ PDAC_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
         c2l_map=("result", "c2l_{tag}/cell2location_map/sp.h5ad"),
         signatures=("result", "c2l_{tag}/reference_signatures/sc.h5ad"),
         region_labels=("result", "pdac01_region_labels.tsv"),
+        region_niches=("result", "pdac01_region_niches.tsv"),            # niche assignment of mp_pdac01
         region_info=("data", "pdac_regions.tsv"),                     # curated region table (editable)
+        lineage_table=("root0", "tables/pdac_lineage.tsv"),          # HL_ID (major type), HL_SUBID, description, summary
         nerve_overrides=("data", "pdac_nerve_annotation.tsv"),       # optional manual nerve calls (H&E)
         mean_signatures=("result", "pdac_reference_mean_counts_per_celltype.tsv.gz"),
         subregion_descriptions=("data", "pdac_subregion_descriptions.tsv"),
+    ),
+    "pdac01": dict(
+        fig_sections=("figure", "pdac01_sections_he_gallery.png"),
+        fig_qc_visium=("figure", "pdac01_qc_visium_sections.png"),
+        tsv_section_qc=("result", "pdac01_section_qc.tsv"),
+        fig_qc_ref=("figure", "pdac01_qc_reference_samples.png"),
+        reference_umap=("result", "pdac01_reference_umap.tsv"),
+        fig_umap_dotplot=("figure", "pdac01_reference_umap_celltype_dotplot.png"),
+        fig_umap_sub_dotplot=("figure", "pdac01_reference_umap_subcluster_dotplot.png"),
+        tsv_ref_comp=("result", "pdac01_reference_celltype_by_tissue.tsv"),
+        fig_subclusters=("figure", "pdac01_reference_subclusters_{comp}.png"),
+        tsv_subcluster_clusters=("result", "pdac01_reference_subcluster_clusters.tsv"),
+        fig_genes=("figure", "pdac01_visium_genes_{k}.png"),
+        fig_ref_history=("figure", "pdac01_ref_training_history.png"),
+        fig_ref_qc=("figure", "pdac01_ref_qc.png"),
+        fig_map_history=("figure", "pdac01_map_training_history.png"),
+        fig_map_qc=("figure", "pdac01_map_qc.png"),
+        fig_abund=("figure", "pdac01_celltype_abundance_{source}.png"),
+        tsv_c2l_vs_rctd=("result", "pdac01_c2l_vs_rctd_correlation.tsv"),
+        fig_c2l_vs_rctd=("figure", "pdac01_c2l_vs_rctd.png"),
+        fig_regions=("figure", "pdac01_umap_region_section.png"),
+        fig_regions_sections=("figure", "pdac01_regions_on_sections.png"),
+        fig_regions_html=("figure", "pdac01_regions_{lib}.html"),
+        tsv_niches=("result", "pdac01_region_niches.tsv"),
+    ),
+    "pdac02": dict(
+        tsv_region_summary=("result", "pdac02_region_summary.tsv"),
+        fig_region_celltype=("figure", "pdac02_region_celltype_heatmap.png"),
+        fig_niche_celltype=("figure", "pdac02_niche_celltype_heatmap.png"),
+        tsv_niche_by_section=("result", "pdac02_niche_share_by_section.tsv"),
+        tsv_niche_ni_test=("result", "pdac02_niche_high_vs_low_NI.tsv"),
+        tsv_niche_ni_test_cyt=("result", "pdac02_niche_high_vs_low_NI_CytAssist.tsv"),
+        fig_niche_ni=("figure", "pdac02_niche_share_by_NI.png"),
+        fig_niche_ni_cyt=("figure", "pdac02_niche_share_by_NI_CytAssist.png"),
+        fig_section_pca=("figure", "pdac02_section_pca_niches.png"),
+        tsv_celltype_by_section=("result", "pdac02_celltype_share_by_section.tsv"),
+        tsv_celltype_ni_test=("result", "pdac02_celltype_high_vs_low_NI.tsv"),
+        tsv_celltype_ni_test_cyt=("result", "pdac02_celltype_high_vs_low_NI_CytAssist.tsv"),
+        fig_celltype_ni=("figure", "pdac02_celltype_share_by_NI.png"),
+        tsv_malignant_diversity=("result", "pdac02_malignant_composition_by_section.tsv"),
+        fig_malignant_comp=("figure", "pdac02_malignant_composition_shannon.png"),
+        fig_malignant_pure=("figure", "pdac02_malignant_pure_spots_{sub}.png"),
+        fig_niches_sections=("figure", "pdac02_niches_on_sections.png"),
+        fig_region_genes=("figure", "pdac02_region_gene_dotplot.png"),
+        fig_ni_genes=("figure", "pdac02_ni_genes_by_region.png"),
+        fig_cooccurrence=("figure", "pdac02_celltype_cooccurrence.png"),
+        tsv_cooccurrence=("result", "pdac02_celltype_cooccurrence.tsv"),
+        fig_region_map=("figure", "pdac02_region_map_{lib}.html"),
+        fig_factor_dotplot=("figure", "pdac02_nmf_factors_dotplot_n{n}.png"),
+        tsv_factor_load=("result", "pdac02_nmf_factor_loadings_n{n}.tsv"),
+    ),
+    "pdac03": dict(
+        region_rank_genes=("result", "pdac03_region_rank_genes.tsv.gz"),
+        region_table=("result", "pdac03_region_table.tsv"),
+        subregion_grid=("result", "pdac03_subcluster_resolution_grid.tsv"),
+        subregion_adata=("result", "pdac03_subregions/{region}.h5ad"),
+        subregion_gene_sets=("result", "pdac03_subregion_gene_sets.tsv.gz"),
+        subregion_table=("result", "pdac03_subregion_table.tsv"),
+        subregion_ref_score=("result", "pdac03_subregion_ref_celltype_score.tsv"),
+        subregion_ref_genes=("result", "pdac03_subregion_ref_genes.tsv"),
+        tsv_subregion_ni=("result", "pdac03_subregion_share_by_section.tsv"),
+        fig_region_heatmap=("figure", "pdac03_region_signature_heatmap.html"),
+        fig_region_map=("figure", "pdac03_region_map_{lib}.html"),
+        fig_region_sub=("figure", "pdac03_subregions_{region}.html"),
+        fig_diagnostics=("figure", "pdac03_subregion_diagnostics.html"),
+        fig_subregion_map=("figure", "pdac03_subregion_map_{lib}.html"),
+        fig_ref_heatmap=("figure", "pdac03_subregion_ref_celltype_heatmap.png"),
+        nerve_spots=("result", "pdac03_nerve_spots.tsv"),
+        nerve_table=("result", "pdac03_nerve_bundles.tsv"),
+        fig_nerves=("figure", "pdac03_nerves_on_sections.png"),
+        fig_nerve_rings=("figure", "pdac03_nerve_rings_{lib}.png"),
+        tsv_ring_niche=("result", "pdac03_niche_by_nerve_ring.tsv"),
+        fig_ring_niche=("figure", "pdac03_niche_by_nerve_ring.png"),
+        tsv_juxta=("result", "pdac03_juxtaneural_invaded_vs_noninvaded.tsv"),
+        fig_juxta=("figure", "pdac03_juxtaneural_invaded_vs_noninvaded.png"),
+        tsv_ring_malignant=("result", "pdac03_malignant_by_nerve_ring.tsv"),
+        fig_ring_malignant=("figure", "pdac03_malignant_by_nerve_ring.png"),
+        tsv_schwann_distance=("result", "pdac03_schwann_by_distance_to_malignant.tsv"),
+        fig_schwann_distance=("figure", "pdac03_schwann_by_distance_to_malignant.png"),
+    ),
+    "pdac04": dict(
+        subregion_grid=("result", "pdac03_subcluster_resolution_grid.tsv"),
+        subregion_adata=("result", "pdac03_subregions/{region}.h5ad"),
+        subregion_table_pdac03=("result", "pdac03_subregion_table.tsv"),
+        nerve_spots=("result", "pdac03_nerve_spots.tsv"),
+        spatial_weights=("result", "pdac04_spatial_weights.tsv"),
+        liana_bivariate=("result", "pdac04_liana_bivariate_consensus.h5ad"),
+        liana_global=("result", "pdac04_liana_bivariate_global_consensus.tsv"),
+        liana_bivariate_cellchat=("result", "pdac04_liana_bivariate_cellchatdb.h5ad"),
+        liana_global_cellchat=("result", "pdac04_liana_bivariate_global_cellchatdb.tsv"),
+        lr_by_region=("result", "pdac04_lr_by_region.tsv"),
+        lr_by_subregion=("result", "pdac04_lr_by_subregion.tsv"),
+        lr_by_ni=("result", "pdac04_lr_by_NI.tsv"),
+        lr_by_nerve=("result", "pdac04_lr_by_nerve_zone.tsv"),
+        celltype_lr_tissue=("result", "pdac04_celltype_lr_tissue.tsv.gz"),
+        celltype_lr_by_group=("result", "pdac04_celltype_lr_by_group.tsv.gz"),
+        celltype_links_by_group=("result", "pdac04_celltype_links_by_group.tsv"),
+        liana_reference=("result", "pdac04_liana_reference_rank_aggregate.tsv"),
+        liana_reference_supported=("result", "pdac04_liana_reference_supported.tsv"),
+        ccc_by_region=("result", "pdac04_ccc_consensus_by_region.tsv"),
+        ccc_by_nerve=("result", "pdac04_ccc_consensus_by_nerve_zone.tsv"),
+        tsv_tgfb=("result", "pdac04_tgfb_to_schwann.tsv"),
+        fig_lr_top=("figure", "pdac04_lr_top_local_scores_{lib}.png"),
+        fig_lr_regions=("figure", "pdac04_lr_region_top_local_scores_{lib}.png"),
+        fig_lr_region_hm=("figure", "pdac04_lr_by_region_heatmap.html"),
+        fig_lr_sub_hm=("figure", "pdac04_lr_by_subregion_heatmap.html"),
+        fig_lr_nerve_hm=("figure", "pdac04_lr_by_nerve_zone_heatmap.html"),
+        fig_lr_ni=("figure", "pdac04_lr_by_NI_top.png"),
+        fig_lr_nerve=("figure", "pdac04_lr_nerve_local_scores_{lib}.png"),
+        fig_sender_recv=("figure", "pdac04_celltype_lr_sender_receiver.png"),
+        fig_tgfb=("figure", "pdac04_tgfb_to_schwann.png"),
+        fig_links_region=("figure", "pdac04_celltype_links_by_region.html"),
+        fig_links_nerve=("figure", "pdac04_celltype_links_by_nerve_zone.html"),
+        fig_coloc=("figure", "pdac04_celltype_colocalisation.html"),
     ),
 }
 
@@ -1140,3 +1259,901 @@ class SingleCellPDAC(SingleCell):
         self.style_figure(fig, font_color, bg_color, fontsize_scale, relayout=False)
         self._savefig(fig, fname, dpi=self.params["dpi_maps"], force=force, verbose=verbose)
         return fig
+
+
+    # =================================================================================================================
+    # 6. reference figures: global UMAP (scVI on a per-type subsample), cell types x genes, compartments
+    # =================================================================================================================
+    def calc_reference_umap(self, adata_ref, n_per_type: int = 3000, n_hvg: int = 3000, n_latent: int = 30,
+                            accelerator: str = "cpu", fname: Optional[str] = "reference_umap", force: bool = False,
+                            verbose: bool = True) -> pd.DataFrame:
+        """UMAP of the tissue cells (Figure 1B analogue): <= n_per_type cells per cell type (seeded), scVI on n_hvg
+        HVGs (batch sample_id, covariate technology), kNN 15, UMAP. Cached table: cell, umap1, umap2, cell_type,
+        major_type, technology, tissue, patient (files[fname] when registered)."""
+        def _compute():
+            import scvi
+            a = self.reference_for_deconvolution(adata_ref, max_cells=n_per_type, verbose=verbose)
+            a.var_names = a.var["symbol"].astype(str).values
+            a.var_names_make_unique()
+            sc.pp.highly_variable_genes(a, n_top_genes=n_hvg, flavor="seurat_v3", batch_key="technology")
+            ah = a[:, a.var.highly_variable].copy()
+            ah.obs["sample_id"] = ah.obs["sample_id"].astype(str).astype("category")
+            scvi.settings.seed = self.params["seed"]
+            scvi.model.SCVI.setup_anndata(ah, batch_key="sample_id", categorical_covariate_keys=["technology"])
+            mod = scvi.model.SCVI(ah, n_latent=n_latent, n_layers=2, gene_likelihood="nb")
+            mod.train(max_epochs=min(300, int(np.round(20000 / ah.n_obs * 400)) + 50), accelerator=accelerator,
+                      early_stopping=True, enable_progress_bar=False)
+            a.obsm["X_scvi"] = mod.get_latent_representation()
+            sc.pp.neighbors(a, use_rep="X_scvi", n_neighbors=15, random_state=self.params["seed"])
+            sc.tl.umap(a, random_state=self.params["seed"])
+            return pd.DataFrame({"cell": a.obs_names, "umap1": a.obsm["X_umap"][:, 0].round(4),
+                                 "umap2": a.obsm["X_umap"][:, 1].round(4),
+                                 **{c: a.obs[c].astype(str).values for c in
+                                    ("cell_type", "major_type", "technology", "tissue", "patient")}})
+        return self._cached_any(fname, _compute, force=force, verbose=verbose)
+
+    def celltype_colors(self, celltypes: Sequence[str]) -> Dict[str, str]:
+        """Major types: one colour per lineage shade; subclusters: shades of their major type's colormap."""
+        cmaps = {"epithelial": "Oranges", "stromal": "Purples", "myeloid": "Greens", "lymphoid": "Blues"}
+        out = {}
+        groups: Dict[str, List[str]] = {}
+        for c in self.celltype_order(celltypes):
+            groups.setdefault(self.major_of_celltype(c), []).append(c)
+        majors = [m_ for m_ in groups]
+        lin_major: Dict[str, List[str]] = {}
+        for mj in majors:
+            lin_major.setdefault(self.lineage_of_celltype(mj), []).append(mj)
+        for lin, mjs in lin_major.items():
+            cmap = plt.get_cmap(cmaps.get(lin, "Greys"))
+            for i, mj in enumerate(mjs):
+                base = 0.45 + 0.5 * (i + 1) / (len(mjs) + 1)
+                cts = groups[mj]
+                for k, c in enumerate(cts):
+                    shade = base if len(cts) == 1 else 0.3 + 0.65 * (k + 1) / (len(cts) + 1)
+                    out[c] = mpl.colors.to_hex(cmap(shade))
+        sch = [c for c in out if c.startswith("S0") or c == "Schwann"]     # Schwann: the paper's nerve yellow
+        yellows = ["#FFEE6F", "#F3C300", "#C9A400", "#FFF7B0"]
+        for k, c in enumerate(sch):
+            out[c] = yellows[k % len(yellows)]
+        return out
+
+    def plot_umap_celltype_dotplot(self, df_umap: pd.DataFrame, adata_ref, genes: Sequence[str],
+                                   groupby: str = "major_type", figsize=(26, 11), point_size: float = 1.5,
+                                   fname: Optional[str] = None, font_color: Optional[str] = None,
+                                   bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                                   force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """Left: reference UMAP (calc_reference_umap) coloured by groupby, labels at the medians. Right: dot plot
+        groupby (rows, by lineage) x genes over the UMAP cells (size = % cells > 0; colour = mean log1p(CP10k) / max
+        over the rows). Returns the long table (group, gene, frac, mean, rel)."""
+        font_color = self.get_param("font_color", font_color)
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
+        a = adata_ref[df_umap.cell.values]
+        a = a.to_memory() if a.isbacked else a.copy()
+        a.obs[groupby] = df_umap[groupby].astype(str).values
+        a.obsm["X_umap"] = df_umap[["umap1", "umap2"]].values
+        order = self.celltype_order(a.obs[groupby].unique())
+        df_frac, df_mean, df_rel = self.calc_df_dotplot(list(genes), groupby, a, order=order)
+        colors = self.celltype_colors(order)
+        fig = plt.figure(figsize=figsize)
+        gs = fig.add_gridspec(1, 2, width_ratios=[1.0, 1.2], wspace=0.1)
+        ax0 = fig.add_subplot(gs[0])
+        self.plot_umap_labeled(ax0, a.obsm["X_umap"], a.obs[groupby].values, colors,
+                               title=f"sc + sn reference (tissue): {a.n_obs:,} cells shown, {len(order)} {groupby}",
+                               point_size=point_size, fontsize=8, seed=self.params["seed"])
+        ax1 = fig.add_subplot(gs[1])
+        n_r, n_c = len(order), df_frac.shape[1]
+        yy, xx = np.meshgrid(np.arange(n_r), np.arange(n_c), indexing="ij")
+        sca = ax1.scatter(xx.ravel(), yy.ravel(), s=df_frac.values.ravel() * 160, c=df_rel.values.ravel(), cmap=cmap_lbwr,
+                          vmin=0, vmax=1, edgecolors="#444444", linewidths=0.3)
+        ax1.set_xticks(range(n_c))
+        ax1.set_xticklabels(df_frac.columns, rotation=90, fontstyle="italic")
+        ax1.set_yticks(range(n_r))
+        ax1.set_yticklabels(order)
+        for t, c in zip(ax1.get_yticklabels(), order):
+            t.set_color(colors[c])
+        ax1.set_ylim(n_r - 0.5, -0.5)
+        ax1.yaxis.tick_right()
+        cb = fig.colorbar(sca, ax=ax1, orientation="horizontal", fraction=0.025, pad=0.12, shrink=0.5, anchor=(0.0, 1.0))
+        cb.set_label("mean expression / max over rows")
+        for f in (0.25, 0.5, 1.0):
+            ax1.scatter([], [], s=f * 160, c="#bbbbbb", label=f"{int(f * 100)}%")
+        ax1.legend(title="% cells > 0", loc="upper left", bbox_to_anchor=(0.62, -0.12), ncol=3, frameon=False)
+        self.style_figure(fig, font_color, bg_color, fontsize_scale, relayout=False)
+        self._savefig(fig, fname, force=force, verbose=verbose)
+        df_long = pd.concat({"frac": df_frac.stack(), "mean": df_mean.stack(), "rel": df_rel.stack()}, axis=1)
+        df_long.index.names = [groupby, "gene"]
+        return df_long.reset_index()
+
+    def plot_compartment_subclusters(self, compartment: str, n_genes: int = 4, figsize=(22, 8), point_size: float = 3,
+                                     fname: Optional[str] = None, font_color: Optional[str] = None,
+                                     bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                                     force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """Re-derived subclusters of one compartment (results/pdac01_subclusters/<compartment>.h5ad): UMAP by
+        subcluster, UMAP by technology, dot plot subclusters x marker genes (the first n_genes of each paper marker
+        set). Returns the cluster table (annotate_clusters)."""
+        font_color = self.get_param("font_color", font_color)
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
+        a = ad.read_h5ad(self.root_result / "pdac01_subclusters" / f"{compartment}.h5ad")
+        df_cl = self.annotate_clusters(a, compartment)
+        spec = PDAC_SUBCLUSTERS[compartment]
+        order = [l for l in spec["markers"] if l in set(a.obs.subcluster.astype(str))]
+        order += sorted(set(a.obs.subcluster.astype(str)) - set(order))
+        genes = list(dict.fromkeys(g for l in spec["markers"] for g in spec["markers"][l][:n_genes] if g in a.var_names))
+        colors = self.celltype_colors(order)
+        fig = plt.figure(figsize=figsize)
+        gs = fig.add_gridspec(1, 3, width_ratios=[1, 1, 1.6], wspace=0.15)
+        ax0, ax1, ax2 = fig.add_subplot(gs[0]), fig.add_subplot(gs[1]), fig.add_subplot(gs[2])
+        U = a.obsm["X_umap"]
+        self.plot_umap_labeled(ax0, U, a.obs.subcluster.astype(str).values, colors,
+                               title=f"{compartment}: {a.n_obs:,} cells", point_size=point_size, fontsize=8,
+                               seed=self.params["seed"])
+        tc = {"sc5p": "#4C9BE8", "snFlex": "#E8834C"}
+        for t, col in tc.items():
+            mk = (a.obs.technology.astype(str) == t).values
+            ax1.scatter(U[mk, 0], U[mk, 1], s=point_size, c=col, linewidths=0, rasterized=True,
+                        label=f"{t} ({int(mk.sum()):,})")
+        ax1.set_xticks([]); ax1.set_yticks([])
+        ax1.legend(frameon=False, markerscale=4, loc="best")
+        ax1.set_title("technology")
+        a.obs["_g"] = a.obs.subcluster.astype(str)
+        a_cp = a.copy()                                  # X is log1p(CP10k): expm1 -> CP10k (renormalises to itself)
+        a_cp.X = a_cp.X.expm1() if sp.issparse(a_cp.X) else np.expm1(a_cp.X)
+        df_frac, df_mean, df_rel = self.calc_df_dotplot(genes, "_g", a_cp, order=order)
+        n_r, n_c = len(order), len(genes)
+        yy, xx = np.meshgrid(np.arange(n_r), np.arange(n_c), indexing="ij")
+        sca = ax2.scatter(xx.ravel(), yy.ravel(), s=df_frac.values.ravel() * 150, c=df_rel.values.ravel(), cmap=cmap_lbwr,
+                          vmin=0, vmax=1, edgecolors="#444444", linewidths=0.3)
+        ax2.set_xticks(range(n_c)); ax2.set_xticklabels(df_frac.columns, rotation=90, fontstyle="italic")
+        ax2.set_yticks(range(n_r)); ax2.set_yticklabels([f"{o} ({int((a.obs._g == o).sum())})" for o in order])
+        ax2.set_ylim(n_r - 0.5, -0.5); ax2.yaxis.tick_right()
+        fig.colorbar(sca, ax=ax2, fraction=0.02, pad=0.25).set_label("mean / max over subclusters")
+        self.style_figure(fig, font_color, bg_color, fontsize_scale, relayout=False)
+        self._savefig(fig, fname, force=force, verbose=verbose)
+        return df_cl
+
+    def read_lineage_table(self) -> pd.DataFrame:
+        """tables/pdac_lineage.tsv (as tables/heart_lineage.tsv): HL_ID = GEO major type, HL_SUBID = deconvolution cell
+        type (re-derived subcluster or major type), description, functional_summary. Indexed by HL_SUBID."""
+        return self.read_tsv("lineage_table").set_index("HL_SUBID")
+
+    def calc_df_ref_composition(self, adata_ref, by: str = "tissue", fname: Optional[str] = None,
+                                force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """% of cells of each cell type (obs['cell_type'] with subclusters) per level of `by` (columns) + lineage."""
+        def _compute():
+            df_ct = pd.crosstab(adata_ref.obs["cell_type"].astype(str), adata_ref.obs[by].astype(str))
+            df_ct = df_ct.reindex(self.celltype_order(df_ct.index))
+            df_pct = (100 * df_ct / df_ct.sum(0)).round(3)
+            df_pct.insert(0, "lineage", [self.lineage_of_celltype(c) for c in df_pct.index])
+            df_pct.insert(1, "n_cells", df_ct.sum(1).values)
+            if self.file_path("lineage_table").exists():
+                desc = self.read_lineage_table()["description"]
+                df_pct.insert(1, "description", [desc.get(c, "") for c in df_pct.index])
+            return df_pct.reset_index(names="cell_type")
+        return self._cached_any(fname, _compute, force=force, verbose=verbose).set_index("cell_type")
+
+    # =================================================================================================================
+    # 7. regions -> the paper's niches (rules on the cell-type shares)
+    # =================================================================================================================
+    def niche_groups(self, celltypes: Sequence[str]) -> Dict[str, List[str]]:
+        """Cell types that define each niche of the paper (STAR Methods; Figure 1F). 'malignant' (D02-D09,
+        Ductal-other) is split into the four malignant niches by the dominant subtype (assign_niches)."""
+        ct = list(celltypes)
+        pick = lambda f: [c for c in ct if f(c)]
+        return {
+            "N01_TLS": pick(lambda c: c in ("B", "CD4T", "CD8T")),
+            "N02_Endocrine": pick(lambda c: c == "Endocrine"),
+            "N03_Peri-vascular": pick(lambda c: c in ("Endothelial", "Stellate")),
+            "N04_Plasma-enriched": pick(lambda c: c == "Plasma"),
+            "N05_CAF-enriched": pick(lambda c: c.startswith("F0") and c != "F07_Fibro-NRP2" or c == "CAF"),
+            "N06_TAM-enriched": pick(lambda c: re.match(r"M(0[6-9]|1[0-3])_", c) is not None or c == "Myeloid"),
+            "malignant": pick(lambda c: re.match(r"D0[2-9]_", c) is not None or c == "Ductal-other"),
+            "N11_Non-malignant-pancreas": pick(lambda c: c in ("Acinar", "D01_Ductal-CFTR")),
+            "N12_Nerve": pick(lambda c: c.startswith("S0") or c in ("Schwann", "F07_Fibro-NRP2")),
+        }
+
+    @staticmethod
+    def shares(df_abund: pd.DataFrame) -> pd.DataFrame:
+        """Abundances -> shares per spot (rows sum to 1; empty rows 0)."""
+        out = df_abund.div(df_abund.sum(1).replace(0, np.nan), axis=0).fillna(0)
+        out.attrs = dict(df_abund.attrs)
+        return out
+
+    def assign_niches(self, adata, df_abund: pd.DataFrame, key: str = "region_label", min_share: float = 0.08
+                      ) -> pd.DataFrame:
+        """Each region -> one of the paper's 12 niches: per region the mean share of every niche group
+        (niche_groups) and its enrichment (region / all spots); niche = the group with the highest enrichment among
+        those with share >= min_share (else the highest share). Malignant regions are ordered by their dominant
+        ductal subtype and named N07..N10 'Malignant_ductal_k' (a 5th and more get suffixes). Returns one row per
+        region: region_label, niche, niche_share, niche_enrichment, dominant (top cell types), malignant_top."""
+        df_s = self.shares(df_abund.loc[adata.obs_names])
+        groups = self.niche_groups(df_s.columns)
+        lab = adata.obs[key].astype(str).values
+        G = pd.DataFrame({g: df_s[c].sum(1) if c else 0.0 for g, c in groups.items()})
+        Gm = G.groupby(lab).mean()
+        En = Gm / G.mean(0).replace(0, np.nan)
+        Cm = df_s.groupby(lab).mean()
+        rows = []
+        for r in Gm.index:
+            ok = Gm.loc[r][Gm.loc[r] >= min_share]
+            g = En.loc[r, ok.index].idxmax() if len(ok) else Gm.loc[r].idxmax()
+            mal = Cm.loc[r, [c for c in groups["malignant"]]].sort_values(ascending=False) if groups["malignant"] else None
+            rows.append(dict(region_label=r, niche_group=g, niche_share=round(float(Gm.loc[r, g]), 3),
+                             niche_enrichment=round(float(En.loc[r, g]), 2),
+                             dominant=", ".join(f"{c} ({v:.0%})" for c, v in Cm.loc[r].sort_values(ascending=False)[:3].items()),
+                             malignant_top=mal.index[0] if mal is not None and len(mal) else ""))
+        df = pd.DataFrame(rows)
+        # malignant niches: N07..N10 by dominant subtype (paper: N10 enriched in D02_Ductal-APOA2)
+        mal = df[df.niche_group == "malignant"].copy()
+        names = {}
+        mal_subtypes = sorted(set(mal.malignant_top), key=lambda s: (s == "D02_Ductal-APOA2", s))
+        for i, s in enumerate(mal_subtypes):
+            num = 7 + i
+            names[s] = f"N{num:02d}_Malignant_ductal_{i + 1} ({s.split('_', 1)[1] if '_' in s else s})"
+        df["niche"] = [names.get(t, "") if g == "malignant" else g for g, t in zip(df.niche_group, df.malignant_top)]
+        return df
+
+    def read_region_info(self, source: Optional[str] = None, verbose: bool = False) -> pd.DataFrame:
+        """Region table (region_id, region_name, compartment, description, abundance_source): the curated
+        files['region_info'] (pdac/data/pdac_regions.tsv) rows of the abundance source when present, otherwise built from
+        the niche assignment of mp_pdac01 (files['region_niches']: name = niche, compartment = niche group,
+        description = dominant cell types)."""
+        if self.file_path("region_info").exists():
+            df = self.read_tsv("region_info", verbose=verbose)
+            if source is not None and "abundance_source" in df:
+                df = df[df.abundance_source == source]
+            if len(df):
+                return df.reset_index(drop=True)
+        d = self.read_tsv("region_niches", verbose=verbose)
+        return pd.DataFrame({"region_id": d.region_label, "region_name": d.niche, "compartment": d.niche_group,
+                             "description": "dominant: " + d.dominant.astype(str),
+                             "abundance_source": d.get("abundance_source", "")})
+
+    # =================================================================================================================
+    # 8. sections as replicates: shares per section, NI groups (high vs low), CytAssist-only sensitivity
+    # =================================================================================================================
+    def calc_df_share_by_section(self, adata, key: str, fname: Optional[str] = None, force: bool = False,
+                                 verbose: bool = False) -> pd.DataFrame:
+        """Share of each level of obs[key] (regions, niches) per section; long table: section, patient, ni_status,
+        technique, group, share."""
+        def _compute():
+            obs = adata.obs
+            ct = pd.crosstab(obs[self.sample_col].astype(str), obs[key].astype(str), normalize="index")
+            df = ct.stack().rename("share").reset_index()
+            df.columns = ["section", "group", "share"]
+            df_sec = self.read_sections_table().set_index("section_id")
+            for c in ("patient", "ni_status", "technique"):
+                df[c] = df.section.map(df_sec[c].astype(str))
+            df["share"] = df["share"].round(6)
+            return df[["section", "patient", "ni_status", "technique", "group", "share"]]
+        return self._cached_any(fname, _compute, force=force, verbose=verbose)
+
+    def calc_df_celltype_by_section(self, adata, df_abund: pd.DataFrame, fname: Optional[str] = None,
+                                    force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """Mean cell-type share per section (abundance / spot total averaged over the section's spots); long table:
+        section, patient, ni_status, technique, lineage, cell_type, share."""
+        def _compute():
+            df_p = self.shares(df_abund.loc[adata.obs_names])
+            df_m = df_p.groupby(adata.obs[self.sample_col].astype(str).values).mean()
+            df = df_m.stack().rename("share").reset_index()
+            df.columns = ["section", "cell_type", "share"]
+            df_sec = self.read_sections_table().set_index("section_id")
+            for c in ("patient", "ni_status", "technique"):
+                df[c] = df.section.map(df_sec[c].astype(str))
+            df["lineage"] = df.cell_type.map(self.lineage_of_celltype)
+            df["share"] = df["share"].round(6)
+            return df[["section", "patient", "ni_status", "technique", "lineage", "cell_type", "share"]]
+        return self._cached_any(fname, _compute, force=force, verbose=verbose)
+
+    def calc_df_ni_test(self, df_long: pd.DataFrame, value: str = "share", group_col: str = "group",
+                        techniques: Optional[Sequence[str]] = None) -> pd.DataFrame:
+        """High vs low NI per group (sections as replicates): medians, log2 ratio of means, two-sided Mann-Whitney U
+        p-value and BH FDR (all sections, and with techniques= a subset, e.g. ('CytAssist',): all low-NI sections are
+        CytAssist, so the subset compares like with like)."""
+        from scipy.stats import mannwhitneyu
+        d = df_long if techniques is None else df_long[df_long.technique.isin(list(techniques))]
+        rows = []
+        for g, sub in d.groupby(group_col, sort=False):
+            lo = sub.loc[sub.ni_status == "low", value].values
+            hi = sub.loc[sub.ni_status == "high", value].values
+            if len(lo) < 2 or len(hi) < 2:
+                continue
+            p = mannwhitneyu(hi, lo, alternative="two-sided").pvalue if (np.ptp(np.r_[lo, hi]) > 0) else 1.0
+            rows.append({group_col: g, "n_low": len(lo), "n_high": len(hi), "median_low": np.median(lo),
+                         "median_high": np.median(hi),
+                         "log2_ratio_high_low": np.log2((hi.mean() + 1e-4) / (lo.mean() + 1e-4)), "p": p})
+        df = pd.DataFrame(rows)
+        if len(df):
+            df["fdr"] = self._bh(df.p.values)
+        df.attrs["sections"] = "all" if techniques is None else "+".join(techniques)
+        return df.round(5)
+
+    def plot_ni_groups(self, df_long: pd.DataFrame, groups: Sequence[str], value: str = "share",
+                       group_col: str = "group", df_test: Optional[pd.DataFrame] = None, ncols: int = 6,
+                       panel_size=(2.6, 3.2), title: str = "", ylabel: str = "share of the section",
+                       fname: Optional[str] = None, font_color: Optional[str] = None, bg_color: Optional[str] = None,
+                       fontsize_scale: Optional[float] = None, force: bool = False, verbose: bool = False):
+        """One panel per group: section values for low vs high NI (box + points; marker = technique), Mann-Whitney
+        p in the title (Figure 2E / 3B / 3D analogue; the paper's ridge plots summarise the same 5 vs 16 sections)."""
+        font_color = self.get_param("font_color", font_color)
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
+        groups = [g for g in groups if g in set(df_long[group_col])]
+        nrows = math.ceil(len(groups) / ncols)
+        fig, axes = plt.subplots(nrows, ncols, figsize=(panel_size[0] * ncols, panel_size[1] * nrows), squeeze=False)
+        for ax in axes.ravel()[len(groups):]:
+            ax.axis("off")
+        col = {"low": "#4C9BE8", "high": "#E8504C"}
+        mk = {"FF": "s", "FFPE": "^", "CytAssist": "o"}
+        rng = np.random.default_rng(0)
+        p_of = df_test.set_index(group_col)["p"] if df_test is not None and len(df_test) else {}
+        for ax, g in zip(axes.ravel(), groups):
+            sub = df_long[df_long[group_col] == g]
+            for i, ni in enumerate(self.params["ni_order"]):
+                v = sub[sub.ni_status == ni]
+                ax.boxplot([v[value].values], positions=[i], widths=0.55, showfliers=False,
+                           medianprops=dict(color=col[ni]), boxprops=dict(color="#888888"),
+                           whiskerprops=dict(color="#888888"), capprops=dict(color="#888888"))
+                for t, vt in v.groupby("technique"):
+                    ax.scatter(i + rng.uniform(-0.15, 0.15, len(vt)), vt[value], s=18, c=col[ni], marker=mk.get(t, "o"),
+                               edgecolors="none", alpha=0.9)
+            ax.set_xticks([0, 1]); ax.set_xticklabels([f"{n}-NI" for n in self.params["ni_order"]])
+            p = p_of.get(g, np.nan) if hasattr(p_of, "get") else np.nan
+            ax.set_title(f"{g}\np = {p:.3g}" if np.isfinite(p) else g, fontsize=8)
+            ax.set_ylabel(ylabel, fontsize=8)
+        handles = [Line2D([], [], ls="", marker=v, color="#999999", label=k) for k, v in mk.items()]
+        fig.legend(handles=handles, loc="upper right", frameon=False, title="technique")
+        if title:
+            fig.suptitle(title)
+        fig.tight_layout()
+        self.style_figure(fig, font_color, bg_color, fontsize_scale, relayout=False)
+        self._savefig(fig, fname, force=force, verbose=verbose)
+        return fig
+
+    def plot_section_pca(self, df_long: pd.DataFrame, value: str = "share", group_col: str = "group",
+                         figsize=(7, 6), title: str = "", fname: Optional[str] = None, font_color: Optional[str] = None,
+                         bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None, force: bool = False,
+                         verbose: bool = False) -> pd.DataFrame:
+        """PCA of the sections on their group shares (Figure 3C analogue); colour = NI, marker = technique.
+        Returns the section scores (PC1, PC2) with metadata."""
+        font_color = self.get_param("font_color", font_color)
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
+        M = df_long.pivot_table(index="section", columns=group_col, values=value).fillna(0)
+        X = (M - M.mean(0)) / M.std(0).replace(0, 1)
+        U, S, Vt = np.linalg.svd(X.values, full_matrices=False)
+        pcs = U[:, :2] * S[:2]
+        ev = S ** 2 / (S ** 2).sum()
+        meta = df_long.drop_duplicates("section").set_index("section").loc[M.index]
+        df = pd.DataFrame({"PC1": pcs[:, 0], "PC2": pcs[:, 1]}, index=M.index).join(meta[["patient", "ni_status", "technique"]])
+        fig, ax = plt.subplots(figsize=figsize)
+        col = {"low": "#4C9BE8", "high": "#E8504C"}
+        mk = {"FF": "s", "FFPE": "^", "CytAssist": "o"}
+        for (ni, t), d in df.groupby(["ni_status", "technique"]):
+            ax.scatter(d.PC1, d.PC2, c=col[ni], marker=mk[t], s=70, label=f"{ni}-NI, {t}", edgecolors="none")
+        for s, r in df.iterrows():
+            ax.annotate(s, (r.PC1, r.PC2), fontsize=7, xytext=(3, 3), textcoords="offset points")
+        ax.set_xlabel(f"PC1 ({ev[0]:.0%})"); ax.set_ylabel(f"PC2 ({ev[1]:.0%})")
+        ax.legend(frameon=False, fontsize=8)
+        ax.set_title(title or f"Sections on {group_col} shares")
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)
+        self._savefig(fig, fname, force=force, verbose=verbose)
+        return df.round(4)
+
+    @staticmethod
+    def shannon(p: np.ndarray) -> float:
+        p = np.asarray(p, float)
+        p = p[p > 0] / p[p > 0].sum() if (p > 0).any() else p
+        return float(-(p * np.log(p)).sum()) if len(p) else 0.0
+
+    def calc_df_malignant_diversity(self, adata, df_abund: pd.DataFrame) -> pd.DataFrame:
+        """Per section: share of each malignant subtype (D02-D09) among malignant cells and the Shannon index
+        (Figure 2J analogue)."""
+        df_s = self.shares(df_abund.loc[adata.obs_names])
+        mal = [c for c in df_s.columns if re.match(r"D0[2-9]_", c)]
+        M = df_s[mal].groupby(adata.obs[self.sample_col].astype(str).values).sum()
+        M = M.div(M.sum(1), axis=0)
+        M["shannon"] = [self.shannon(r) for r in M[mal].values]
+        df_sec = self.read_sections_table().set_index("section_id")
+        M["ni_status"] = df_sec.loc[M.index, "ni_status"].astype(str).values
+        M["technique"] = df_sec.loc[M.index, "technique"].astype(str).values
+        return M.round(4)
+
+    # =================================================================================================================
+    # 9. nerves: spots, invasion, juxta- (1-2) and peri-neural (3-5) rings (paper Figures 4, 5, S5A, 6A)
+    # =================================================================================================================
+    def nerve_marker_score(self, adata, genes: Optional[Sequence[str]] = None) -> np.ndarray:
+        """Mean z-score (within each section) of log1p(CP10k) of the nerve genes (PDAC_NERVE_GENES)."""
+        found, Y = self.lognorm_genes(list(genes or PDAC_NERVE_GENES), adata)
+        sec = adata.obs[self.sample_col].astype(str).values
+        Z = np.zeros_like(Y)
+        for s in np.unique(sec):
+            m = sec == s
+            mu, sd = Y[m].mean(0), Y[m].std(0)
+            Z[m] = (Y[m] - mu) / np.where(sd > 0, sd, 1)
+        return Z.mean(1)
+
+    def _section_graphs(self, adata):
+        """Per section: (indices into adata, spot adjacency of the 6 Visium neighbours)."""
+        sec = adata.obs[self.sample_col].astype(str).values
+        xy_all = np.asarray(adata.obsm["spatial"], float)
+        out = {}
+        for s in pd.unique(sec):
+            idx = np.flatnonzero(sec == s)
+            A, _ = self.spot_neighbor_graph(xy_all[idx], radius_factor=self.params["coherence_radius_factor"])
+            out[s] = (idx, A)
+        return out
+
+    def call_nerves(self, adata, df_abund: pd.DataFrame, fname: Optional[str] = None, force: bool = False,
+                    verbose: bool = False) -> pd.DataFrame:
+        """Nerve spots, nerve bundles, invasion status and rings (written to obs and returned per spot):
+          nerve spot  : Schwann share (S01-S03 / spot total) >= nerve_min_schwann_share and nerve-marker score
+                        (nerve_marker_score) >= nerve_min_marker_z; connected bundles of >= nerve_min_size spots
+                        (6-neighbour graph) are kept -> obs['nerve_id'] '<section>_n<k>';
+          invasion    : malignant share (D02-D09) averaged over the bundle and its first ring >= nerve_invaded_min_malignant
+                        -> 'invaded', else 'non-invaded' (proxy of the pathologists' call on the H&E);
+          rings       : graph distance (spots) to the nearest bundle, 1 .. nerve_n_rings -> obs['nerve_ring'] (0 = nerve),
+                        obs['nerve_zone'] 'nerve' | 'juxta-neural' (1-2) | 'peri-neural' (3-5), obs['ring_status']
+                        = invasion status of the nearest bundle.
+        files['nerve_overrides'] (section, barcode, nerve 0/1, invaded 0/1/''; e.g. from the H&E) replaces the calls
+        of the listed spots. Cached table: barcode, section, schwann_share, nerve_score, malignant_share, nerve_id,
+        nerve_status, nerve_ring, nerve_zone, ring_status."""
+        from scipy.sparse.csgraph import connected_components
+
+        def _compute():
+            P = self.params
+            df_s = self.shares(df_abund.loc[adata.obs_names])
+            sch = df_s[[c for c in df_s.columns if c.startswith("S0") or c == "Schwann"]].sum(1).values
+            mal = df_s[[c for c in df_s.columns if re.match(r"D0[2-9]_", c)]].sum(1).values
+            score = self.nerve_marker_score(adata)
+            is_nerve = (sch >= P["nerve_min_schwann_share"]) & (score >= P["nerve_min_marker_z"])
+            inv_override = np.full(adata.n_obs, np.nan)
+            path = self.file_path("nerve_overrides")
+            if path.exists():
+                df_o = self.read_tsv("nerve_overrides")
+                key = df_o.section.astype(str) + "_" + df_o.barcode.astype(str)
+                pos = pd.Series(np.arange(adata.n_obs), index=adata.obs_names).reindex(key).values
+                okp = ~np.isnan(pos)
+                pos = pos[okp].astype(int)
+                is_nerve[pos] = df_o.nerve.values[okp].astype(bool)
+                inv = pd.to_numeric(df_o["invaded"], errors="coerce").values[okp]
+                inv_override[pos] = inv
+                if verbose:
+                    print(f"nerve overrides: {len(pos)} spots from {path}")
+            nerve_id = np.full(adata.n_obs, "", dtype=object)
+            status = np.full(adata.n_obs, "", dtype=object)
+            ring = np.full(adata.n_obs, np.nan)
+            ring_status = np.full(adata.n_obs, "", dtype=object)
+            for s, (idx, A) in self._section_graphs(adata).items():
+                nv = is_nerve[idx]
+                if not nv.any():
+                    continue
+                sub = A[nv][:, nv]
+                k, comp = connected_components(sub, directed=False)
+                nidx = idx[nv]
+                sizes = np.bincount(comp, minlength=k)
+                keep = sizes[comp] >= P["nerve_min_size"]
+                local = np.full(len(idx), -1)
+                local[np.flatnonzero(nv)[keep]] = comp[keep]
+                # rings by BFS from all kept bundle spots; nearest bundle label propagated
+                dist = np.full(len(idx), np.inf)
+                owner = np.full(len(idx), -1)
+                frontier = np.flatnonzero(local >= 0)
+                dist[frontier] = 0
+                owner[frontier] = local[frontier]
+                A_csr = A.tocsr()
+                for d in range(1, P["nerve_n_rings"] + 1):
+                    nxt = []
+                    for i in frontier:
+                        for j in A_csr.indices[A_csr.indptr[i]:A_csr.indptr[i + 1]]:
+                            if dist[j] == np.inf:
+                                dist[j] = d
+                                owner[j] = owner[i]
+                                nxt.append(j)
+                    frontier = np.array(nxt, dtype=int)
+                    if not len(frontier):
+                        break
+                # invasion per bundle: malignant share over the bundle and its first ring
+                comp_status = {}
+                for c in np.unique(local[local >= 0]):
+                    m_ = (owner == c) & (dist <= 1)
+                    ov = inv_override[idx[local == c]]
+                    if np.isfinite(ov).any():
+                        comp_status[c] = "invaded" if np.nanmax(ov) > 0 else "non-invaded"
+                    else:
+                        comp_status[c] = ("invaded" if mal[idx[m_]].mean() >= P["nerve_invaded_min_malignant"]
+                                          else "non-invaded")
+                for i_loc, gi in enumerate(idx):
+                    if np.isfinite(dist[i_loc]):
+                        ring[gi] = dist[i_loc]
+                        ring_status[gi] = comp_status[owner[i_loc]]
+                        if dist[i_loc] == 0:
+                            nerve_id[gi] = f"{s}_n{owner[i_loc]}"
+                            status[gi] = comp_status[owner[i_loc]]
+            zone = np.where(ring == 0, "nerve", np.where(ring <= 2, "juxta-neural", np.where(ring <= 5, "peri-neural", "")))
+            zone = np.where(np.isnan(ring), "", zone)
+            return pd.DataFrame({"barcode": adata.obs_names, "section": adata.obs[self.sample_col].astype(str).values,
+                                 "schwann_share": sch.round(4), "nerve_score": score.round(3),
+                                 "malignant_share": mal.round(4), "nerve_id": nerve_id, "nerve_status": status,
+                                 "nerve_ring": ring, "nerve_zone": zone, "ring_status": ring_status})
+
+        df = self._cached_any(fname, _compute, force=force, verbose=verbose)
+        df = df.set_index("barcode").reindex(adata.obs_names)
+        for c in ("nerve_id", "nerve_status", "nerve_zone", "ring_status"):
+            adata.obs[c] = df[c].fillna("").astype(str).values
+        adata.obs["nerve_ring"] = df["nerve_ring"].values
+        return df.reset_index(names="barcode")
+
+    def calc_df_nerve_table(self, df_nerve: pd.DataFrame) -> pd.DataFrame:
+        """One row per nerve bundle: section, n_spots, status, mean Schwann / malignant share, ring-1 malignant share,
+        and the section's NI status."""
+        d = df_nerve[df_nerve.nerve_id != ""]
+        df_sec = self.read_sections_table().set_index("section_id")
+        out = d.groupby("nerve_id").agg(section=("section", "first"), n_spots=("barcode", "size"),
+                                        status=("nerve_status", "first"), schwann_share=("schwann_share", "mean"),
+                                        malignant_share=("malignant_share", "mean")).reset_index()
+        out["ni_status"] = out.section.map(df_sec["ni_status"].astype(str))
+        return out.sort_values(["section", "n_spots"], ascending=[True, False]).round(3)
+
+    def calc_df_ring_profile(self, adata, df_values: pd.DataFrame, max_ring: Optional[int] = None) -> pd.DataFrame:
+        """Mean of every column of df_values (spots x features: cell-type shares or niche indicators) per ring
+        (0 = nerve, 1 .. 5) and ring_status (invaded / non-invaded). Long table: ring_status, ring, feature, mean,
+        n_spots (Figure 4B analogue)."""
+        max_ring = max_ring or self.params["nerve_n_rings"]
+        r = adata.obs["nerve_ring"].values
+        st = adata.obs["ring_status"].astype(str).values
+        ok = np.isfinite(r) & (r <= max_ring) & (st != "")
+        D = df_values.loc[adata.obs_names[ok]].reset_index(drop=True)
+        D.columns.name = "feature"
+        keys = [pd.Series(st[ok], name="ring_status"), pd.Series(r[ok].astype(int), name="ring")]
+        M = D.groupby(keys).mean()
+        n = D.groupby(keys).size().rename("n_spots")
+        df = M.stack().rename("mean").reset_index()
+        return df.merge(n.reset_index(), on=["ring_status", "ring"])
+
+    def calc_df_juxta_enrichment(self, adata, df_share: pd.DataFrame, zone: str = "juxta-neural") -> pd.DataFrame:
+        """Cell types in the juxta-neural spots (rings 1-2) of invaded vs non-invaded nerves: means, log2 ratio,
+        two-sided Mann-Whitney p and BH FDR over spots (Figure 4A analogue; spots are not independent: rank by effect)."""
+        from scipy.stats import mannwhitneyu
+        z = adata.obs["nerve_zone"].astype(str).values == zone
+        st = adata.obs["ring_status"].astype(str).values
+        a_inv = df_share.loc[adata.obs_names[z & (st == "invaded")]]
+        a_non = df_share.loc[adata.obs_names[z & (st == "non-invaded")]]
+        rows = []
+        for c in df_share.columns:
+            x, y = a_inv[c].values, a_non[c].values
+            if len(x) < 5 or len(y) < 5:
+                continue
+            p = mannwhitneyu(x, y).pvalue if np.ptp(np.r_[x, y]) > 0 else 1.0
+            rows.append(dict(cell_type=c, lineage=self.lineage_of_celltype(c), mean_invaded=x.mean(),
+                             mean_non_invaded=y.mean(),
+                             log2_ratio=np.log2((x.mean() + 1e-4) / (y.mean() + 1e-4)), p=p))
+        df = pd.DataFrame(rows, columns=["cell_type", "lineage", "mean_invaded", "mean_non_invaded", "log2_ratio", "p"])
+        df["fdr"] = self._bh(df.p.values) if len(df) else []
+        df.attrs.update(n_invaded=len(a_inv), n_non_invaded=len(a_non))
+        return df.sort_values("log2_ratio", ascending=False).round(6)
+
+    def plot_ring_profile(self, df_ring: pd.DataFrame, features: Sequence[str], ncols: int = 4, panel_size=(3.6, 3),
+                          ylabel: str = "mean share", title: str = "", fname: Optional[str] = None,
+                          font_color: Optional[str] = None, bg_color: Optional[str] = None,
+                          fontsize_scale: Optional[float] = None, force: bool = False, verbose: bool = False):
+        """One panel per feature: mean vs ring (5 -> 0 = nerve), invaded (dashed) vs non-invaded (solid)."""
+        font_color = self.get_param("font_color", font_color)
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
+        features = [f for f in features if f in set(df_ring.feature)]
+        if not features:
+            print("no nerve rings (no nerve called with the current thresholds): nothing to plot")
+            return None
+        nrows = math.ceil(len(features) / ncols)
+        fig, axes = plt.subplots(nrows, ncols, figsize=(panel_size[0] * ncols, panel_size[1] * nrows), squeeze=False)
+        for ax in axes.ravel()[len(features):]:
+            ax.axis("off")
+        sty = {"invaded": dict(ls="--", color="#E8504C"), "non-invaded": dict(ls="-", color="#4C9BE8")}
+        for ax, f in zip(axes.ravel(), features):
+            d = df_ring[df_ring.feature == f]
+            for st, dd in d.groupby("ring_status"):
+                dd = dd.sort_values("ring", ascending=False)
+                ax.plot(dd.ring, dd["mean"], marker="o", ms=4, label=st, **sty.get(st, {}))
+            ax.invert_xaxis()
+            ax.set_xticks(range(0, int(d.ring.max()) + 1))
+            ax.set_title(f, fontsize=9)
+            ax.set_xlabel("ring (0 = nerve)", fontsize=8)
+            ax.set_ylabel(ylabel, fontsize=8)
+        axes.ravel()[0].legend(frameon=False, fontsize=8)
+        if title:
+            fig.suptitle(title)
+        fig.tight_layout()
+        self.style_figure(fig, font_color, bg_color, fontsize_scale, relayout=False)
+        self._savefig(fig, fname, force=force, verbose=verbose)
+        return fig
+
+    def calc_df_distance_to_malignant(self, adata, df_abund: pd.DataFrame, n_rings: int = 5,
+                                      malignant_key: str = "niche", malignant_prefix: str = "N0") -> np.ndarray:
+        """Graph distance of every spot to the nearest malignant-niche spot (niche names containing 'Malignant'),
+        capped at n_rings (Figure 6A: 'radius 1-5', farther spots grouped into 5)."""
+        lab = adata.obs[malignant_key].astype(str).values
+        is_mal = np.char.find(lab.astype(str), "Malignant") >= 0
+        out = np.full(adata.n_obs, float(n_rings))
+        for s, (idx, A) in self._section_graphs(adata).items():
+            A = A.tocsr()
+            dist = np.full(len(idx), np.inf)
+            frontier = np.flatnonzero(is_mal[idx])
+            dist[frontier] = 0
+            for d in range(1, n_rings + 1):
+                nxt = []
+                for i in frontier:
+                    for j in A.indices[A.indptr[i]:A.indptr[i + 1]]:
+                        if dist[j] == np.inf:
+                            dist[j] = d
+                            nxt.append(j)
+                frontier = np.array(nxt, dtype=int)
+            out[idx] = np.minimum(dist, n_rings)
+        return out
+
+
+    def plot_region_celltype_heatmap(self, adata, df_share: pd.DataFrame, key: str = "region_label",
+                                     names: Optional[Dict[str, str]] = None, figsize=(18, 9), fname: Optional[str] = None,
+                                     font_color: Optional[str] = None, bg_color: Optional[str] = None,
+                                     fontsize_scale: Optional[float] = None, force: bool = False,
+                                     verbose: bool = False) -> pd.DataFrame:
+        """Groups (rows) x cell types (columns, by lineage): log2 enrichment (group mean share / mean over all spots;
+        clipped at 1/16). Returns the enrichment table (Figure 1F analogue)."""
+        font_color = self.get_param("font_color", font_color)
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
+        df_a = df_share.loc[adata.obs_names]
+        df_a = df_a[self.celltype_order(df_a.columns)]
+        df_enr = df_a.groupby(adata.obs[key].astype(str).values).mean() / df_a.mean(0).replace(0, np.nan)
+        df_enr = df_enr.fillna(0)
+        L = np.log2(df_enr.clip(lower=1 / 16))
+        fig, ax = plt.subplots(figsize=figsize)
+        im = ax.imshow(L.values, cmap="RdBu_r", vmin=-3, vmax=3, aspect="auto")
+        ax.set_xticks(range(L.shape[1]))
+        ax.set_xticklabels(L.columns, rotation=80, ha="right")
+        col = self.celltype_colors(L.columns)
+        for t, c in zip(ax.get_xticklabels(), L.columns):
+            t.set_color(col.get(c, "#888888"))
+        ax.set_yticks(range(L.shape[0]))
+        ax.set_yticklabels([f"{r} {names.get(r, '')}" if names else r for r in L.index])
+        fig.colorbar(im, ax=ax, fraction=0.03).set_label(f"log2 enrichment ({key} / all spots)")
+        ax.set_title(f"Cell types in each {key} ({df_share.attrs.get('source', '')} shares)")
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)
+        self._savefig(fig, fname, force=force, verbose=verbose)
+        return df_enr
+
+
+    # =================================================================================================================
+    # 10. signatures by gene symbol (LIANA cell-type split) and subregion scores on the reference
+    # =================================================================================================================
+    def calc_df_mean_signatures(self, adata_ref_dec, force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """Mean raw counts per cell of every gene in each cell type of the deconvolution reference (genes x cell types,
+        index = Ensembl IDs, column 'symbol'). Cached in files['mean_signatures']."""
+        def _compute():
+            a = adata_ref_dec
+            lab = a.obs[self.params["celltype_col"]].astype(str).values
+            cats = sorted(set(lab))
+            G = sp.csr_matrix((np.ones(len(lab)), (np.searchsorted(cats, lab), np.arange(len(lab)))))
+            M = np.asarray((G @ a.X).todense()) / np.asarray(G.sum(1))
+            df = pd.DataFrame(M.T, index=a.var_names, columns=cats).round(6)
+            df.insert(0, "symbol", a.var[self.symbol_col].astype(str).values)
+            return df.reset_index(names="gene_id")
+        return self._cached_table("mean_signatures", _compute, force=force, verbose=verbose).set_index("gene_id")
+
+    def reference_signatures_symbols(self, adata_ref_dec=None, summary: str = "means", source: Optional[str] = None
+                                     ) -> pd.DataFrame:
+        """Signatures (genes x cell types) indexed by gene symbol: the cell2location reference model (files['signatures'],
+        varm '<summary>_per_cluster_mu_fg') when it exists (or source='c2l'), else the mean counts per cell type
+        (calc_df_mean_signatures; needs adata_ref_dec). attrs['source'] = 'c2l' | 'mean_counts'."""
+        path = self.file_path("signatures")
+        if source == "c2l" or (source is None and path.exists()):
+            a = ad.read_h5ad(path, backed="r")
+            df_sig, _ = self.get_reference_signatures(a, prefer=(summary,))
+            df_sig.index = a.var.loc[df_sig.index, self.symbol_col].astype(str).values
+            a.file.close()
+            src = "c2l"
+        else:
+            if adata_ref_dec is None:
+                raise ValueError("no cell2location reference model: pass adata_ref_dec for the mean-count signatures")
+            df = self.calc_df_mean_signatures(adata_ref_dec)
+            df_sig = df.drop(columns="symbol")
+            df_sig.index = df["symbol"].astype(str).values
+            src = "mean_counts"
+        out = df_sig[~df_sig.index.duplicated()]
+        out = out[self.celltype_order(out.columns)]
+        out.attrs["source"] = src
+        return out
+
+    def calc_df_subregion_ref_score(self, adata_ref, df_gene_sets: pd.DataFrame, df_sub_table: Optional[pd.DataFrame] = None,
+                                    status: Optional[str] = "supported", n_genes: int = 25, min_genes: int = 3,
+                                    force: bool = False, verbose: bool = False
+                                    ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, List[str]]]:
+        """Each subregion's signature on the reference (symbols as var_names): top n_genes subregion_signature genes
+        found in the reference (>= min_genes; only subregions whose status starts with `status`); cell score = mean
+        per-gene z-score of log1p(CP10k) (library size obs['n_counts']). Returns (df_ref_score subregions x cell types,
+        df_cell_score, genes_used). Cached in files 'subregion_ref_score' / 'subregion_ref_genes'."""
+        groupby = self.params["celltype_col"]
+        cache = ("subregion_ref_score", "subregion_ref_genes")
+        if not force and all(k in self.files and self.file_path(k).exists() for k in cache):
+            df_ref_score = self.read_tsv("subregion_ref_score", verbose=verbose).set_index("sub_region_id")
+            df_ref_score.index.name = None
+            d = self.read_tsv("subregion_ref_genes", verbose=verbose)
+            genes_used = {r.sub_region_id: r.genes.split(",") for r in d.itertuples()}
+            return df_ref_score, self._calc_df_cell_score(adata_ref, genes_used), genes_used
+        d = df_gene_sets[df_gene_sets.gene_set == "subregion_signature"].sort_values("scores", ascending=False)
+        if df_sub_table is not None and status:
+            keep = df_sub_table.loc[df_sub_table.status.str.startswith(status), "sub_region_id"]
+            d = d[d.sub_region_id.isin(set(keep))]
+        sym = set(adata_ref.var_names.astype(str))
+        genes_used = {}
+        for s_id, g in d.groupby("sub_region_id", sort=False):
+            gl = [x for x in g.gene if x in sym][:n_genes]
+            if len(gl) >= min_genes:
+                genes_used[s_id] = gl
+        order = [s_id for s_id in df_gene_sets.sub_region_id.unique() if s_id in genes_used]
+        genes_used = {k: genes_used[k] for k in order}
+        df_cell_score = self._calc_df_cell_score(adata_ref, genes_used)
+        ct = adata_ref.obs[groupby].astype(str).values
+        df_ref_score = df_cell_score.groupby(ct).mean().T.round(6)
+        df_ref_score = df_ref_score[self.celltype_order(df_ref_score.columns)]
+        if all(k in self.files for k in cache):
+            self.write_tsv(df_ref_score.reset_index(names="sub_region_id"), "subregion_ref_score", verbose=verbose)
+            self.write_tsv(pd.DataFrame({"sub_region_id": list(genes_used),
+                                         "genes": [",".join(v) for v in genes_used.values()]}),
+                           "subregion_ref_genes", verbose=verbose)
+        return df_ref_score, df_cell_score, genes_used
+
+    def _calc_df_cell_score(self, adata_ref, genes_used: Dict[str, List[str]]) -> pd.DataFrame:
+        union = sorted({x for v in genes_used.values() for x in v})
+        found, E = self.lognorm_genes(union, adata_ref, libsize=adata_ref.obs[self.params["libsize_col"]].values)
+        sd = E.std(0)
+        Z = (E - E.mean(0)) / np.where(sd > 0, sd, 1)
+        col = {g: i for i, g in enumerate(found)}
+        S = np.column_stack([Z[:, [col[g] for g in gl if g in col]].mean(1) for gl in genes_used.values()])
+        return pd.DataFrame(S, index=adata_ref.obs_names, columns=list(genes_used))
+
+    @staticmethod
+    def calc_df_ref_top(df_ref_score: pd.DataFrame, n: int = 3) -> pd.Series:
+        return df_ref_score.apply(lambda r: ", ".join(f"{c} ({v:.2f})" for c, v in r.sort_values(ascending=False)
+                                                      .head(n).items()), axis=1).rename("ref_cell_types")
+
+    def add_ref_cell_types(self, df_sub_table: pd.DataFrame, df_ref_score: pd.DataFrame, n: int = 3,
+                           force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        df = df_sub_table.copy()
+        new = df.sub_region_id.map(self.calc_df_ref_top(df_ref_score, n=n)).fillna("").astype(str)
+        changed = "ref_cell_types" not in df or not new.equals(df["ref_cell_types"].fillna("").astype(str))
+        df["ref_cell_types"] = new.values
+        if "subregion_table" in self.files and (changed or force):
+            self.write_tsv(df, "subregion_table", verbose=verbose)
+        return df
+
+    def plot_subregion_ref_heatmap(self, df_ref_score: pd.DataFrame, figsize=(16, 14), vmax: float = 1.5,
+                                   fname: Optional[str] = None, font_color: Optional[str] = None,
+                                   bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                                   force: bool = False, verbose: bool = False):
+        font_color = self.get_param("font_color", font_color)
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
+        fig, ax = plt.subplots(figsize=figsize)
+        im = ax.imshow(df_ref_score.values, cmap="RdBu_r", vmin=-vmax, vmax=vmax, aspect="auto")
+        ax.set_xticks(range(df_ref_score.shape[1]))
+        ax.set_xticklabels(df_ref_score.columns, rotation=80, ha="right")
+        ax.set_yticks(range(df_ref_score.shape[0]))
+        ax.set_yticklabels(df_ref_score.index, fontsize=7)
+        fig.colorbar(im, ax=ax, fraction=0.03).set_label("mean signature z-score of the cell type")
+        ax.set_title("Subregion signatures on the sc / sn reference")
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)
+        self._savefig(fig, fname, force=force, verbose=verbose)
+        return fig
+
+
+    # =================================================================================================================
+    # 11. LIANA bivariate per section (liana densifies the spot kernel: 81,846^2 x 8 B = 53 GB; per section <= 0.2 GB)
+    # =================================================================================================================
+    def liana_bivariate(self, adata=None, resource_name: Optional[str] = None, local_name: Optional[str] = None,
+                        global_name: Optional[str] = None, n_perms: Optional[int] = None,
+                        nz_prop: Optional[float] = None, fname: Optional[str] = "liana_bivariate",
+                        fname_global: Optional[str] = "liana_global", force: bool = False,
+                        verbose: bool = False, **kw) -> Tuple[pd.DataFrame, ad.AnnData]:
+        """SingleCell.liana_bivariate run section by section (same signature, cache and outputs).
+        The spatial kernel is block-diagonal (spots of different sections are never neighbours), so the local scores
+        equal those of a joint run; local permutations shuffle spots within a section. The LR pairs are fixed once:
+        all subunits of ligand and receptor detected in >= nz_prop of all spots (min over subunits). Global score:
+        spot-weighted mean of the per-section Moran's R; p = Stouffer combination (weights sqrt(n spots)) of the
+        per-section permutation p-values; var['n_sections_sig'] = sections with R > 0 and p < liana_fdr.
+        Per-section global table: <fname_global stem>_by_section.tsv in root_result."""
+        import liana as li
+        from scipy.stats import norm
+        a = self._check_adata(adata)
+        path = self._resolve_table(fname)
+        res_name = self.get_param("liana_resource", resource_name)
+        local_name = self.get_param("liana_local", local_name)
+        g = self.get_param("liana_global", global_name)
+        n_perms = self.get_param("liana_n_perms", n_perms)
+        nz_prop = self.get_param("liana_nz_prop", nz_prop)
+        computed = False
+        if path is not None and path.exists() and not force:
+            adata_lr = ad.read_h5ad(path)
+            if verbose:
+                print(f"Reading {path}")
+        else:
+            if "spatial_connectivities" not in a.obsp:
+                self.spatial_weights(a)
+            res = li.rs.select_resource(res_name)
+            Xb = a.X if sp.issparse(a.X) else sp.csr_matrix(a.X)
+            frac = pd.Series(np.asarray((Xb > 0).mean(0)).ravel(), index=a.var_names)
+            ent_prop = lambda e: min(frac.get(x, 0.0) for x in str(e).split("_"))
+            pl, pr = res.ligand.map(ent_prop), res.receptor.map(ent_prop)
+            res_keep = res[(pl >= nz_prop) & (pr >= nz_prop)].drop_duplicates().reset_index(drop=True)
+            secs = list(pd.unique(a.obs[self.sample_col].astype(str)))
+            parts, glob = [], []
+            for s in secs:
+                sub = a[(a.obs[self.sample_col].astype(str) == s).values]
+                lr = li.mt.bivariate(sub, resource=res_keep, local_name=local_name, global_name=g, n_perms=n_perms,
+                                     mask_negatives=False, add_categories=True, nz_prop=0, use_raw=False, verbose=False, **kw)
+                parts.append(lr)
+                v = lr.var[[g, f"{g}_pvals"]].copy()
+                v["section"], v["n_spots"] = s, sub.n_obs
+                glob.append(v.reset_index(names="interaction"))
+                if verbose:
+                    print(f"{s}: {sub.n_obs:,} spots, {lr.n_vars} pairs")
+            inter = list(dict.fromkeys(i for p in parts for i in p.var_names))
+            X, CATS, PV = [], [], []
+            for p in parts:
+                idx = pd.Index(p.var_names).get_indexer(inter)
+                ok = idx >= 0
+                def _take(M, fill):
+                    M = M.toarray() if sp.issparse(M) else np.asarray(M)
+                    out = np.full((p.n_obs, len(inter)), fill, dtype=np.float32)
+                    out[:, ok] = M[:, idx[ok]]
+                    return out
+                X.append(_take(p.X, 0.0)); CATS.append(_take(p.layers["cats"], 0.0)); PV.append(_take(p.layers["pvals"], 1.0))
+            df_g = pd.concat(glob, ignore_index=True)
+            W_ = df_g.pivot_table(index="interaction", columns="section", values="n_spots").reindex(inter)
+            R_ = df_g.pivot_table(index="interaction", columns="section", values=g).reindex(inter)
+            P_ = df_g.pivot_table(index="interaction", columns="section", values=f"{g}_pvals").reindex(inter)
+            w = W_.fillna(0).values
+            r_pool = np.nansum(R_.values * w, 1) / np.maximum(w.sum(1), 1)
+            pmin = 1.0 / (n_perms + 1)
+            z = norm.isf(np.clip(P_.values, pmin, 1 - 1e-12))
+            sw = np.sqrt(w)
+            Z = np.nansum(z * sw, 1) / np.sqrt(np.maximum(np.nansum(sw ** 2 * ~np.isnan(z), 1), 1e-12))
+            first = {}
+            for p in parts:
+                for i, row in p.var.iterrows():
+                    first.setdefault(i, row)
+            var = pd.DataFrame([first[i] for i in inter], index=pd.Index(inter, name="interaction"))
+            var[g] = r_pool
+            var[f"{g}_pvals"] = norm.sf(Z)
+            var["n_sections"] = (~np.isnan(R_.values)).sum(1)
+            var["n_sections_sig"] = ((R_.values > 0) & (P_.values < self.params["liana_fdr"])).sum(1)
+            var["ligand_props"] = var.ligand.map(ent_prop).values
+            var["receptor_props"] = var.receptor.map(ent_prop).values
+            obs_names = np.concatenate([p.obs_names.values for p in parts])
+            adata_lr = ad.AnnData(X=np.vstack(X), obs=pd.DataFrame(index=obs_names), var=var.drop(columns=["mean", "std"], errors="ignore"))
+            adata_lr.layers["cats"] = sp.csr_matrix(np.vstack(CATS))
+            adata_lr.layers["pvals"] = sp.csr_matrix(1 - np.vstack(PV))          # stored as 1 - p (sparse); restored below
+            adata_lr.uns["pvals_stored_as"] = "1 - p"
+            adata_lr = adata_lr[a.obs_names].copy()
+            adata_lr.obs = a.obs.copy()
+            adata_lr.obsm["spatial"] = a.obsm["spatial"]
+            adata_lr.uns["spatial"] = a.uns.get("spatial", {})
+            adata_lr.uns["liana_bivariate"] = dict(resource=res_name, by_section=True, n_pairs=len(inter), n_perms=n_perms)
+            computed = True
+            if path is not None:
+                adata_lr.write_h5ad(path, compression="gzip")
+                df_g.to_csv(path.with_name(path.stem + "_by_section.tsv"), sep="\t", index=False)
+                if verbose:
+                    print(f"Saving {path}")
+        if adata_lr.uns.get("pvals_stored_as") == "1 - p":
+            P = adata_lr.layers["pvals"]
+            adata_lr.layers["pvals"] = 1 - (P.toarray() if sp.issparse(P) else np.asarray(P))
+            adata_lr.uns["pvals_stored_as"] = "p"
+        df_inter = adata_lr.var.sort_values(g, ascending=False).copy()
+        df_inter[f"{g}_fdr"] = self._bh(df_inter[f"{g}_pvals"].values)
+        df_inter.index.name = "interaction"
+        if fname_global is not None and fname_global in self.files and \
+                (computed or force or not self.file_path(fname_global).exists()):
+            self.write_tsv(df_inter.reset_index(), fname_global, verbose=verbose)
+        return df_inter, adata_lr

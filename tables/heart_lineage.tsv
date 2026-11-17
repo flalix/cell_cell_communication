@@ -1,0 +1,32 @@
+HL_ID	HL_SUBID	description	functional_summary
+cardiomyocyte	Mat_vCM	Mature ventricular cardiomyocytes	Contractile working myocardium of the ventricles; high sarcomeric gene expression (MYH7, MYL2, MYL3) and force generation
+cardiomyocyte	MetAct_vCM_1	Metabolically active ventricular cardiomyocytes, state 1	Ventricular cardiomyocytes with elevated mitochondrial and oxidative phosphorylation programs supporting high energy demand
+cardiomyocyte	MetAct_vCM_2	Metabolically active ventricular cardiomyocytes, state 2	Second metabolically active ventricular state; high oxidative metabolism with a transcriptional profile distinct from state 1
+cardiomyocyte	Immat_CM	Immature cardiomyocytes	Early, less differentiated cardiomyocytes with low sarcomeric maturity and a fetal gene program; precursors of mature states
+cardiomyocyte	Prol_CM	Proliferating cardiomyocytes	Cycling cardiomyocytes (MKI67, TOP2A) driving myocardial growth by hyperplasia during development
+cardiomyocyte	Mat_aCM	Mature atrial cardiomyocytes	Contractile atrial myocardium (NPPA, MYL7, MYL4); atrial contraction and natriuretic peptide secretion
+cardiomyocyte	MetAct_aCM	Metabolically active atrial cardiomyocytes	Atrial cardiomyocytes with elevated mitochondrial and oxidative metabolism programs
+fibroblast	Int_FB	Interstitial fibroblasts	Myocardial interstitial fibroblasts; produce and remodel extracellular matrix and give structural support to the myocardium
+fibroblast	OFT_FB	Outflow tract fibroblasts	Fibroblasts of the outflow tract and great vessel roots; build the elastic and collagenous matrix of the arterial pole
+fibroblast	AnnFibr_FB	Annulus fibrosus fibroblasts	Fibroblasts of the fibrous atrioventricular annulus; form the cardiac skeleton and electrically insulate atria from ventricles
+fibroblast	PDE4Chigh_FB	PDE4C-high fibroblasts	Fibroblast state marked by high PDE4C expression; suggests altered cAMP signalling, exact function not well defined
+fibroblast	Prol_FB	Proliferating fibroblasts	Cycling fibroblasts (MKI67, TOP2A) expanding the stromal compartment during heart growth
+epicardial	EpC	Epicardial cells	Mesothelial outer layer of the heart (WT1, TBX18, UPK3B); source of paracrine signals and progenitors for the myocardial wall
+epicardial	EPDC	Epicardium-derived cells	Cells that left the epicardium by EMT and invade the myocardium; progenitors of fibroblasts and coronary mural cells
+mesenchymal	Valve_MC	Valve mesenchymal cells	Valve interstitial-like mesenchyme from endocardial cushions; deposits proteoglycan-rich matrix and remodels the valve leaflets
+mesenchymal	Peric_MC	Pericardial mesenchymal cells	Mesenchymal cells associated with the pericardium; connective tissue support of the pericardial layer
+mural	OFT_SMC	Outflow tract smooth muscle cells	Smooth muscle of the aorta and pulmonary trunk roots; provides vessel wall tone and elastic matrix at the arterial pole
+mural	CA_SMC	Coronary artery smooth muscle cells	Smooth muscle cells of the coronary arteries; regulate coronary vessel tone and stabilise the arterial wall
+mural	PC	Pericytes	Perivascular cells of the microvasculature (PDGFRB, RGS5); stabilise capillaries and regulate endothelial function
+endothelial	Endoc_EC	Endocardial endothelial cells	Endothelial lining of the cardiac chambers (NPR3, NRG1); signals to myocardium for trabeculation and compaction
+endothelial	EndocCush_EC	Endocardial cushion endothelial cells	Endocardial cells over the cushions; undergo EndMT to generate valve and septal mesenchyme
+endothelial	MicroVasc_EC	Microvascular endothelial cells	Capillary endothelium of the myocardium; oxygen and nutrient exchange with cardiomyocytes
+endothelial	MacroVasc_EC	Macrovascular endothelial cells	Endothelium of large vessels (arteries and veins, including coronaries); conduit blood flow and vessel wall signalling
+endothelial	PDE4Chigh_EC	PDE4C-high endothelial cells	Endothelial state marked by high PDE4C expression; suggests altered cAMP signalling, exact function not well defined
+endothelial	LEC	Lymphatic endothelial cells	Cardiac lymphatic endothelium (PROX1, LYVE1); interstitial fluid drainage and immune cell trafficking
+TMSB10high	TMSB10high_C_1	TMSB10-high cells, state 1	Cell state defined by high thymosin beta-10 expression; actin-cytoskeleton remodelling signature, lineage identity not well defined
+TMSB10high	TMSB10high_C_2	TMSB10-high cells, state 2	Second TMSB10-high state; similar cytoskeletal signature with a distinct transcriptional profile, lineage identity not well defined
+neural	NB-N	Neuroblasts and neurons	Neural crest-derived neuroblasts and differentiating autonomic neurons (STMN2, PHOX2B); autonomic innervation of the heart
+neural	SCP-GC	Schwann cell precursors and glial cells	Neural crest-derived Schwann cell precursors and glia (SOX10, PLP1); support and guide developing cardiac nerves
+immune	MyC	Myeloid cells	Macrophages, monocytes and related myeloid cells; tissue remodelling, phagocytosis and support of vascular and conduction development
+immune	LyC	Lymphoid cells	T, B and NK/innate lymphoid cells; early immune surveillance, a minor population in the developing heart

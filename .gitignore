@@ -167,6 +167,12 @@ _version.py
 *.npz
 *.pt
 *.tsv.gz
+*.mtx
+
+c2l_cputest/
+c2l_gpu/
+c2l_cpu/
+
 
 figures/c2l_liana
 

@@ -1,0 +1,44 @@
+HL_ID	HL_SUBID	description	functional_summary
+Ductal	D01_Ductal-CFTR	Non-malignant ductal cells (CFTR+)	Normal ductal epithelium (CFTR, SLC4A4, CA2); bicarbonate secretion; low CNV in the paper (non-malignant)
+Ductal	D02_Ductal-APOA2	Malignant ductal cells, APOA2+ (neuroendocrine-like)	Lipid / cholesterol metabolism (APOA2, APOA1, ALB), low EMT; enriched in low-NI tumours (Malignant_ductal_4 niche)
+Ductal	D03_Ductal-TRPM5	Tuft-like ductal cells (TRPM5+)	Chemosensory tuft-cell programme (TRPM5, POU2F3, AVIL)
+Ductal	D04_Ductal-GABRP	Malignant ductal cells, GABRP+ (neural-reactive)	GABA-A receptor pi subunit with KCNN4; highest NI-related gene score; enriched next to invaded nerves (intermediate subtype)
+Ductal	D05_Ductal-PRSS1	Malignant ductal cells with acinar genes (PRSS1+)	Intermediate subtype with acinar-like transcripts (PRSS1, CPA1); possible acinar-to-ductal features or ambient acinar RNA
+Ductal	D06_Ductal-MYO1A	Malignant ductal cells, intestinal-like (MYO1A+)	Brush-border / intestinal programme (MYO1A, CDH17, VIL1)
+Ductal	D07_Ductal-MKI67	Proliferating malignant ductal cells	Cycling tumour cells (MKI67, TOP2A)
+Ductal	D08_Ductal-CEACAM5	Malignant ductal cells, classical (CEACAM5+)	Classical subtype (CEACAM5, TFF1, AGR2); tubular / elongated glands
+Ductal	D09_Ductal-CEACAM6	Malignant ductal cells, basal-like (CEACAM6+)	Basal-like subtype (KRT17, S100A2, LAMC2), highest EMT, integrin / WNT signalling; enriched next to invaded nerves
+Ductal	Ductal-other	Ductal cells not matching a paper subcluster	Residual ductal cells of the re-derived subclustering (mixed or low-quality profiles)
+Acinar	Acinar	Acinar cells	Exocrine pancreas producing digestive enzymes (PRSS1, PRSS3, CPA1); non-malignant pancreas niche
+Endocrine	Endocrine	Endocrine (islet) cells	Hormone-producing islet cells (CHGB, INS, GCG, SST); endocrine niche
+CAF	F01_myCAF-MMP11	Myofibroblastic CAF (MMP11+)	Matrix metalloproteinase, collagen and migration genes (MMP11, COL11A1, POSTN); enriched in high-NI tumours and around invaded nerves
+CAF	F02_Progenitor-CAF-DPT	Progenitor-like CAF (DPT+)	Universal fibroblast / progenitor programme (DPT, PI16, CFD); PI16+ FAP-low CAF around non-invaded nerves
+CAF	F04_hspCAF-HSPA1A	Heat-shock CAF (HSPA1A+)	Stress / heat-shock response state (HSPA1A, HSPA1B, DNAJB1)
+CAF	F05_dCAF-MKI67	Dividing CAF (MKI67+)	Cycling fibroblasts (MKI67, TOP2A)
+CAF	F06_Fibro-MALAT1	Fibroblasts, MALAT1-high	Nuclear-transcript-high fibroblast state (MALAT1, NEAT1); likely technical / nuclear signature
+CAF	F07_Fibro-NRP2	Endoneurial fibroblasts (NRP2+)	Endoneurial fibroblast population inside nerves described by the paper (NRP2); intra-neural microenvironment
+CAF	F08_pro-mCAF-IGFBP5	Pro-myofibroblastic CAF (IGFBP5+)	IGF-binding-protein-high CAF state (IGFBP5, IGFBP3); label from the authors' code
+Stellate	Stellate	Stellate cells / pericytes	Pancreatic stellate cells and vascular mural cells (RGS5, PDGFRB); peri-vascular niche
+Endothelial	Endothelial	Endothelial cells	Blood and lymphatic endothelium (PLVAP, VWF, PECAM1); peri-vascular niche
+Schwann	S01_Schwann-ABCA8	Schwann cells, ABCA8+ (myelinating-like)	Schwann cells with ABCA8 and myelin genes (MPZ, EGR2, MBP); repressed by TGF-beta in vitro
+Schwann	S02_Schwann-TGFBI	Schwann cells, TGFBI+ (repair-like)	TGF-beta-induced Schwann cells (TGFBI, FN1) at the leading edge of neural invasion; promote tumour cell migration; poor survival
+Schwann	S03_Schwann-SERPINA3	Schwann cells, SERPINA3+	Inflammatory-response Schwann state (SERPINA3, CHI3L1); higher in non-invaded nerves
+Myeloid	M02_cDC-CLEC9A	Conventional DC type 1 (CLEC9A+)	Cross-presenting dendritic cells (CLEC9A, XCR1)
+Myeloid	M03_cDC-CD1C	Conventional DC type 2 (CD1C+)	CD4 T-cell priming dendritic cells (CD1C, FCER1A, CLEC10A)
+Myeloid	M04_cDC-LAMP3	Mature regulatory DC (LAMP3+)	Migratory mature DC (LAMP3, CCR7, CCL19); TLS component
+Myeloid	M06_Mono-CD14	Classical monocytes (CD14+)	Inflammatory monocytes (CD14, S100A8/9, VCAN, FCN1)
+Myeloid	M07_Macro-NLRP3	Inflammatory macrophages (NLRP3+)	NLRP3 inflammasome, IL1B, EREG; enriched in high-NI tumours and around invaded nerves; co-occur with Th17-like cells; TGF-beta senders to Schwann cells
+Myeloid	M08_Macro-LYVE1	Tissue-resident macrophages (LYVE1+)	Perivascular resident macrophages (LYVE1, F13A1, FOLR2); LYVE1+ SPP1- macrophages in non-invaded nerves
+Myeloid	M09_Macro-APOC1	Lipid-associated macrophages (APOC1+)	APOE / APOC1 / C1Q-high macrophages
+Myeloid	M10_Macro-SPP1	SPP1+ macrophages	Pro-tumoral SPP1+ macrophages (SPP1, FN1, VEGFA); SPP1+ macrophages in invaded nerves
+Myeloid	M11_Neutrophil-CXCL8	Neutrophils (CXCL8+)	Neutrophils (CXCL8, FCGR3B, CSF3R)
+Myeloid	M12_Myeloid-proliferating-MKI67	Proliferating myeloid cells	Cycling macrophages / monocytes (MKI67, TOP2A)
+Myeloid	M13_Myeloid-str-HSPA1A	Stressed myeloid cells (HSPA1A+)	Heat-shock / stress response myeloid state
+Myeloid	M14_Mast-KIT	Mast cells (KIT+)	Mast cells (KIT, TPSAB1, CPA3)
+Myeloid	Myeloid-other	Myeloid cells not matching a paper subcluster	Residual myeloid cells of the re-derived subclustering (includes CD16 monocytes, M05 not separated)
+Platelet	Platelet	Platelets	Platelets (PPBP, PF4); 2 tissue cells, excluded from the deconvolution reference
+CD4T	CD4T	CD4+ T cells	Helper and regulatory T cells (CD3D, CD4); include Treg (FOXP3), Tfh-like (CXCL13) and Th17-like (CCR6) subsets of the paper
+CD8T	CD8T	CD8+ T cells	Cytotoxic T cells (CD3D, CD8A); include CD8 Temra (CX3CR1, low NI, TLS) and Tex (CXCL13, high NI) subsets of the paper
+NK	NK	NK cells	Natural killer cells (KLRF1, NCAM1, NKG7)
+B	B	B cells	B cells (CD79A, MS4A1); include naive (TCL1A) and germinal-centre (RGS13) B cells of TLS, higher in low-NI tumours
+Plasma	Plasma	Plasma cells	Antibody-secreting cells (MZB1, JCHAIN, IgG / IgA); plasma-enriched niche, higher in low-NI tumours
