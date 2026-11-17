@@ -1704,31 +1704,76 @@ class SingleCell(object):
 
     def run_colocation_cached(self, adata_vis: ad.AnnData, run_dir: Path, n_facts: Optional[Sequence[int]] = None,
                               n_restarts: Optional[int] = None, alpha: Optional[float] = None,
-                              force: bool = False, verbose: bool = True) -> Tuple[ad.AnnData, Optional[dict], bool]:
+                              n_iter: Optional[int] = None, force: bool = False,
+                              verbose: bool = True) -> Tuple[ad.AnnData, Optional[dict], bool]:
         """
-        NMF of the cell abundances (cell2location.run_colocation, CoLocatedGroupsSklearnNMF) for each number of
-        factors; skipped when adata.uns already holds every 'mod_coloc_n_fact<n>'.
-        Returns (adata_vis, res_dict or None when cached, edited).
+        NMF co-location of the cell abundances (cell2location CoLocatedGroupsSklearnNMF on
+        obsm['q05_cell_abundance_w_sf'], one model per number of factors), with a disk cache.
+
+        Same model and settings as cell2location.run_colocation (init='random', random_state=0, tol=1e-6,
+        n_iter params['coloc_n_iter'] (default 20000), restarts params['coloc_n_restarts'], alpha params['coloc_alpha']),
+        but: (1) the fitted model is cached in run_dir/CoLocatedComb/<model>_<n>locations_<k>factors/models/
+        model_n_fact<n>.p (the pickle run_colocation writes, so its earlier runs are reused) and loaded instead of
+        refitted; (2) only the abundance matrix is used (run_colocation copies the whole AnnData); (3) the per-section
+        spatial PDFs, stability and accuracy plots of run_colocation are not drawn (they took ~50 s per section and
+        factor set). Results go to adata.obs (mean_nUMI_factors...) and adata.uns['mod_coloc_n_fact<n>'] as before.
+        force=True: refit and rewrite the cache. Returns (adata_vis, {n_fact<n>: res} or None when nothing was
+        loaded / fitted, edited).
         """
-        n_facts = list(self.get_param("coloc_n_facts", n_facts))
-
-        keys = [f"mod_coloc_n_fact{n}" for n in n_facts]
-
-        if all(k in adata_vis.uns for k in keys) and not force:
+        import pickle
+        import time
+        from cell2location.models.downstream import CoLocatedGroupsSklearnNMF as Model
+        n_facts = [int(n) for n in self.get_param("coloc_n_facts", n_facts)]
+        n_restarts = int(self.get_param("coloc_n_restarts", n_restarts))
+        alpha = self.get_param("coloc_alpha", alpha)
+        n_iter = int(n_iter or self.params.get("coloc_n_iter", 20000))
+        keys = {n: f"mod_coloc_n_fact{n}" for n in n_facts}
+        if all(k in adata_vis.uns for k in keys.values()) and not force:
             if verbose:
-                print(f"NMF co-location already in adata.uns: {keys}")
+                print(f"NMF co-location already in adata.uns: {list(keys.values())}")
             return adata_vis, None, False
-        
-        from cell2location import run_colocation
-        
-        res_dict, adata_vis = run_colocation(
-            adata_vis, model_name="CoLocatedGroupsSklearnNMF",
-            train_args={"n_fact": np.asarray(n_facts), "sample_name_col": self.sample_col,
-                        "n_restarts": self.get_param("coloc_n_restarts", n_restarts)},
-            model_kwargs={"alpha": self.get_param("coloc_alpha", alpha), "init": "random",
-                          "nmf_kwd_args": {"tol": 1e-6}},
-            export_args={"path": f"{run_dir}/CoLocatedComb/"})
-        return adata_vis, res_dict, True
+
+        X = np.asarray(adata_vis.obsm["q05_cell_abundance_w_sf"], dtype=float)
+        var_names = list(adata_vis.uns["mod"]["factor_names"])
+        sample_id = adata_vis.obs[self.sample_col]
+        model_dir = (Path(run_dir) / "CoLocatedComb" / f"{Model.__name__}_{X.shape[0]}locations_{X.shape[1]}factors"
+                     / "models")
+        res_dict, edited = {}, False
+        for n, key in keys.items():
+            if key in adata_vis.uns and not force:
+                continue
+            path = model_dir / f"model_n_fact{n}.p"
+            mod = None
+            if path.exists() and not force:
+                with open(path, "rb") as fh:
+                    res = pickle.load(fh)
+                mod = res.get("mod")
+                if mod is not None and list(mod.obs_names) != list(adata_vis.obs_names):
+                    print(f"{path.name}: other spots than adata_vis -> refit")
+                    mod = None
+                elif mod is not None and verbose:
+                    print(f"n_fact={n}: model loaded from {path}")
+            if mod is None:
+                t0 = time.time()
+                if verbose:
+                    print(f"n_fact={n}: fitting NMF ({n_restarts} restarts, {X.shape[0]:,} spots x {X.shape[1]} cell types)")
+                mod = Model(n, X, n_iter=n_iter, verbose=False, var_names=var_names, obs_names=adata_vis.obs_names,
+                            fact_names=[f"fact_{i}" for i in range(n)], sample_id=sample_id, init="random",
+                            random_state=0, alpha=alpha, nmf_kwd_args={"tol": 1e-6})
+                mod.fit(n=n_restarts, n_type="restart")
+                mod.sample2df(node_name="nUMI_factors", ct_node_name="cell_type_factors")
+                res = {"mod": mod, "model_name": Model.__name__, "run_time": f"{(time.time() - t0) / 60:.2f} min",
+                       "train_args": {"n_fact": n, "n_iter": n_iter, "n_restarts": n_restarts, "alpha": alpha}}
+                model_dir.mkdir(parents=True, exist_ok=True)
+                with open(path, "wb") as fh:
+                    pickle.dump(res, fh)
+                if verbose:
+                    print(f"n_fact={n}: fitted in {res['run_time']}; saved {path}")
+            adata_vis = mod.annotate_adata(adata_vis)
+            adata_vis = mod.export2adata(adata_vis, slot_name=key)
+            res_dict[f"n_fact{n}"] = res
+            edited = True
+        return adata_vis, (res_dict or None), edited
 
     @staticmethod
     def calc_df_coloc_loadings(adata, n_fact: int, normalize: bool = True) -> pd.DataFrame:
