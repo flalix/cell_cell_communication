@@ -46,7 +46,7 @@ from libs.single_cell_pdac_lib import (SingleCellPDAC, PDAC_PARAMS, PDAC_SUBCLUS
                                        PDAC_NERVE_GENES, PAPER_NICHES, PDAC_FILES)
 from libs.single_cell_lib import cmap_byr, cmap_lbwr
 from libs.matplotlib_figure_style import apply_figure_style
-from libs.Basic import create_dir, pdwritecsv, pdreadcsv
+from libs.Basic import create_dir
 
 pd.set_option('display.max_colwidth', 120)
 pd.set_option('display.width', 250)

@@ -1,0 +1,316 @@
+section	patient	ni_status	technique	group	share
+PA01	PA01	high	FFPE	N00_unassigned (no deconvolution)	0.0
+PA01	PA01	high	FFPE	N01_TLS	0.0
+PA01	PA01	high	FFPE	N02_Endocrine	0.012871
+PA01	PA01	high	FFPE	N03_Peri-vascular	0.00023
+PA01	PA01	high	FFPE	N04_Plasma-enriched	0.00046
+PA01	PA01	high	FFPE	N05_CAF-enriched	0.008274
+PA01	PA01	high	FFPE	N06_TAM-enriched	0.0
+PA01	PA01	high	FFPE	N07-10_Malignant (D04_Ductal-GABRP)	0.002528
+PA01	PA01	high	FFPE	N07-10_Malignant (D05_Ductal-PRSS1)	0.005056
+PA01	PA01	high	FFPE	N07-10_Malignant (D07_Ductal-MKI67)	0.002528
+PA01	PA01	high	FFPE	N07-10_Malignant (D08_Ductal-CEACAM5)	0.017927
+PA01	PA01	high	FFPE	N07-10_Malignant (Ductal-other)	0.009423
+PA01	PA01	high	FFPE	N11_Non-malignant-pancreas	0.940014
+PA01	PA01	high	FFPE	N12_Nerve	0.00046
+PA01	PA01	high	FFPE	mixed (malignant / N05_CAF-enriched)	0.00023
+PA02	PA02	high	FF	N00_unassigned (no deconvolution)	0.014399
+PA02	PA02	high	FF	N01_TLS	0.0
+PA02	PA02	high	FF	N02_Endocrine	0.0
+PA02	PA02	high	FF	N03_Peri-vascular	0.00288
+PA02	PA02	high	FF	N04_Plasma-enriched	0.00072
+PA02	PA02	high	FF	N05_CAF-enriched	0.467963
+PA02	PA02	high	FF	N06_TAM-enriched	0.0
+PA02	PA02	high	FF	N07-10_Malignant (D04_Ductal-GABRP)	0.228942
+PA02	PA02	high	FF	N07-10_Malignant (D05_Ductal-PRSS1)	0.00144
+PA02	PA02	high	FF	N07-10_Malignant (D07_Ductal-MKI67)	0.00288
+PA02	PA02	high	FF	N07-10_Malignant (D08_Ductal-CEACAM5)	0.216703
+PA02	PA02	high	FF	N07-10_Malignant (Ductal-other)	0.054716
+PA02	PA02	high	FF	N11_Non-malignant-pancreas	0.007199
+PA02	PA02	high	FF	N12_Nerve	0.00072
+PA02	PA02	high	FF	mixed (malignant / N05_CAF-enriched)	0.00144
+PA03	PA03	high	FF	N00_unassigned (no deconvolution)	0.013322
+PA03	PA03	high	FF	N01_TLS	0.000218
+PA03	PA03	high	FF	N02_Endocrine	0.001747
+PA03	PA03	high	FF	N03_Peri-vascular	0.009827
+PA03	PA03	high	FF	N04_Plasma-enriched	0.007207
+PA03	PA03	high	FF	N05_CAF-enriched	0.046517
+PA03	PA03	high	FF	N06_TAM-enriched	0.0
+PA03	PA03	high	FF	N07-10_Malignant (D04_Ductal-GABRP)	0.048701
+PA03	PA03	high	FF	N07-10_Malignant (D05_Ductal-PRSS1)	0.003276
+PA03	PA03	high	FF	N07-10_Malignant (D07_Ductal-MKI67)	0.002184
+PA03	PA03	high	FF	N07-10_Malignant (D08_Ductal-CEACAM5)	0.809565
+PA03	PA03	high	FF	N07-10_Malignant (Ductal-other)	0.043459
+PA03	PA03	high	FF	N11_Non-malignant-pancreas	0.006552
+PA03	PA03	high	FF	N12_Nerve	0.002839
+PA03	PA03	high	FF	mixed (malignant / N05_CAF-enriched)	0.004586
+PA04-1	PA04	high	FFPE	N00_unassigned (no deconvolution)	0.000439
+PA04-1	PA04	high	FFPE	N01_TLS	0.0
+PA04-1	PA04	high	FFPE	N02_Endocrine	0.0
+PA04-1	PA04	high	FFPE	N03_Peri-vascular	0.0
+PA04-1	PA04	high	FFPE	N04_Plasma-enriched	0.004394
+PA04-1	PA04	high	FFPE	N05_CAF-enriched	0.155975
+PA04-1	PA04	high	FFPE	N06_TAM-enriched	0.0
+PA04-1	PA04	high	FFPE	N07-10_Malignant (D04_Ductal-GABRP)	0.822496
+PA04-1	PA04	high	FFPE	N07-10_Malignant (D05_Ductal-PRSS1)	0.0
+PA04-1	PA04	high	FFPE	N07-10_Malignant (D07_Ductal-MKI67)	0.004394
+PA04-1	PA04	high	FFPE	N07-10_Malignant (D08_Ductal-CEACAM5)	0.003076
+PA04-1	PA04	high	FFPE	N07-10_Malignant (Ductal-other)	0.002197
+PA04-1	PA04	high	FFPE	N11_Non-malignant-pancreas	0.004394
+PA04-1	PA04	high	FFPE	N12_Nerve	0.002197
+PA04-1	PA04	high	FFPE	mixed (malignant / N05_CAF-enriched)	0.000439
+PA04-2	PA04	high	FF	N00_unassigned (no deconvolution)	0.0
+PA04-2	PA04	high	FF	N01_TLS	0.001619
+PA04-2	PA04	high	FF	N02_Endocrine	0.006153
+PA04-2	PA04	high	FF	N03_Peri-vascular	0.007448
+PA04-2	PA04	high	FF	N04_Plasma-enriched	0.0
+PA04-2	PA04	high	FF	N05_CAF-enriched	0.121762
+PA04-2	PA04	high	FF	N06_TAM-enriched	0.0
+PA04-2	PA04	high	FF	N07-10_Malignant (D04_Ductal-GABRP)	0.81671
+PA04-2	PA04	high	FF	N07-10_Malignant (D05_Ductal-PRSS1)	0.000324
+PA04-2	PA04	high	FF	N07-10_Malignant (D07_Ductal-MKI67)	0.002915
+PA04-2	PA04	high	FF	N07-10_Malignant (D08_Ductal-CEACAM5)	0.028497
+PA04-2	PA04	high	FF	N07-10_Malignant (Ductal-other)	0.006477
+PA04-2	PA04	high	FF	N11_Non-malignant-pancreas	0.008096
+PA04-2	PA04	high	FF	N12_Nerve	0.0
+PA04-2	PA04	high	FF	mixed (malignant / N05_CAF-enriched)	0.0
+PA05-1	PA05	high	FFPE	N00_unassigned (no deconvolution)	0.000445
+PA05-1	PA05	high	FFPE	N01_TLS	0.028037
+PA05-1	PA05	high	FFPE	N02_Endocrine	0.000445
+PA05-1	PA05	high	FFPE	N03_Peri-vascular	0.00178
+PA05-1	PA05	high	FFPE	N04_Plasma-enriched	0.001335
+PA05-1	PA05	high	FFPE	N05_CAF-enriched	0.012906
+PA05-1	PA05	high	FFPE	N06_TAM-enriched	0.0
+PA05-1	PA05	high	FFPE	N07-10_Malignant (D04_Ductal-GABRP)	0.016466
+PA05-1	PA05	high	FFPE	N07-10_Malignant (D05_Ductal-PRSS1)	0.00089
+PA05-1	PA05	high	FFPE	N07-10_Malignant (D07_Ductal-MKI67)	0.041389
+PA05-1	PA05	high	FFPE	N07-10_Malignant (D08_Ductal-CEACAM5)	0.00356
+PA05-1	PA05	high	FFPE	N07-10_Malignant (Ductal-other)	0.477081
+PA05-1	PA05	high	FFPE	N11_Non-malignant-pancreas	0.41433
+PA05-1	PA05	high	FFPE	N12_Nerve	0.0
+PA05-1	PA05	high	FFPE	mixed (malignant / N05_CAF-enriched)	0.001335
+PA05-2	PA05	high	CytAssist	N00_unassigned (no deconvolution)	0.0002
+PA05-2	PA05	high	CytAssist	N01_TLS	0.047276
+PA05-2	PA05	high	CytAssist	N02_Endocrine	0.002003
+PA05-2	PA05	high	CytAssist	N03_Peri-vascular	0.005208
+PA05-2	PA05	high	CytAssist	N04_Plasma-enriched	0.046274
+PA05-2	PA05	high	CytAssist	N05_CAF-enriched	0.478966
+PA05-2	PA05	high	CytAssist	N06_TAM-enriched	0.0
+PA05-2	PA05	high	CytAssist	N07-10_Malignant (D04_Ductal-GABRP)	0.123998
+PA05-2	PA05	high	CytAssist	N07-10_Malignant (D05_Ductal-PRSS1)	0.001402
+PA05-2	PA05	high	CytAssist	N07-10_Malignant (D07_Ductal-MKI67)	0.173878
+PA05-2	PA05	high	CytAssist	N07-10_Malignant (D08_Ductal-CEACAM5)	0.001402
+PA05-2	PA05	high	CytAssist	N07-10_Malignant (Ductal-other)	0.000401
+PA05-2	PA05	high	CytAssist	N11_Non-malignant-pancreas	0.101963
+PA05-2	PA05	high	CytAssist	N12_Nerve	0.01222
+PA05-2	PA05	high	CytAssist	mixed (malignant / N05_CAF-enriched)	0.004808
+PA06	PA06	high	FFPE	N00_unassigned (no deconvolution)	0.0
+PA06	PA06	high	FFPE	N01_TLS	0.072481
+PA06	PA06	high	FFPE	N02_Endocrine	0.031395
+PA06	PA06	high	FFPE	N03_Peri-vascular	0.037209
+PA06	PA06	high	FFPE	N04_Plasma-enriched	0.082558
+PA06	PA06	high	FFPE	N05_CAF-enriched	0.714341
+PA06	PA06	high	FFPE	N06_TAM-enriched	0.000388
+PA06	PA06	high	FFPE	N07-10_Malignant (D04_Ductal-GABRP)	0.004264
+PA06	PA06	high	FFPE	N07-10_Malignant (D05_Ductal-PRSS1)	0.000388
+PA06	PA06	high	FFPE	N07-10_Malignant (D07_Ductal-MKI67)	0.0
+PA06	PA06	high	FFPE	N07-10_Malignant (D08_Ductal-CEACAM5)	0.03062
+PA06	PA06	high	FFPE	N07-10_Malignant (Ductal-other)	0.000775
+PA06	PA06	high	FFPE	N11_Non-malignant-pancreas	0.022868
+PA06	PA06	high	FFPE	N12_Nerve	0.002713
+PA06	PA06	high	FFPE	mixed (malignant / N05_CAF-enriched)	0.0
+PA08	PA08	high	FF	N00_unassigned (no deconvolution)	0.001121
+PA08	PA08	high	FF	N01_TLS	0.000747
+PA08	PA08	high	FF	N02_Endocrine	0.007471
+PA08	PA08	high	FF	N03_Peri-vascular	0.007845
+PA08	PA08	high	FF	N04_Plasma-enriched	0.002988
+PA08	PA08	high	FF	N05_CAF-enriched	0.050803
+PA08	PA08	high	FF	N06_TAM-enriched	0.0
+PA08	PA08	high	FF	N07-10_Malignant (D04_Ductal-GABRP)	0.064251
+PA08	PA08	high	FF	N07-10_Malignant (D05_Ductal-PRSS1)	0.003362
+PA08	PA08	high	FF	N07-10_Malignant (D07_Ductal-MKI67)	0.001868
+PA08	PA08	high	FF	N07-10_Malignant (D08_Ductal-CEACAM5)	0.769518
+PA08	PA08	high	FF	N07-10_Malignant (Ductal-other)	0.015316
+PA08	PA08	high	FF	N11_Non-malignant-pancreas	0.064251
+PA08	PA08	high	FF	N12_Nerve	0.009712
+PA08	PA08	high	FF	mixed (malignant / N05_CAF-enriched)	0.000747
+PA11-1	PA11	high	FF	N00_unassigned (no deconvolution)	0.039474
+PA11-1	PA11	high	FF	N01_TLS	0.0
+PA11-1	PA11	high	FF	N02_Endocrine	0.040022
+PA11-1	PA11	high	FF	N03_Peri-vascular	0.002741
+PA11-1	PA11	high	FF	N04_Plasma-enriched	0.002193
+PA11-1	PA11	high	FF	N05_CAF-enriched	0.143092
+PA11-1	PA11	high	FF	N06_TAM-enriched	0.0
+PA11-1	PA11	high	FF	N07-10_Malignant (D04_Ductal-GABRP)	0.189145
+PA11-1	PA11	high	FF	N07-10_Malignant (D05_Ductal-PRSS1)	0.007127
+PA11-1	PA11	high	FF	N07-10_Malignant (D07_Ductal-MKI67)	0.000548
+PA11-1	PA11	high	FF	N07-10_Malignant (D08_Ductal-CEACAM5)	0.252193
+PA11-1	PA11	high	FF	N07-10_Malignant (Ductal-other)	0.220395
+PA11-1	PA11	high	FF	N11_Non-malignant-pancreas	0.098684
+PA11-1	PA11	high	FF	N12_Nerve	0.002741
+PA11-1	PA11	high	FF	mixed (malignant / N05_CAF-enriched)	0.001645
+PA11-2	PA11	high	CytAssist	N00_unassigned (no deconvolution)	0.0002
+PA11-2	PA11	high	CytAssist	N01_TLS	0.006814
+PA11-2	PA11	high	CytAssist	N02_Endocrine	0.07976
+PA11-2	PA11	high	CytAssist	N03_Peri-vascular	0.004409
+PA11-2	PA11	high	CytAssist	N04_Plasma-enriched	0.042285
+PA11-2	PA11	high	CytAssist	N05_CAF-enriched	0.414028
+PA11-2	PA11	high	CytAssist	N06_TAM-enriched	0.0
+PA11-2	PA11	high	CytAssist	N07-10_Malignant (D04_Ductal-GABRP)	0.048898
+PA11-2	PA11	high	CytAssist	N07-10_Malignant (D05_Ductal-PRSS1)	0.059118
+PA11-2	PA11	high	CytAssist	N07-10_Malignant (D07_Ductal-MKI67)	0.011824
+PA11-2	PA11	high	CytAssist	N07-10_Malignant (D08_Ductal-CEACAM5)	0.034068
+PA11-2	PA11	high	CytAssist	N07-10_Malignant (Ductal-other)	0.00501
+PA11-2	PA11	high	CytAssist	N11_Non-malignant-pancreas	0.290581
+PA11-2	PA11	high	CytAssist	N12_Nerve	0.001804
+PA11-2	PA11	high	CytAssist	mixed (malignant / N05_CAF-enriched)	0.001202
+PA12	PA12	low	CytAssist	N00_unassigned (no deconvolution)	0.000206
+PA12	PA12	low	CytAssist	N01_TLS	0.050257
+PA12	PA12	low	CytAssist	N02_Endocrine	0.271679
+PA12	PA12	low	CytAssist	N03_Peri-vascular	0.04655
+PA12	PA12	low	CytAssist	N04_Plasma-enriched	0.251081
+PA12	PA12	low	CytAssist	N05_CAF-enriched	0.217096
+PA12	PA12	low	CytAssist	N06_TAM-enriched	0.0
+PA12	PA12	low	CytAssist	N07-10_Malignant (D04_Ductal-GABRP)	0.001236
+PA12	PA12	low	CytAssist	N07-10_Malignant (D05_Ductal-PRSS1)	0.002884
+PA12	PA12	low	CytAssist	N07-10_Malignant (D07_Ductal-MKI67)	0.0
+PA12	PA12	low	CytAssist	N07-10_Malignant (D08_Ductal-CEACAM5)	0.002472
+PA12	PA12	low	CytAssist	N07-10_Malignant (Ductal-other)	0.0
+PA12	PA12	low	CytAssist	N11_Non-malignant-pancreas	0.138826
+PA12	PA12	low	CytAssist	N12_Nerve	0.012152
+PA12	PA12	low	CytAssist	mixed (malignant / N05_CAF-enriched)	0.005561
+PA21	PA21	high	CytAssist	N00_unassigned (no deconvolution)	0.000231
+PA21	PA21	high	CytAssist	N01_TLS	0.011561
+PA21	PA21	high	CytAssist	N02_Endocrine	0.001156
+PA21	PA21	high	CytAssist	N03_Peri-vascular	0.018266
+PA21	PA21	high	CytAssist	N04_Plasma-enriched	0.014798
+PA21	PA21	high	CytAssist	N05_CAF-enriched	0.112139
+PA21	PA21	high	CytAssist	N06_TAM-enriched	0.0
+PA21	PA21	high	CytAssist	N07-10_Malignant (D04_Ductal-GABRP)	0.719769
+PA21	PA21	high	CytAssist	N07-10_Malignant (D05_Ductal-PRSS1)	0.007168
+PA21	PA21	high	CytAssist	N07-10_Malignant (D07_Ductal-MKI67)	0.006474
+PA21	PA21	high	CytAssist	N07-10_Malignant (D08_Ductal-CEACAM5)	0.055723
+PA21	PA21	high	CytAssist	N07-10_Malignant (Ductal-other)	0.001387
+PA21	PA21	high	CytAssist	N11_Non-malignant-pancreas	0.049017
+PA21	PA21	high	CytAssist	N12_Nerve	0.00185
+PA21	PA21	high	CytAssist	mixed (malignant / N05_CAF-enriched)	0.000462
+PA22	PA22	low	CytAssist	N00_unassigned (no deconvolution)	0.000231
+PA22	PA22	low	CytAssist	N01_TLS	0.022212
+PA22	PA22	low	CytAssist	N02_Endocrine	0.146923
+PA22	PA22	low	CytAssist	N03_Peri-vascular	0.150856
+PA22	PA22	low	CytAssist	N04_Plasma-enriched	0.049051
+PA22	PA22	low	CytAssist	N05_CAF-enriched	0.601111
+PA22	PA22	low	CytAssist	N06_TAM-enriched	0.0
+PA22	PA22	low	CytAssist	N07-10_Malignant (D04_Ductal-GABRP)	0.0
+PA22	PA22	low	CytAssist	N07-10_Malignant (D05_Ductal-PRSS1)	0.0
+PA22	PA22	low	CytAssist	N07-10_Malignant (D07_Ductal-MKI67)	0.0
+PA22	PA22	low	CytAssist	N07-10_Malignant (D08_Ductal-CEACAM5)	0.0
+PA22	PA22	low	CytAssist	N07-10_Malignant (Ductal-other)	0.004627
+PA22	PA22	low	CytAssist	N11_Non-malignant-pancreas	0.008561
+PA22	PA22	low	CytAssist	N12_Nerve	0.016428
+PA22	PA22	low	CytAssist	mixed (malignant / N05_CAF-enriched)	0.0
+PA24	PA24	low	CytAssist	N00_unassigned (no deconvolution)	0.000425
+PA24	PA24	low	CytAssist	N01_TLS	0.025952
+PA24	PA24	low	CytAssist	N02_Endocrine	0.00234
+PA24	PA24	low	CytAssist	N03_Peri-vascular	0.009785
+PA24	PA24	low	CytAssist	N04_Plasma-enriched	0.592853
+PA24	PA24	low	CytAssist	N05_CAF-enriched	0.288024
+PA24	PA24	low	CytAssist	N06_TAM-enriched	0.000213
+PA24	PA24	low	CytAssist	N07-10_Malignant (D04_Ductal-GABRP)	0.0
+PA24	PA24	low	CytAssist	N07-10_Malignant (D05_Ductal-PRSS1)	0.0
+PA24	PA24	low	CytAssist	N07-10_Malignant (D07_Ductal-MKI67)	0.0
+PA24	PA24	low	CytAssist	N07-10_Malignant (D08_Ductal-CEACAM5)	0.000213
+PA24	PA24	low	CytAssist	N07-10_Malignant (Ductal-other)	0.0
+PA24	PA24	low	CytAssist	N11_Non-malignant-pancreas	0.015316
+PA24	PA24	low	CytAssist	N12_Nerve	0.000425
+PA24	PA24	low	CytAssist	mixed (malignant / N05_CAF-enriched)	0.064454
+PA29	PA29	high	CytAssist	N00_unassigned (no deconvolution)	0.0002
+PA29	PA29	high	CytAssist	N01_TLS	0.055489
+PA29	PA29	high	CytAssist	N02_Endocrine	0.040465
+PA29	PA29	high	CytAssist	N03_Peri-vascular	0.004407
+PA29	PA29	high	CytAssist	N04_Plasma-enriched	0.24379
+PA29	PA29	high	CytAssist	N05_CAF-enriched	0.505008
+PA29	PA29	high	CytAssist	N06_TAM-enriched	0.001002
+PA29	PA29	high	CytAssist	N07-10_Malignant (D04_Ductal-GABRP)	0.005008
+PA29	PA29	high	CytAssist	N07-10_Malignant (D05_Ductal-PRSS1)	0.000401
+PA29	PA29	high	CytAssist	N07-10_Malignant (D07_Ductal-MKI67)	0.0
+PA29	PA29	high	CytAssist	N07-10_Malignant (D08_Ductal-CEACAM5)	0.115585
+PA29	PA29	high	CytAssist	N07-10_Malignant (Ductal-other)	0.000801
+PA29	PA29	high	CytAssist	N11_Non-malignant-pancreas	0.006811
+PA29	PA29	high	CytAssist	N12_Nerve	0.020032
+PA29	PA29	high	CytAssist	mixed (malignant / N05_CAF-enriched)	0.001002
+PA40	PA40	high	CytAssist	N00_unassigned (no deconvolution)	0.000206
+PA40	PA40	high	CytAssist	N01_TLS	0.000618
+PA40	PA40	high	CytAssist	N02_Endocrine	0.001855
+PA40	PA40	high	CytAssist	N03_Peri-vascular	0.005566
+PA40	PA40	high	CytAssist	N04_Plasma-enriched	0.021439
+PA40	PA40	high	CytAssist	N05_CAF-enriched	0.119563
+PA40	PA40	high	CytAssist	N06_TAM-enriched	0.0
+PA40	PA40	high	CytAssist	N07-10_Malignant (D04_Ductal-GABRP)	0.006803
+PA40	PA40	high	CytAssist	N07-10_Malignant (D05_Ductal-PRSS1)	0.601113
+PA40	PA40	high	CytAssist	N07-10_Malignant (D07_Ductal-MKI67)	0.000412
+PA40	PA40	high	CytAssist	N07-10_Malignant (D08_Ductal-CEACAM5)	0.111936
+PA40	PA40	high	CytAssist	N07-10_Malignant (Ductal-other)	0.000618
+PA40	PA40	high	CytAssist	N11_Non-malignant-pancreas	0.121212
+PA40	PA40	high	CytAssist	N12_Nerve	0.003711
+PA40	PA40	high	CytAssist	mixed (malignant / N05_CAF-enriched)	0.004947
+PA47	PA47	low	CytAssist	N00_unassigned (no deconvolution)	0.000249
+PA47	PA47	low	CytAssist	N01_TLS	0.026919
+PA47	PA47	low	CytAssist	N02_Endocrine	0.084746
+PA47	PA47	low	CytAssist	N03_Peri-vascular	0.00324
+PA47	PA47	low	CytAssist	N04_Plasma-enriched	0.493519
+PA47	PA47	low	CytAssist	N05_CAF-enriched	0.050349
+PA47	PA47	low	CytAssist	N06_TAM-enriched	0.002493
+PA47	PA47	low	CytAssist	N07-10_Malignant (D04_Ductal-GABRP)	0.020688
+PA47	PA47	low	CytAssist	N07-10_Malignant (D05_Ductal-PRSS1)	0.001745
+PA47	PA47	low	CytAssist	N07-10_Malignant (D07_Ductal-MKI67)	0.024676
+PA47	PA47	low	CytAssist	N07-10_Malignant (D08_Ductal-CEACAM5)	0.035394
+PA47	PA47	low	CytAssist	N07-10_Malignant (Ductal-other)	0.002493
+PA47	PA47	low	CytAssist	N11_Non-malignant-pancreas	0.007478
+PA47	PA47	low	CytAssist	N12_Nerve	0.001745
+PA47	PA47	low	CytAssist	mixed (malignant / N05_CAF-enriched)	0.244267
+PA72	PA72	low	CytAssist	N00_unassigned (no deconvolution)	0.000201
+PA72	PA72	low	CytAssist	N01_TLS	0.011044
+PA72	PA72	low	CytAssist	N02_Endocrine	0.117871
+PA72	PA72	low	CytAssist	N03_Peri-vascular	0.017871
+PA72	PA72	low	CytAssist	N04_Plasma-enriched	0.284137
+PA72	PA72	low	CytAssist	N05_CAF-enriched	0.40743
+PA72	PA72	low	CytAssist	N06_TAM-enriched	0.076305
+PA72	PA72	low	CytAssist	N07-10_Malignant (D04_Ductal-GABRP)	0.000201
+PA72	PA72	low	CytAssist	N07-10_Malignant (D05_Ductal-PRSS1)	0.00241
+PA72	PA72	low	CytAssist	N07-10_Malignant (D07_Ductal-MKI67)	0.000201
+PA72	PA72	low	CytAssist	N07-10_Malignant (D08_Ductal-CEACAM5)	0.024096
+PA72	PA72	low	CytAssist	N07-10_Malignant (Ductal-other)	0.000402
+PA72	PA72	low	CytAssist	N11_Non-malignant-pancreas	0.052209
+PA72	PA72	low	CytAssist	N12_Nerve	0.00261
+PA72	PA72	low	CytAssist	mixed (malignant / N05_CAF-enriched)	0.003012
+PA85	PA85	high	CytAssist	N00_unassigned (no deconvolution)	0.000207
+PA85	PA85	high	CytAssist	N01_TLS	0.021356
+PA85	PA85	high	CytAssist	N02_Endocrine	0.059507
+PA85	PA85	high	CytAssist	N03_Peri-vascular	0.00705
+PA85	PA85	high	CytAssist	N04_Plasma-enriched	0.069666
+PA85	PA85	high	CytAssist	N05_CAF-enriched	0.303753
+PA85	PA85	high	CytAssist	N06_TAM-enriched	0.000207
+PA85	PA85	high	CytAssist	N07-10_Malignant (D04_Ductal-GABRP)	0.025917
+PA85	PA85	high	CytAssist	N07-10_Malignant (D05_Ductal-PRSS1)	0.098694
+PA85	PA85	high	CytAssist	N07-10_Malignant (D07_Ductal-MKI67)	0.021356
+PA85	PA85	high	CytAssist	N07-10_Malignant (D08_Ductal-CEACAM5)	0.027576
+PA85	PA85	high	CytAssist	N07-10_Malignant (Ductal-other)	0.000829
+PA85	PA85	high	CytAssist	N11_Non-malignant-pancreas	0.362637
+PA85	PA85	high	CytAssist	N12_Nerve	0.000829
+PA85	PA85	high	CytAssist	mixed (malignant / N05_CAF-enriched)	0.000415
+PA98	PA98	high	CytAssist	N00_unassigned (no deconvolution)	0.000401
+PA98	PA98	high	CytAssist	N01_TLS	0.036458
+PA98	PA98	high	CytAssist	N02_Endocrine	0.011418
+PA98	PA98	high	CytAssist	N03_Peri-vascular	0.020232
+PA98	PA98	high	CytAssist	N04_Plasma-enriched	0.099559
+PA98	PA98	high	CytAssist	N05_CAF-enriched	0.577123
+PA98	PA98	high	CytAssist	N06_TAM-enriched	0.020833
+PA98	PA98	high	CytAssist	N07-10_Malignant (D04_Ductal-GABRP)	0.001002
+PA98	PA98	high	CytAssist	N07-10_Malignant (D05_Ductal-PRSS1)	0.000601
+PA98	PA98	high	CytAssist	N07-10_Malignant (D07_Ductal-MKI67)	0.0
+PA98	PA98	high	CytAssist	N07-10_Malignant (D08_Ductal-CEACAM5)	0.049479
+PA98	PA98	high	CytAssist	N07-10_Malignant (Ductal-other)	0.002604
+PA98	PA98	high	CytAssist	N11_Non-malignant-pancreas	0.002003
+PA98	PA98	high	CytAssist	N12_Nerve	0.108373
+PA98	PA98	high	CytAssist	mixed (malignant / N05_CAF-enriched)	0.069912

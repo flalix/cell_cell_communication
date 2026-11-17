@@ -1,0 +1,185 @@
+tissue	age_group	gene	n_cells	pct_expr	mean_log1p_cp10k
+Tonsil	babies	AICDA	16237	11.5	0.163
+Tonsil	babies	CCR7	16237	9.5	0.165
+Tonsil	babies	CD19	16237	51.5	0.989
+Tonsil	babies	CD22	16237	46.8	0.881
+Tonsil	babies	CD24	16237	12.9	0.209
+Tonsil	babies	CD27	16237	38.4	0.683
+Tonsil	babies	CD28	16237	6.7	0.115
+Tonsil	babies	CD38	16237	28.8	0.458
+Tonsil	babies	CD52	16237	86.5	2.334
+Tonsil	babies	CD53	16237	58.4	1.177
+Tonsil	babies	CD79A	16237	74.7	2.093
+Tonsil	babies	CD79B	16237	59.2	1.288
+Tonsil	babies	CDS2	16237	11.5	0.149
+Tonsil	babies	CR2	16237	28.1	0.463
+Tonsil	babies	FCER2	16237	15.4	0.283
+Tonsil	babies	IGHD	16237	21.2	0.378
+Tonsil	babies	IGHM	16237	38.0	0.828
+Tonsil	babies	IL4R	16237	26.7	0.416
+Tonsil	babies	LEF1	16237	4.5	0.076
+Tonsil	babies	MS4A1	16237	71.2	2.122
+Tonsil	babies	PAX5	16237	26.8	0.404
+Tonsil	babies	SELL	16237	21.1	0.378
+Tonsil	babies	TCF7	16237	12.7	0.254
+Tonsil	young	AICDA	13468	9.8	0.12
+Tonsil	young	CCR7	13468	21.8	0.348
+Tonsil	young	CD19	13468	51.5	0.919
+Tonsil	young	CD22	13468	45.8	0.798
+Tonsil	young	CD24	13468	20.2	0.293
+Tonsil	young	CD27	13468	52.0	0.889
+Tonsil	young	CD28	13468	12.0	0.174
+Tonsil	young	CD38	13468	25.5	0.346
+Tonsil	young	CD52	13468	94.8	2.642
+Tonsil	young	CD53	13468	71.8	1.316
+Tonsil	young	CD79A	13468	65.5	1.86
+Tonsil	young	CD79B	13468	61.3	1.305
+Tonsil	young	CDS2	13468	14.6	0.159
+Tonsil	young	CR2	13468	30.0	0.452
+Tonsil	young	FCER2	13468	21.6	0.365
+Tonsil	young	IGHD	13468	25.7	0.422
+Tonsil	young	IGHM	13468	41.4	0.93
+Tonsil	young	IL4R	13468	27.6	0.379
+Tonsil	young	LEF1	13468	11.7	0.183
+Tonsil	young	MS4A1	13468	62.4	1.872
+Tonsil	young	PAX5	13468	27.8	0.364
+Tonsil	young	SELL	13468	46.8	0.82
+Tonsil	young	TCF7	13468	25.4	0.467
+Spleen	adult	AICDA	8174	0.8	0.011
+Spleen	adult	CCR7	8174	21.2	0.305
+Spleen	adult	CD19	8174	35.7	0.528
+Spleen	adult	CD22	8174	39.4	0.62
+Spleen	adult	CD24	8174	26.3	0.358
+Spleen	adult	CD27	8174	46.3	0.705
+Spleen	adult	CD28	8174	11.4	0.154
+Spleen	adult	CD38	8174	13.2	0.181
+Spleen	adult	CD52	8174	95.4	2.793
+Spleen	adult	CD53	8174	70.6	1.13
+Spleen	adult	CD79A	8174	56.0	1.414
+Spleen	adult	CD79B	8174	54.6	1.052
+Spleen	adult	CDS2	8174	13.4	0.155
+Spleen	adult	CR2	8174	24.1	0.358
+Spleen	adult	FCER2	8174	30.6	0.515
+Spleen	adult	IGHD	8174	31.0	0.54
+Spleen	adult	IGHM	8174	61.2	1.195
+Spleen	adult	IL4R	8174	13.5	0.182
+Spleen	adult	LEF1	8174	10.8	0.172
+Spleen	adult	MS4A1	8174	53.9	1.234
+Spleen	adult	PAX5	8174	18.0	0.217
+Spleen	adult	SELL	8174	53.4	0.898
+Spleen	adult	TCF7	8174	22.0	0.324
+iLN	adult	AICDA	7455	0.3	0.005
+iLN	adult	CCR7	7455	39.8	0.69
+iLN	adult	CD19	7455	28.4	0.45
+iLN	adult	CD22	7455	28.2	0.459
+iLN	adult	CD24	7455	22.1	0.338
+iLN	adult	CD27	7455	48.5	0.78
+iLN	adult	CD28	7455	15.7	0.222
+iLN	adult	CD38	7455	6.0	0.082
+iLN	adult	CD52	7455	96.6	2.779
+iLN	adult	CD53	7455	66.9	1.16
+iLN	adult	CD79A	7455	50.1	1.246
+iLN	adult	CD79B	7455	47.1	0.925
+iLN	adult	CDS2	7455	11.6	0.148
+iLN	adult	CR2	7455	15.5	0.219
+iLN	adult	FCER2	7455	22.9	0.421
+iLN	adult	IGHD	7455	22.5	0.429
+iLN	adult	IGHM	7455	36.7	0.708
+iLN	adult	IL4R	7455	14.6	0.212
+iLN	adult	LEF1	7455	26.6	0.439
+iLN	adult	MS4A1	7455	47.8	1.132
+iLN	adult	PAX5	7455	9.9	0.133
+iLN	adult	SELL	7455	67.9	1.258
+iLN	adult	TCF7	7455	31.1	0.488
+tLN	adult	AICDA	7446	0.4	0.006
+tLN	adult	CCR7	7446	41.9	0.789
+tLN	adult	CD19	7446	21.0	0.345
+tLN	adult	CD22	7446	20.5	0.341
+tLN	adult	CD24	7446	18.3	0.287
+tLN	adult	CD27	7446	46.8	0.763
+tLN	adult	CD28	7446	19.6	0.284
+tLN	adult	CD38	7446	6.9	0.096
+tLN	adult	CD52	7446	92.1	2.588
+tLN	adult	CD53	7446	61.3	1.05
+tLN	adult	CD79A	7446	37.0	0.919
+tLN	adult	CD79B	7446	37.2	0.729
+tLN	adult	CDS2	7446	12.5	0.163
+tLN	adult	CR2	7446	10.9	0.163
+tLN	adult	FCER2	7446	16.7	0.313
+tLN	adult	IGHD	7446	14.0	0.265
+tLN	adult	IGHM	7446	22.8	0.465
+tLN	adult	IL4R	7446	14.9	0.213
+tLN	adult	LEF1	7446	28.3	0.46
+tLN	adult	MS4A1	7446	35.3	0.877
+tLN	adult	PAX5	7446	7.9	0.109
+tLN	adult	SELL	7446	59.0	1.06
+tLN	adult	TCF7	7446	31.6	0.501
+mLN	adult	AICDA	6046	0.1	0.002
+mLN	adult	CCR7	6046	42.6	0.759
+mLN	adult	CD19	6046	29.0	0.457
+mLN	adult	CD22	6046	29.0	0.458
+mLN	adult	CD24	6046	23.4	0.351
+mLN	adult	CD27	6046	51.8	0.822
+mLN	adult	CD28	6046	19.0	0.28
+mLN	adult	CD38	6046	12.0	0.16
+mLN	adult	CD52	6046	95.7	2.698
+mLN	adult	CD53	6046	67.7	1.159
+mLN	adult	CD79A	6046	52.2	1.325
+mLN	adult	CD79B	6046	45.5	0.858
+mLN	adult	CDS2	6046	13.5	0.171
+mLN	adult	CR2	6046	13.3	0.188
+mLN	adult	FCER2	6046	21.9	0.38
+mLN	adult	IGHD	6046	18.0	0.331
+mLN	adult	IGHM	6046	38.2	0.777
+mLN	adult	IL4R	6046	12.0	0.167
+mLN	adult	LEF1	6046	25.9	0.439
+mLN	adult	MS4A1	6046	47.8	1.115
+mLN	adult	PAX5	6046	12.8	0.169
+mLN	adult	SELL	6046	54.3	0.958
+mLN	adult	TCF7	6046	33.4	0.534
+mLN	old adult	AICDA	1825	0.2	0.002
+mLN	old adult	CCR7	1825	37.6	0.618
+mLN	old adult	CD19	1825	22.1	0.3
+mLN	old adult	CD22	1825	23.2	0.327
+mLN	old adult	CD24	1825	17.5	0.229
+mLN	old adult	CD27	1825	36.9	0.553
+mLN	old adult	CD28	1825	11.5	0.184
+mLN	old adult	CD38	1825	12.0	0.154
+mLN	old adult	CD52	1825	81.4	1.778
+mLN	old adult	CD53	1825	65.8	1.163
+mLN	old adult	CD79A	1825	42.5	0.995
+mLN	old adult	CD79B	1825	34.5	0.551
+mLN	old adult	CDS2	1825	12.1	0.157
+mLN	old adult	CR2	1825	9.2	0.114
+mLN	old adult	FCER2	1825	19.5	0.274
+mLN	old adult	IGHD	1825	7.6	0.124
+mLN	old adult	IGHM	1825	28.9	0.769
+mLN	old adult	IL4R	1825	10.9	0.166
+mLN	old adult	LEF1	1825	11.3	0.183
+mLN	old adult	MS4A1	1825	42.0	0.965
+mLN	old adult	PAX5	1825	14.2	0.18
+mLN	old adult	SELL	1825	31.7	0.479
+mLN	old adult	TCF7	1825	33.6	0.505
+mLN	elder	AICDA	12609	0.1	0.001
+mLN	elder	CCR7	12609	45.4	0.809
+mLN	elder	CD19	12609	16.5	0.255
+mLN	elder	CD22	12609	16.8	0.277
+mLN	elder	CD24	12609	10.2	0.154
+mLN	elder	CD27	12609	38.8	0.63
+mLN	elder	CD28	12609	16.7	0.251
+mLN	elder	CD38	12609	8.0	0.112
+mLN	elder	CD52	12609	82.7	2.042
+mLN	elder	CD53	12609	63.0	1.098
+mLN	elder	CD79A	12609	35.7	0.969
+mLN	elder	CD79B	12609	33.9	0.659
+mLN	elder	CDS2	12609	12.4	0.171
+mLN	elder	CR2	12609	6.5	0.092
+mLN	elder	FCER2	12609	15.5	0.272
+mLN	elder	IGHD	12609	16.6	0.356
+mLN	elder	IGHM	12609	27.9	0.783
+mLN	elder	IL4R	12609	18.1	0.286
+mLN	elder	LEF1	12609	25.4	0.41
+mLN	elder	MS4A1	12609	31.6	0.708
+mLN	elder	PAX5	12609	7.9	0.112
+mLN	elder	SELL	12609	44.2	0.812
+mLN	elder	TCF7	12609	37.1	0.626

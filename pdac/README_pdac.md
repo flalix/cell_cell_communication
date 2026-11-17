@@ -58,9 +58,37 @@ spacexr was installed once into `.R_lib` (renv itself unchanged):
 2. **Platforms**: 5 FF polyA, 4 FFPE v1, 12 CytAssist sections; joint analyses on the 17,368 shared genes.
    **All 5 low-NI sections are CytAssist** -> every high vs low comparison is repeated on CytAssist only (5 vs 7).
 3. **Niches**: Leiden on cell-type shares + rule-based naming after the paper's 12 niches (the paper: expression clusters + H&E).
+   Rule (`assign_niches`): score = share x log2(enrichment) of each niche's cell types, share >= 0.10; best score < 0.1 -> `mixed (A / B)`;
+   regions of spots with no deconvolution (RCTD-dropped) -> `N00_unassigned (no deconvolution)`, skipped in 03 / 04;
+   the four malignant niches -> `N07-10_Malignant (<dominant subtype>)` (the paper's N07-N10 split is not reproducible from shares).
 4. **Nerves**: data-derived (Schwann share + nerve markers); invasion = malignant share in / next to the bundle
    (the paper: pathologists on the H&E). Manual overrides: `pdac/data/pdac_nerve_annotation.tsv` (section, barcode, nerve, invaded).
 5. **Communication**: LIANA bivariate (consensus + CellChatDB) instead of COMMOT; no NicheNet / CytoSig.
+   Run per section (a joint 81,846-spot kernel would be densified to ~53 GB): pairs fixed by a global expression filter,
+   pooled Moran's R = spot-weighted mean, p-values combined by Stouffer, `n_sections_sig` per pair.
+6. **Cell-type names and descriptions**: `tables/pdac_lineage.tsv` (HL_ID = GEO major type, HL_SUBID, description, functional_summary),
+   as `tables/heart_lineage.tsv`.
+
+## Notebook conventions
+
+- No file IO in the notebooks: every table is written / read inside its `calc_df_*` method and every figure inside its
+  `plot_*` method (`fname=<key of PDAC_FILES>`, `force`, `verbose`). File present and `force=False` -> the table is read
+  (`df.attrs` restored from `<file>.attrs.json`); otherwise computed, written and read back, so a computed and a cached
+  run show the same values (verified: re-execution of 01-04 from the cache gives identical outputs).
+- `force=True` in the parameter cell after changing parameters or inputs; region labels and the niche table of mp_pdac01
+  are rewritten only with `force=True` (`save_region_labels`, `annotate_niches`), so 02-04 always read one clustering.
+
+## Results of the RCTD run (2026-11-17)
+
+- 28 regions: 6 N05_CAF-enriched, 5 N11_Non-malignant-pancreas, 7 malignant (D04 x2, D08 x2, D05, D07, Ductal-other),
+  2 N04_Plasma-enriched, 1 each N01_TLS, N02_Endocrine, N03_Peri-vascular, N06_TAM-enriched, N12_Nerve, 1 mixed, 2 N00.
+- High vs low NI (sections as replicates): N04_Plasma-enriched lower in high NI (p = 0.001, FDR 0.018; CytAssist only p = 0.018),
+  N07-10_Malignant (D04_Ductal-GABRP) higher (p = 0.007; CytAssist p = 0.034); malignant Shannon diversity lower in high NI
+  (p = 0.0001; CytAssist p = 0.0025).
+- Nerves: 65 bundles; 16 invaded, all in high-NI sections; none invaded in the 5 low-NI sections.
+- Juxta-neural spots of invaded vs non-invaded nerves: malignant (D09, D04), M10_Macro-SPP1, F05 / F08 CAFs up; B, Plasma,
+  CD4T, F02 progenitor CAF down. Malignant enrichment is partly circular (invasion is called from the ring-1 malignant share).
+- TGF-beta / HGF -> Schwann: the top senders are F01_myCAF-MMP11 and F02_Progenitor-CAF-DPT, not M07_Macro-NLRP3 as in the paper.
 
 ## Open items
 

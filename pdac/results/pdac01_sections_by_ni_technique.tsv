@@ -1,0 +1,5 @@
+ni_status	technique	n_sections	n_patients	n_spots	median_umis
+low	CytAssist	5	5	22870	4254.0
+high	FF	5	5	13557	2505.0
+high	FFPE	4	4	11454	21234.0
+high	CytAssist	7	7	33965	13402.0

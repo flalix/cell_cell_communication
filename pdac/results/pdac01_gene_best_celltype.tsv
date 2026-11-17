@@ -1,0 +1,27 @@
+gene	role	cell_type	lineage	frac	mean
+KRT19	ductal epithelium	Ductal-other	epithelial	0.837	2.987
+CFTR	non-malignant ductal (D01)	D01_Ductal-CFTR	epithelial	0.8	2.265
+CEACAM5	classical malignant (D08)	D09_Ductal-CEACAM6	epithelial	0.228	0.601
+CEACAM6	basal-like malignant (D09)	D09_Ductal-CEACAM6	epithelial	0.526	1.698
+GABRP	neural-reactive malignant (D04)	D09_Ductal-CEACAM6	epithelial	0.342	0.811
+APOA2	neuroendocrine-like malignant (D02)	D02_Ductal-APOA2	epithelial	0.622	3.357
+PRSS1	acinar	Acinar	epithelial	0.999	6.894
+CHGB	endocrine (islets)	Endocrine	epithelial	0.895	3.235
+LUM	fibroblasts	F01_myCAF-MMP11	stromal	0.959	3.923
+MMP11	myCAF (F01)	F01_myCAF-MMP11	stromal	0.556	1.923
+DPT	progenitor CAF (F02)	F04_hspCAF-HSPA1A	stromal	0.454	0.835
+NRP2	endoneurial fibroblasts (F07 Fibro-NRP2)	S02_Schwann-TGFBI	stromal	0.932	2.05
+RGS5	stellate / pericytes	Stellate	stromal	0.602	1.666
+PLVAP	endothelium	Endothelial	stromal	0.851	2.591
+SOX10	Schwann cells	S02_Schwann-TGFBI	stromal	0.883	2.044
+S100B	Schwann cells / nerve	S01_Schwann-ABCA8	stromal	0.919	2.681
+MPZ	myelinating Schwann cells	S01_Schwann-ABCA8	stromal	0.465	0.903
+TGFBI	TGFBI+ Schwann cells (S02), invading edge	S02_Schwann-TGFBI	stromal	0.854	2.251
+NLRP3	NLRP3+ TAM (M07)	M07_Macro-NLRP3	myeloid	0.522	0.751
+SPP1	SPP1+ macrophages (invaded nerves)	M10_Macro-SPP1	myeloid	0.865	4.2
+LYVE1	LYVE1+ macrophages (non-invaded nerves)	M08_Macro-LYVE1	myeloid	0.266	0.738
+MS4A1	B cells / TLS	B	lymphoid	0.911	2.52
+CXCL13	Tfh-like T cells / TLS	F07_Fibro-NRP2	stromal	0.104	0.155
+CXCL12	CXCL12+ fibroblasts around non-invaded nerves	F02_Progenitor-CAF-DPT	stromal	0.618	1.577
+CD3E	T cells	CD8T	lymphoid	0.967	2.574
+MZB1	plasma cells	Plasma	lymphoid	0.889	2.586

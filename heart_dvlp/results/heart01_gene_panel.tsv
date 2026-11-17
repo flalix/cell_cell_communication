@@ -1,0 +1,21 @@
+gene	role	in_reference	gene_id_reference	in_visium	gene_id_visium
+NKX2-5	core cardiac TF (first + second heart field)	True	ENSG00000183072	True	ENSG00000183072
+GATA4	core cardiac TF, septation and valves	True	ENSG00000136574	True	ENSG00000136574
+TBX5	left ventricle / atria; septation, conduction	True	ENSG00000089225	True	ENSG00000089225
+TBX20	cardiac TF, chamber and valve development	True	ENSG00000164532	True	ENSG00000164532
+HAND1	left ventricle (first heart field)	True	ENSG00000113196	True	ENSG00000113196
+HAND2	right ventricle / outflow tract (second heart field)	True	ENSG00000164107	True	ENSG00000164107
+ISL1	second heart field progenitors, sinoatrial node	True	ENSG00000016082	True	ENSG00000016082
+MYH6	atrial myosin (alpha-MHC)	True	ENSG00000197616	True	ENSG00000197616
+MYH7	ventricular myosin (beta-MHC), compact myocardium	True	ENSG00000092054	True	ENSG00000092054
+MYL7	atrial myosin light chain (MLC2a)	True	ENSG00000106631	True	ENSG00000106631
+MYL2	ventricular myosin light chain (MLC2v)	True	ENSG00000111245	True	ENSG00000111245
+NPPA	atrial / trabecular natriuretic peptide (ANP)	True	ENSG00000175206	True	ENSG00000175206
+IRX4	ventricular identity TF	True	ENSG00000113430	True	ENSG00000113430
+PITX2	left-right asymmetry, left atrium	True	ENSG00000164093	True	ENSG00000164093
+BMP10	right atrium; trabeculation	True	ENSG00000163217	True	ENSG00000163217
+TBX3	conduction system (SAN, AVN, bundle)	True	ENSG00000135111	True	ENSG00000135111
+SHOX2	sinoatrial node pacemaker	True	ENSG00000168779	True	ENSG00000168779
+HCN4	pacemaker channel (SAN, AVN)	True	ENSG00000138622	True	ENSG00000138622
+WT1	epicardium, epicardium-derived cells	True	ENSG00000184937	True	ENSG00000184937
+TCF21	epicardium-derived fibroblast progenitors	True	ENSG00000118526	True	ENSG00000118526

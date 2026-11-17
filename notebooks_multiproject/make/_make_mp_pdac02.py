@@ -42,13 +42,13 @@ md("""### Critique of the analysis and how it is handled
 1. **21 sections, 17 patients**: sections are the replicates (PA04, PA05 and PA11 have two sections each, so p-values are slightly optimistic); effect sizes and the per-section points are shown with every test.
 2. **Platform confound**: all 5 low-NI sections are CytAssist, all FF / FFPE-v1 sections high-NI. Every high vs low test is repeated on the 12 CytAssist sections (5 low vs 7 high); a difference that disappears there is not interpretable as NI biology.
 3. **Ridge plots of the paper** summarise the same 5 vs 16 values per niche; here box + points (marker = platform) show them directly.
-4. **Niche names are inferred** from composition (assign_niches); the paper's 12 niches were assigned with the H&E and are not public. Four malignant niches are numbered by their dominant subtype.
+4. **Niche names are inferred** from composition (assign_niches); the paper's 12 niches were assigned with the H&E and are not public. Malignant regions are named after their dominant subtype ('N07-10_Malignant (D04_Ductal-GABRP)'), since the paper's N07-N10 numbering is not published (except N10 = D02_Ductal-APOA2). 'mixed' regions have no clear niche; 'N00_unassigned' = spots RCTD could not deconvolve (< 100 UMIs).
 5. **Deconvolution source**: RCTD (the paper's method) or cell2location (GPU map); the tables carry it in **abundance_source**.""")
 
 md("## Loading packages")
 code(IMPORTS + "\nprint({p: version(p) for p in ['scanpy', 'squidpy', 'anndata', 'plotly']})")
 md("## Parameters")
-code("""force=False
+code("""force=False       # True: recompute every table and redraw every figure (after changing parameters or inputs)
 verbose=True
 
 apply_figure_style()
@@ -83,20 +83,7 @@ print(adata_vis.shape, '|', len(regions), 'regions |', len(niches), 'niches |', 
 md("""### 2. Region table
 
 Per region: spots, sections, platforms, median UMIs, top cell types by share and by enrichment, the niche (mp_pdac01).""")
-code("""def _summary():
-    obs = adata_vis.obs
-    df_m = df_share.groupby(obs.region_label.values, observed=True).mean()
-    df_e = df_m / df_share.mean(0)
-    rows = []
-    for r, sub in obs.groupby('region_label', observed=True):
-        rows.append(dict(region_label=r, niche=names.get(r, ''), n_spots=len(sub), n_sections=sub.section.nunique(),
-                         n_low_NI=int((sub.ni_status == 'low').sum()), n_high_NI=int((sub.ni_status == 'high').sum()),
-                         techniques=', '.join(f"{t} {v:.0%}" for t, v in sub.technique.value_counts(normalize=True).items() if v > 0.02),
-                         median_UMIs=float(sub.total_counts.median()),
-                         top_share=', '.join(f"{c} ({v:.0%})" for c, v in df_m.loc[r].sort_values(ascending=False)[:3].items()),
-                         top_enriched=', '.join(f"{c} ({v:.1f}x)" for c, v in df_e.loc[r].sort_values(ascending=False)[:3].items())))
-    return pd.DataFrame(rows)
-df_region_summary = scp._cached_any('tsv_region_summary', _summary, force=force, verbose=verbose)
+code("""df_region_summary = scp.calc_df_region_summary(adata_vis, df_share, names, fname='tsv_region_summary', force=force, verbose=verbose)
 df_region_summary""")
 
 md("""### 3. Figure 1F: cell types in each niche
@@ -112,9 +99,7 @@ plt.show()""")
 md("""### 4. Niches on the sections
 
 The paper's representative section PA98 (Figure 1D right) and the other representative sections.""")
-code("""colors = {n: PAPER_NICHES.get(n.split(' (')[0]) for n in niches}         # the paper's niche colours (myUtiliity.R)
-pal = scp._region_palette(niches)
-colors = {n: (c or pal[n]) for n, c in colors.items()}
+code("""colors = scp.niche_colors(niches)          # the paper's niche colours (myUtiliity.R); malignant niches cycle its 4 malignant colours
 fig = scp.plot_regions_on_sections(adata_vis, key='niche', sections=sections_rep, colors=colors, ncols=3, panel_size=4.2, legend_ncol=3,
                                    fname=scp.fname('fig_niches_sections'), force=force, verbose=verbose)
 plt.show()""")
@@ -123,10 +108,8 @@ md("""### 5. Figures 2E / 3D: niche share per section, low vs high NI
 
 Share of each niche among the spots of a section; box + points per NI group (marker = platform), two-sided Mann-Whitney U over sections (BH FDR in the table). Paper: TLS, plasma-enriched and peri-vascular niches higher in low-NI tissues; Malignant_ductal_4 (D02_Ductal-APOA2) in low NI.""")
 code("""df_niche_sec = scp.calc_df_share_by_section(adata_vis, 'niche', fname=scp.fname('tsv_niche_by_section'), force=force, verbose=verbose)
-df_t_all = scp.calc_df_ni_test(df_niche_sec)
-df_t_cyt = scp.calc_df_ni_test(df_niche_sec, techniques=('CytAssist',))
-scp._write_table(df_t_all, scp.fname('tsv_niche_ni_test'), force=True)
-scp._write_table(df_t_cyt, scp.fname('tsv_niche_ni_test_cyt'), force=True)
+df_t_all = scp.calc_df_ni_test(df_niche_sec, fname='tsv_niche_ni_test', force=force, verbose=verbose)
+df_t_cyt = scp.calc_df_ni_test(df_niche_sec, techniques=('CytAssist',), fname='tsv_niche_ni_test_cyt', force=force, verbose=verbose)
 df_t_all.merge(df_t_cyt[['group', 'log2_ratio_high_low', 'p']], on='group', suffixes=('', '_CytAssist')).sort_values('p')""")
 code("""fig = scp.plot_ni_groups(df_niche_sec, niches, df_test=df_t_all, ncols=6, title='Niche share per section (all 21 sections)',
                          fname=scp.fname('fig_niche_ni'), force=force, verbose=verbose)
@@ -148,10 +131,8 @@ md("""### 7. Figure 3B: cell types, low vs high NI
 
 Mean share of each cell type per section. Paper (ST): B01_naive-TCL1A, B03_GCB-RGS13 and T10_CD4_Tfh-like-CXCL13 (TLS components) higher in low NI; here B cells and T cells are major types (lymphoid subclusters were not re-derived). Also shown: plasma, NLRP3+ TAM (M07), myCAF (F01), the malignant subtypes and Schwann subsets.""")
 code("""df_ct_sec = scp.calc_df_celltype_by_section(adata_vis, df_abund, fname=scp.fname('tsv_celltype_by_section'), force=force, verbose=verbose)
-df_ct_all = scp.calc_df_ni_test(df_ct_sec, group_col='cell_type')
-df_ct_cyt = scp.calc_df_ni_test(df_ct_sec, group_col='cell_type', techniques=('CytAssist',))
-scp._write_table(df_ct_all, scp.fname('tsv_celltype_ni_test'), force=True)
-scp._write_table(df_ct_cyt, scp.fname('tsv_celltype_ni_test_cyt'), force=True)
+df_ct_all = scp.calc_df_ni_test(df_ct_sec, group_col='cell_type', fname='tsv_celltype_ni_test', force=force, verbose=verbose)
+df_ct_cyt = scp.calc_df_ni_test(df_ct_sec, group_col='cell_type', techniques=('CytAssist',), fname='tsv_celltype_ni_test_cyt', force=force, verbose=verbose)
 df_ct_all.merge(df_ct_cyt[['cell_type', 'log2_ratio_high_low', 'p']], on='cell_type', suffixes=('', '_CytAssist')).sort_values('p').head(25)""")
 code("""cts = ['B', 'CD4T', 'CD8T', 'Plasma', 'M07_Macro-NLRP3', 'M10_Macro-SPP1', 'F01_myCAF-MMP11', 'F02_Progenitor-CAF-DPT',
        'D02_Ductal-APOA2', 'D04_Ductal-GABRP', 'D09_Ductal-CEACAM6', 'S02_Schwann-TGFBI']
@@ -172,46 +153,17 @@ for sub in ['D08_Ductal-CEACAM5', 'D09_Ductal-CEACAM6', 'D04_Ductal-GABRP', 'D02
         fig = scp.plot_regions_on_sections(adata_vis, key='_pure', sections=[lib], colors={sub: '#FFEE00'}, ncols=1, panel_size=6,
                                            fname=scp.fname('fig_malignant_pure', sub=sub.split('_')[0]), force=force, verbose=verbose)
         plt.show()""")
-code("""df_div = scp.calc_df_malignant_diversity(adata_vis, df_abund)
-scp._write_table(df_div.reset_index(names='section'), scp.fname('tsv_malignant_diversity'), force=True)
-order = df_div.sort_values(['ni_status', 'shannon']).index
-fig, axes = plt.subplots(2, 1, figsize=(16, 8), gridspec_kw=dict(height_ratios=[1, 3]), sharex=True)
-axes[0].bar(range(len(order)), df_div.loc[order, 'shannon'], color=['#4C9BE8' if v == 'low' else '#E8504C' for v in df_div.loc[order, 'ni_status']])
-axes[0].set_ylabel('Shannon')
-bottom = np.zeros(len(order)); col = scp.celltype_colors(mal)
-for c in mal:
-    axes[1].bar(range(len(order)), df_div.loc[order, c], bottom=bottom, color=col[c], label=c, width=0.85); bottom += df_div.loc[order, c].values
-axes[1].set_xticks(range(len(order))); axes[1].set_xticklabels([f"{s}\\n{df_div.loc[s, 'ni_status']}" for s in order], rotation=90)
-axes[1].set_ylabel('share of malignant cells'); axes[1].legend(bbox_to_anchor=(1.01, 1), loc='upper left', frameon=False)
-fig.suptitle('Malignant subtypes per section (Figure 2J analogue)')
-scp.style_figure(fig, scp.params['font_color'], scp.params['bg_color'], scp.params['fontsize_scale'])
-scp._savefig(fig, scp.fname('fig_malignant_comp'), force=force, verbose=verbose)
+code("""df_div = scp.calc_df_malignant_diversity(adata_vis, df_abund, fname='tsv_malignant_diversity', force=force, verbose=verbose)
+fig = scp.plot_malignant_diversity(df_div, fname='fig_malignant_comp', force=force, verbose=verbose)
 plt.show()
-from scipy.stats import mannwhitneyu
-for sub_ in (None, 'CytAssist'):
-    d_ = df_div if sub_ is None else df_div[df_div.technique == sub_]
-    print(sub_ or 'all', 'Shannon low vs high: medians', d_.groupby('ni_status').shannon.median().round(3).to_dict(),
-          'p =', round(mannwhitneyu(d_[d_.ni_status == 'low'].shannon, d_[d_.ni_status == 'high'].shannon).pvalue, 4))""")
+scp.calc_df_diversity_test(df_div)""")
 
 md("""### 9. Co-occurrence of cell types across sections (Figure 3I analogue)
 
 Spearman correlation of the mean cell-type shares over the 21 sections; pairs with rho > 0.6 (the paper's threshold; the paper used sc/sn proportions per sample). Paper: M07_Macro-NLRP3 with T11_CD4_Th17-like (not separated here).""")
-code("""M = df_ct_sec.pivot_table(index='section', columns='cell_type', values='share')
-R = M.corr(method='spearman')
-R.index.name, R.columns.name = 'cell_type_1', 'cell_type_2'
-pairs = R.where(np.triu(np.ones(R.shape, bool), 1)).stack().rename('rho').reset_index()
-pairs.columns = ['cell_type_1', 'cell_type_2', 'rho']
-pairs = pairs[pairs.rho > 0.6].sort_values('rho', ascending=False)
-scp._write_table(pairs, scp.fname('tsv_cooccurrence'), force=True)
-order = scp.celltype_order(R.index)
-fig, ax = plt.subplots(figsize=(14, 12))
-im = ax.imshow(R.loc[order, order].values, cmap='RdBu_r', vmin=-1, vmax=1)
-ax.set_xticks(range(len(order))); ax.set_xticklabels(order, rotation=90, fontsize=7)
-ax.set_yticks(range(len(order))); ax.set_yticklabels(order, fontsize=7)
-fig.colorbar(im, ax=ax, fraction=0.03).set_label('Spearman rho over 21 sections')
-ax.set_title('Co-occurrence of cell types across sections')
-scp.style_figure(fig, scp.params['font_color'], scp.params['bg_color'], scp.params['fontsize_scale'])
-scp._savefig(fig, scp.fname('fig_cooccurrence'), force=force, verbose=verbose)
+code("""R = scp.calc_df_celltype_correlation(df_ct_sec)
+pairs = scp.calc_df_cooccurrence(R, min_rho=0.6, fname='tsv_cooccurrence', force=force, verbose=verbose)
+fig = scp.plot_cooccurrence(R, fname='fig_cooccurrence', force=force, verbose=verbose)
 plt.show()
 pairs.head(30)""")
 

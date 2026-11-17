@@ -1,0 +1,29 @@
+region_label	niche	niche_group	niche_share	niche_enrichment	niche_score	dominant	malignant_top	n_spots	n_sections	abundance_source
+R00	N11_Non-malignant-pancreas	N11_Non-malignant-pancreas	0.316	4.25	0.661	D01_Ductal-CFTR (20%), F01_myCAF-MMP11 (12%), Acinar (12%)	D05_Ductal-PRSS1	3802	21	rctd
+R01	N04_Plasma-enriched	N04_Plasma-enriched	0.125	2.47	0.163	F02_Progenitor-CAF-DPT (17%), F01_myCAF-MMP11 (13%), Plasma (12%)	D04_Ductal-GABRP	6036	20	rctd
+R02	N03_Peri-vascular	N03_Peri-vascular	0.455	6.87	1.266	Stellate (35%), F02_Progenitor-CAF-DPT (23%), Endothelial (11%)	D04_Ductal-GABRP	1536	20	rctd
+R03	N01_TLS	N01_TLS	0.301	13.62	1.134	B (21%), F02_Progenitor-CAF-DPT (16%), Endothelial (9%)	D05_Ductal-PRSS1	1768	17	rctd
+R04	N12_Nerve	N12_Nerve	0.407	20.02	1.76	S01_Schwann-ABCA8 (26%), M08_Macro-LYVE1 (12%), F02_Progenitor-CAF-DPT (11%)	D08_Ductal-CEACAM5	952	19	rctd
+R05	N04_Plasma-enriched	N04_Plasma-enriched	0.315	6.23	0.832	Plasma (32%), F02_Progenitor-CAF-DPT (26%), M08_Macro-LYVE1 (10%)	D03_Ductal-TRPM5	4511	14	rctd
+R06	mixed (malignant / N05_CAF-enriched)	mixed	0.0		0.0	Endothelial (9%), D06_Ductal-MYO1A (7%), F02_Progenitor-CAF-DPT (6%)	D06_Ductal-MYO1A	1770	18	rctd
+R07	N05_CAF-enriched	N05_CAF-enriched	0.501	1.44	0.265	F01_myCAF-MMP11 (40%), M08_Macro-LYVE1 (9%), D04_Ductal-GABRP (8%)	D04_Ductal-GABRP	6153	19	rctd
+R08	N07-10_Malignant (Ductal-other)	malignant	0.479	1.89	0.44	Ductal-other (23%), F01_myCAF-MMP11 (19%), D04_Ductal-GABRP (9%)	Ductal-other	1947	19	rctd
+R09	N05_CAF-enriched	N05_CAF-enriched	0.492	1.42	0.247	F01_myCAF-MMP11 (41%), D08_Ductal-CEACAM5 (16%), Ductal-other (7%)	D08_Ductal-CEACAM5	3286	18	rctd
+R10	N07-10_Malignant (D05_Ductal-PRSS1)	malignant	0.492	1.94	0.471	F01_myCAF-MMP11 (28%), D05_Ductal-PRSS1 (22%), D08_Ductal-CEACAM5 (8%)	D05_Ductal-PRSS1	3828	18	rctd
+R11	N11_Non-malignant-pancreas	N11_Non-malignant-pancreas	0.739	9.93	2.448	Acinar (65%), D01_Ductal-CFTR (9%), F01_myCAF-MMP11 (4%)	Ductal-other	2963	16	rctd
+R12	N02_Endocrine	N02_Endocrine	0.29	10.33	0.976	Endocrine (29%), F02_Progenitor-CAF-DPT (15%), Plasma (8%)	D08_Ductal-CEACAM5	4118	19	rctd
+R13	N05_CAF-enriched	N05_CAF-enriched	0.53	1.53	0.323	F02_Progenitor-CAF-DPT (48%), M08_Macro-LYVE1 (13%), Endothelial (10%)	D03_Ductal-TRPM5	8033	19	rctd
+R14	N05_CAF-enriched	N05_CAF-enriched	0.647	1.86	0.581	F01_myCAF-MMP11 (33%), F02_Progenitor-CAF-DPT (25%), M08_Macro-LYVE1 (9%)	D08_Ductal-CEACAM5	3147	18	rctd
+R15	N06_TAM-enriched	N06_TAM-enriched	0.291	2.92	0.449	F02_Progenitor-CAF-DPT (37%), M13_Myeloid-str-HSPA1A (21%), M08_Macro-LYVE1 (7%)	D03_Ductal-TRPM5	502	7	rctd
+R16	N05_CAF-enriched	N05_CAF-enriched	0.523	1.51	0.309	F01_myCAF-MMP11 (34%), M09_Macro-APOC1 (12%), F02_Progenitor-CAF-DPT (7%)	D08_Ductal-CEACAM5	1425	19	rctd
+R17	N07-10_Malignant (D08_Ductal-CEACAM5)	malignant	0.715	2.82	1.07	D08_Ductal-CEACAM5 (38%), D07_Ductal-MKI67 (17%), Ductal-other (7%)	D08_Ductal-CEACAM5	5089	19	rctd
+R18	N07-10_Malignant (D08_Ductal-CEACAM5)	malignant	0.602	2.38	0.753	D08_Ductal-CEACAM5 (22%), D09_Ductal-CEACAM6 (21%), F01_myCAF-MMP11 (12%)	D08_Ductal-CEACAM5	3892	17	rctd
+R19	N11_Non-malignant-pancreas	N11_Non-malignant-pancreas	0.216	2.9	0.332	F01_myCAF-MMP11 (26%), Acinar (19%), F08_pro-mCAF-IGFBP5 (7%)	Ductal-other	2427	18	rctd
+R20	N07-10_Malignant (D04_Ductal-GABRP)	malignant	0.582	2.3	0.698	D04_Ductal-GABRP (23%), D08_Ductal-CEACAM5 (19%), F05_dCAF-MKI67 (10%)	D04_Ductal-GABRP	5839	19	rctd
+R21	N07-10_Malignant (D07_Ductal-MKI67)	malignant	0.585	2.31	0.708	D07_Ductal-MKI67 (32%), D04_Ductal-GABRP (24%), F01_myCAF-MMP11 (12%)	D07_Ductal-MKI67	1303	15	rctd
+R22	N07-10_Malignant (D04_Ductal-GABRP)	malignant	0.615	2.43	0.787	D04_Ductal-GABRP (56%), F05_dCAF-MKI67 (13%), F01_myCAF-MMP11 (9%)	D04_Ductal-GABRP	3926	12	rctd
+R23	N11_Non-malignant-pancreas	N11_Non-malignant-pancreas	0.934	12.56	3.41	Acinar (92%), D01_Ductal-CFTR (2%), F04_hspCAF-HSPA1A (1%)	D03_Ductal-TRPM5	1043	6	rctd
+R24	N11_Non-malignant-pancreas	N11_Non-malignant-pancreas	0.406	5.46	0.995	Acinar (40%), F02_Progenitor-CAF-DPT (29%), Stellate (6%)	D05_Ductal-PRSS1	897	12	rctd
+R25	N05_CAF-enriched	N05_CAF-enriched	0.503	1.45	0.268	F01_myCAF-MMP11 (15%), F08_pro-mCAF-IGFBP5 (14%), D04_Ductal-GABRP (13%)	D04_Ductal-GABRP	1481	18	rctd
+R26	N00_unassigned (no deconvolution)	unassigned	0.0		0.0	D01_Ductal-CFTR (0%), D02_Ductal-APOA2 (0%), D03_Ductal-TRPM5 (0%)	D02_Ductal-APOA2	91	13	rctd
+R27	N00_unassigned (no deconvolution)	unassigned	0.0		0.0	D01_Ductal-CFTR (0%), D02_Ductal-APOA2 (0%), D03_Ductal-TRPM5 (0%)	D02_Ductal-APOA2	81	11	rctd

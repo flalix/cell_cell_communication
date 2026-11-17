@@ -61,6 +61,7 @@ libs/cell2location_lib.py (function version, used by ccc01/ccc02) is kept unchan
 
 import contextlib
 import copy
+import math
 import re
 import warnings
 from pathlib import Path
@@ -1810,6 +1811,11 @@ class SingleCell(object):
         self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 
+    def section_plot_title(self, lib: str) -> str:
+        """Title of one section in the interactive maps (plotly_spatial_visium, plotly_umap_spatial_3plot): the
+        section id; projects override it (heart: section | age (age group) | heart)."""
+        return str(lib)
+
     def plotly_spatial_visium(self, names: Dict[str, str], adata=None, key: Optional[str] = None,
                               library_id: Optional[str] = None, set_colors: bool = False,
                               width: int = 1400, height: int = 900, image_format: Optional[str] = None,
@@ -1817,48 +1823,40 @@ class SingleCell(object):
                               fontsize_title: int = 17, fontsize_legend: int = 12, fontsize_hover: int = 12,
                               font_color: Optional[str] = None, bg_color: Optional[str] = None, marker_line_color: str = "black",
                               image_bg_color: Optional[str] = None, fname: Optional[str] = None, include_plotlyjs=None,
-                              force: bool = False, verbose: bool = False):
-        """Interactive (plotly) spatial map of a categorical key on the hires image.
+                              title: Optional[str] = None, force: bool = False, verbose: bool = False):
+        """
+        Interactive (plotly) spatial map of a categorical key on the hires image.
+        title: None = section_plot_title(library) (heart: section | age (age group) | heart).
 
-        image_format: 'raw' embeds the pixel array (about 30 MB per HTML file), 'jpeg' an encoded image (about 6 MB);
+        The H&E is cropped to the section's spots. image_format: 'raw' embeds the pixel array, 'jpeg' an encoded image;
         default params['plotly_image_format']. hover_extra: category -> extra hover text (e.g. signature genes).
         Font sizes: fontsize_title, fontsize_legend, fontsize_hover. Colours: font_color, bg_color (paper and plot),
         marker_line_color (spot outline), image_bg_color (H&E glass; None = params). fname: key of self.files ({lib} =
         the section) or an .html name in root_figure (None = not saved), written here; include_plotlyjs: True =
-        self-contained HTML (default params['plotly_include_js']); an existing file is kept unless force."""
+        self-contained HTML (default params['plotly_include_js']); an existing file is kept unless force.
+        """
         font_color = self.get_param("font_color", font_color)   # style: None -> params
         bg_color = self.get_param("bg_color", bg_color)
-        import base64
-        import io
         import plotly.graph_objects as go
-        image_format = self.get_param("plotly_image_format", image_format)
         hover_extra = hover_extra or {}
         a = self._check_adata(adata)
         key = self.get_param("region_key", key)
         cats = a.obs[key].cat.categories
-        cols = list(a.uns.get(f"{key}_colors", []))
-        if set_colors or len(cols) < len(cats):
+        if set_colors:
             palette = KELLY_COLORS + [mpl.colors.to_hex(c) for c in plt.get_cmap("tab20").colors]
             if len(cats) > len(palette):
                 raise ValueError(f"{len(cats)} categories but only {len(palette)} colours")
-            cols = palette[:len(cats)]
-            a.uns[f"{key}_colors"] = cols
+            a.uns[f"{key}_colors"] = palette[:len(cats)]
+        cmap_ = self._category_colors(a, key, list(cats))     # uns colours (as the matplotlib figures), else _region_palette
+        cols = [cmap_[c] for c in cats]
         s = library_id or self.library_id(a)
-        img = self._map_image(s, a, image_bg_color)
-        if img.dtype != np.uint8:
-            img = (np.clip(img, 0, 1) * 255).astype(np.uint8)
         m, xy = self.spot_xy(s, a)
         clust = a.obs[key].astype(str).values[m]
         spot_names = a.obs_names[m]
+        img_tr, (x0, x1, y0, y1) = self._plotly_section_image(s, a, xy, image_format=image_format,
+                                                              image_bg_color=image_bg_color)
         fig = go.Figure()
-        if image_format == "jpeg":
-            buf = io.BytesIO()
-            from PIL import Image
-            Image.fromarray(img[..., :3]).save(buf, format="JPEG", quality=self.params["plotly_jpeg_quality"])
-            fig.add_trace(go.Image(source="data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode(),
-                                   hoverinfo="skip"))
-        else:
-            fig.add_trace(go.Image(z=img, hoverinfo="skip"))
+        fig.add_trace(img_tr)
         for k, c in zip(cats, cols):
             mk = clust == k
             if not mk.any():
@@ -1869,21 +1867,26 @@ class SingleCell(object):
                                        marker=dict(size=marker_size, color=c, opacity=0.9,
                                                    line=dict(width=0.5, color=marker_line_color)),
                                        hovertemplate=f"<b>{label}</b>{extra}<br>spot: %{{text}}<extra></extra>"))
-        fig.update_layout(title=dict(text=s, font=dict(size=fontsize_title, color=font_color)), width=width, height=height,
+        fig.update_layout(title=dict(text=title if title is not None else self.section_plot_title(s),
+                                     font=dict(size=fontsize_title, color=font_color)), width=width, height=height,
                           font=dict(color=font_color), paper_bgcolor=bg_color, plot_bgcolor=bg_color,
                           margin=dict(l=10, r=10, t=40 + fontsize_title, b=10),
                           hoverlabel=dict(font=dict(size=fontsize_hover)),
                           legend=dict(font=dict(size=fontsize_legend, color=font_color), itemsizing="constant",
                                       x=1.01, y=0.5, yanchor="middle"))
-        fig.update_xaxes(visible=False, range=[0, img.shape[1]])
-        fig.update_yaxes(visible=False, range=[img.shape[0], 0], scaleanchor="x")
+        fig.update_xaxes(visible=False, range=[x0, x1])
+        fig.update_yaxes(visible=False, range=[y1, y0], scaleanchor="x")
         self._save_figure(fig, fname, force, verbose, include_plotlyjs=include_plotlyjs, lib=s)
         return fig
 
-    def plot_genes_per_cell_type(self, slide, genes, ctypes, q: Optional[float] = None, font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None):
+    def plot_genes_per_cell_type(self, slide, genes, ctypes, q: Optional[float] = None, font_color: Optional[str] = None,
+                                 bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                                 fname: Optional[str] = None, dpi: Optional[int] = None, force: bool = False,
+                                 verbose: bool = False):
         """Total expression (column 0) and cell-type-specific expected expression (layers[<cell type>]) per gene.
         Requires slide.layers[<cell type>] from mod.module.model.compute_expected_per_cell_type.
-        Style (None = params): font_color, bg_color, fontsize_scale (style_figure). Not saved: returns (fig, axs)."""
+        Style (None = params): font_color, bg_color, fontsize_scale (style_figure). fname (key or file name; None =
+        not saved), dpi, force: saved with _savefig. Returns (fig, axs)."""
         font_color = self.get_param("font_color", font_color)   # style: None -> params
         bg_color = self.get_param("bg_color", bg_color)
         fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
@@ -1903,6 +1906,8 @@ class SingleCell(object):
                                   ax=axs[j, i + 1], show=False)
                     axs[j, i + 1].set_title(f"{g} {ct}")
         self.style_figure(fig, font_color, bg_color, fontsize_scale)
+        if fname is not None:
+            self._savefig(fig, self.fname(fname) if fname in self.files else fname, dpi=dpi, force=force, verbose=verbose)
         return fig, axs
 
     def plot_slide_loc_cell_types(self, slide, clust_labels, c2l_colors, figsize=(5, 5), font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
@@ -2678,6 +2683,222 @@ class SingleCell(object):
         buf = io.BytesIO()
         Image.fromarray(a_[..., :3]).save(buf, format="JPEG", quality=self.params["plotly_jpeg_quality"])
         return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+
+    def _plotly_section_image(self, library_id: str, adata, xy: np.ndarray, pad: float = 30,
+                              image_format: Optional[str] = None, image_bg_color: Optional[str] = None):
+        """go.Image of the hires H&E of one section cropped to its spots (+ pad pixels), placed in image-pixel
+        coordinates (x0, y0), so spot_xy coordinates overlay it. image_format: 'jpeg' (small HTML) or 'raw'
+        (None = params['plotly_image_format']). Returns (trace, (x0, x1, y0, y1))."""
+        import base64
+        import io
+        import plotly.graph_objects as go
+        image_format = self.get_param("plotly_image_format", image_format)
+        img = self._map_image(library_id, adata, image_bg_color)
+        if img.dtype != np.uint8:
+            img = (np.clip(img, 0, 1) * 255).astype(np.uint8)
+        h, w = img.shape[:2]
+        x0, y0 = np.maximum(np.floor(xy.min(0) - pad).astype(int), 0)
+        x1, y1 = np.minimum(np.ceil(xy.max(0) + pad).astype(int), [w, h])
+        crop = img[y0:y1, x0:x1, :3]
+        if image_format == "jpeg":
+            from PIL import Image
+            buf = io.BytesIO()
+            Image.fromarray(crop).save(buf, format="JPEG", quality=self.params["plotly_jpeg_quality"])
+            tr = go.Image(source="data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode(),
+                          x0=int(x0), y0=int(y0), hoverinfo="skip")
+        else:
+            tr = go.Image(z=crop, x0=int(x0), y0=int(y0), hoverinfo="skip")
+        return tr, (int(x0), int(x1), int(y0), int(y1))
+
+    def _category_colors(self, adata, key: str, cats: Sequence[str]) -> Dict[str, str]:
+        """Category -> colour: adata.uns['<key>_colors'] (scanpy, as in the matplotlib figures) when complete,
+        else _region_palette."""
+        cols = list(adata.uns.get(f"{key}_colors", []))
+        if len(cols) >= len(cats):
+            return {c: mpl.colors.to_hex(cols[i]) for i, c in enumerate(cats)}
+        return self._region_palette(cats)
+
+    def plotly_umap_spatial_3plot(self, adata=None, names: Optional[Dict[str, str]] = None, key: Optional[str] = None,
+                                  library_id: Optional[str] = None, colors: Optional[Dict[str, str]] = None,
+                                  width: int = 1900, height: int = 720, marker_size_umap: float = 3,
+                                  marker_size_spatial: float = 5, image_format: Optional[str] = None,
+                                  fontsize_title: int = 16, fontsize_legend: int = 11, fontsize_hover: int = 12,
+                                  legend_ncol: Optional[int] = 4,
+                                  font_color: Optional[str] = None, bg_color: Optional[str] = None,
+                                  fname: Optional[str] = None, include_plotlyjs=None, force: bool = False,
+                                  verbose: bool = False):
+        """Interactive version of umap_spatial_3plot: UMAP by region, UMAP by sample, spatial map by region of one
+        library on its H&E. One legend (regions) drives both region panels: click to hide, double-click to isolate.
+        Hover: spot, sample, region and its name. legend_ncol: legend below the panels in that many columns (the
+        figure grows by the legend height, panels keep `height`); None = legend on the right, one column. colors: region -> colour (None = the colours of the matplotlib
+        figure: adata.uns['<key>_colors'], else _region_palette). fname: key of self.files or an .html name
+        (None = not saved); an existing file is kept unless force."""
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+        font_color = self.get_param("font_color", font_color)
+        bg_color = self.get_param("bg_color", bg_color)
+        a = self._check_adata(adata)
+        key = self.get_param("region_key", key)
+        names = names if names is not None else self.region_names(a, key=key)
+        labs = a.obs[key].astype(str).values
+        cats = [c for c in (list(a.obs[key].cat.categories) if hasattr(a.obs[key], "cat") else sorted(set(labs))) if c != "nan"]
+        colors = colors or self._category_colors(a, key, cats)
+        samples = a.obs[self.sample_col].astype(str).values
+        scats = list(a.obs[self.sample_col].cat.categories) if hasattr(a.obs[self.sample_col], "cat") else sorted(set(samples))
+        scol = self._category_colors(a, self.sample_col, scats) if len(a.uns.get(f"{self.sample_col}_colors", [])) >= len(scats) \
+            else {s: (KELLY_COLORS + [mpl.colors.to_hex(c) for c in plt.get_cmap("tab20").colors])[i % 40] for i, s in enumerate(scats)}
+        lib = library_id or self.library_id(a)
+        U = np.asarray(a.obsm["X_umap"])
+        fig = make_subplots(rows=1, cols=3, column_widths=[0.32, 0.32, 0.36], horizontal_spacing=0.03,
+                            subplot_titles=(key, self.sample_col, self.section_plot_title(lib)))
+        m, xy = self.spot_xy(lib, a)
+        img_tr, (x0, x1, y0, y1) = self._plotly_section_image(lib, a, xy, image_format=image_format)
+        fig.add_trace(img_tr, row=1, col=3)
+        obs_names = a.obs_names.values
+        lab_m = labs[m]
+        for c in cats:
+            label = f"{c} - {names[c]}" if names.get(c) else c
+            hov = f"<b>{label}</b><br>spot: %{{text}}<br>{self.sample_col}: %{{customdata}}<extra></extra>"
+            k = labs == c
+            if k.any():
+                fig.add_trace(go.Scattergl(x=U[k, 0], y=U[k, 1], mode="markers", name=label, legendgroup=c,
+                                           marker=dict(size=marker_size_umap, color=colors[c]), text=obs_names[k],
+                                           customdata=samples[k], hovertemplate=hov), row=1, col=1)
+            ks = lab_m == c
+            if ks.any():
+                fig.add_trace(go.Scattergl(x=xy[ks, 0], y=xy[ks, 1], mode="markers", name=label, legendgroup=c,
+                                           showlegend=not k.any(),
+                                           marker=dict(size=marker_size_spatial, color=colors[c], opacity=0.85,
+                                                       line=dict(width=0.3, color="#222222")),
+                                           text=obs_names[m][ks], customdata=samples[m][ks], hovertemplate=hov),
+                              row=1, col=3)
+        for s in scats:
+            k = samples == s
+            if k.any():
+                fig.add_trace(go.Scattergl(x=U[k, 0], y=U[k, 1], mode="markers", name=s, legendgroup=f"sample_{s}",
+                                           showlegend=False, marker=dict(size=marker_size_umap, color=scol[s]),
+                                           text=obs_names[k], customdata=labs[k],
+                                           hovertemplate=f"<b>{s}</b><br>spot: %{{text}}<br>{key}: %{{customdata}}<extra></extra>"),
+                              row=1, col=2)
+        for col in (1, 2):
+            fig.update_xaxes(visible=False, row=1, col=col)
+            fig.update_yaxes(visible=False, row=1, col=col)
+        fig.update_xaxes(visible=False, range=[x0, x1], row=1, col=3)
+        fig.update_yaxes(visible=False, range=[y1, y0], scaleanchor="x3", row=1, col=3)
+        legend = dict(font=dict(size=fontsize_legend, color=font_color), itemsizing="constant", title=dict(text=key))
+        margin = dict(l=10, r=10, t=40 + fontsize_title, b=10)
+        total_h = height
+        if legend_ncol:
+            n_items = sum(1 for t in fig.data if t.type == "scattergl" and t.showlegend is not False)
+            n_rows = math.ceil(n_items / legend_ncol)
+            leg_h = n_rows * (fontsize_legend + 10) + fontsize_legend + 30         # rows + title + gap
+            total_h = height + leg_h
+            margin["b"] = leg_h
+            legend.update(orientation="h", x=0, xanchor="left", y=-0.02, yanchor="top",
+                          entrywidth=(width - margin["l"] - margin["r"]) / legend_ncol, entrywidthmode="pixels",
+                          title=dict(text=key, side="top"))
+        else:
+            legend.update(x=1.01, y=0.5, yanchor="middle")
+        fig.update_layout(width=width, height=total_h, font=dict(color=font_color), paper_bgcolor=bg_color,
+                          plot_bgcolor=bg_color, margin=margin, hoverlabel=dict(font=dict(size=fontsize_hover)),
+                          legend=legend)
+        fig.update_annotations(font=dict(size=fontsize_title, color=font_color))
+        self._save_figure(fig, fname, force, verbose, include_plotlyjs=include_plotlyjs, lib=lib)
+        return fig
+
+    def plotly_regions_on_sections(self, adata, key: str = "region_label", sections: Optional[Sequence[str]] = None,
+                              names: Optional[Dict[str, str]] = None, ncols: Optional[int] = None,
+                              colors: Optional[Dict[str, str]] = None, panel_px: int = 360, marker_size: float = 3.5,
+                              image_format: Optional[str] = None, fontsize_title: int = 13, fontsize_legend: int = 11,
+                              fontsize_hover: int = 12, font_color: Optional[str] = None, bg_color: Optional[str] = None,
+                              fname: Optional[str] = None, include_plotlyjs=None, force: bool = False,
+                              verbose: bool = False):
+        """Interactive grid of sections on their H&E, spots coloured by a categorical key (default colours:
+        _region_palette, as the matplotlib section grids), one legend for all panels (click = hide, double-click =
+        isolate a category in every section). Panel titles: section_title(lib, short=True) when the project defines
+        it, else the section id. Hover: spot, section, category and its name. sections: default
+        representative_sections(). fname: key of self.files or an .html name (None = not saved); an existing file is
+        kept unless force."""
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+        font_color = self.get_param("font_color", font_color)
+        bg_color = self.get_param("bg_color", bg_color)
+        sections = list(sections) if sections is not None else self.representative_sections()
+        labs = adata.obs[key].astype(str).values
+        cats = [c for c in (adata.obs[key].cat.categories if hasattr(adata.obs[key], "cat") else sorted(set(labs))) if c != "nan"]
+        colors = colors or self._region_palette(cats)
+        ncols = ncols or len(sections)
+        nrows = math.ceil(len(sections) / ncols)
+        fig = make_subplots(rows=nrows, cols=ncols, horizontal_spacing=0.01, vertical_spacing=0.06,
+                            subplot_titles=[self.section_title(s, short=True) if hasattr(self, "section_title") else s for s in sections])
+        shown = set()
+        for i, lib in enumerate(sections):
+            r, c = i // ncols + 1, i % ncols + 1
+            m, xy = self.spot_xy(lib, adata)
+            img_tr, (x0, x1, y0, y1) = self._plotly_section_image(lib, adata, xy, image_format=image_format)
+            fig.add_trace(img_tr, row=r, col=c)
+            lab_m, bc = labs[m], adata.obs_names.values[m]
+            for k in cats:
+                ks = lab_m == k
+                if not ks.any():
+                    continue
+                label = f"{k} - {names[k]}" if names and names.get(k) else k
+                fig.add_trace(go.Scattergl(x=xy[ks, 0], y=xy[ks, 1], mode="markers", name=label, legendgroup=k,
+                                           showlegend=k not in shown, text=bc[ks],
+                                           marker=dict(size=marker_size, color=colors.get(k, "#555555"), opacity=0.85),
+                                           hovertemplate=f"<b>{label}</b><br>spot: %{{text}}<br>section: {lib}<extra></extra>"),
+                              row=r, col=c)
+                shown.add(k)
+            ax = "" if i == 0 else str(i + 1)
+            fig.update_xaxes(visible=False, range=[x0, x1], row=r, col=c)
+            fig.update_yaxes(visible=False, range=[y1, y0], scaleanchor=f"x{ax}", row=r, col=c)
+        fig.update_layout(width=panel_px * ncols + 380, height=panel_px * nrows + 60, font=dict(color=font_color),
+                          paper_bgcolor=bg_color, plot_bgcolor=bg_color, margin=dict(l=10, r=10, t=50, b=10),
+                          hoverlabel=dict(font=dict(size=fontsize_hover)),
+                          legend=dict(font=dict(size=fontsize_legend, color=font_color), itemsizing="constant",
+                                      title=dict(text=key), x=1.01, y=0.5, yanchor="middle"))
+        fig.update_annotations(font=dict(size=fontsize_title, color=font_color))
+        self._save_figure(fig, fname, force, verbose, include_plotlyjs=include_plotlyjs)
+        return fig
+
+    # =====================================================================================================
+    # figures: reference
+    # =====================================================================================================
+    def calc_df_qc_table(self, adata, fname: Optional[str], groupby: Optional[str] = None, force: bool = False,
+                         verbose: bool = False) -> pd.DataFrame:
+        """calc_df_qc (n, median / q25 / q75 of genes, counts, % MT per group; default sample_col) cached in fname
+        (key of self.files; None or unregistered = computed, not written). Index = the group."""
+        def compute():
+            return self.calc_df_qc(groupby=groupby, adata=adata).reset_index()
+        df = self._cached_table(fname, compute, force=force, verbose=verbose) if fname else compute()
+        return df.set_index(df.columns[0])
+
+    def calc_df_gene_panel(self, adata_ref, adata_vis, genes, fname: Optional[str] = "tsv_gene_panel",
+                           force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """Gene panel (list of symbols, or dict symbol -> role): gene, role, in_reference, gene_id_reference,
+        in_visium, gene_id_visium (var_names; '' when absent). Cached in fname (key of self.files). Prints how many
+        genes are found in each dataset."""
+        roles = dict(genes) if isinstance(genes, dict) else {g: "" for g in genes}
+
+        def compute():
+            ids = {}
+            for name, a in (("reference", adata_ref), ("visium", adata_vis)):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    found, gid = self.resolve_gene_ids(list(roles), a)
+                ids[name] = dict(zip(found, gid))
+            df = pd.DataFrame({"gene": list(roles), "role": list(roles.values())})
+            for name in ("reference", "visium"):
+                df[f"in_{name}"] = df.gene.isin(list(ids[name]))
+                df[f"gene_id_{name}"] = df.gene.map(ids[name]).fillna("")
+            return df
+        df = self._cached_table(fname, compute, force=force, verbose=verbose) if fname else compute()
+        for c in ("in_reference", "in_visium"):
+            df[c] = df[c].astype(bool)
+        ok = df.in_reference & df.in_visium
+        print(f"{int(df.in_reference.sum())} of {len(df)} in the reference; {int(df.in_visium.sum())} in the Visium data"
+              + ("" if ok.all() else f"; missing in one of them: {df.loc[~ok, 'gene'].tolist()}"))
+        return df
 
     def plotly_region_subregions(self, region: str, adata_sub: ad.AnnData, adata_map, df_sub_table: Optional[pd.DataFrame] = None,
                                  df_region_table: Optional[pd.DataFrame] = None, pad: float = 80, height: int = 470, width: Optional[int] = None, spot_size: float = 7,

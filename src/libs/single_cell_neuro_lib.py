@@ -238,6 +238,12 @@ NEURO_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
         fig_regions_html=("figure", "mb01_brain_regions_{lib}.html"),
         tsv_regions_spots=("result", "mb01_region_clusters.tsv"),
         tsv_layer=("result", "mb01_fig2J_layer_proportions.tsv"),
+        tsv_sections=("result", "mb01_visium_sections.tsv"),
+        tsv_qc_visium=("result", "mb01_qc_visium_sections.tsv"),
+        tsv_qc_ref=("result", "mb01_qc_snrna_samples.tsv"),
+        tsv_ref_samples=("result", "mb01_reference_samples.tsv"),
+        tsv_ref_broad=("result", "mb01_reference_broad_classes.tsv"),
+        tsv_ref_celltype_sample=("result", "mb01_reference_celltype_by_sample.tsv"),
     ),
     "mb02": dict(
         fig_3A=("figure", "mb02_fig3A_astro_umap.png"),
@@ -546,6 +552,73 @@ class SingleCellNeuro(SingleCell):
         df_edge["mean_frac_edge"] = df_edge.mean(1)
         df_edge = df_edge.loc[sorted(df_edge.index, key=lambda x: (len(x), x))]
         return df_edge.round(3)
+
+    # ---------------------------------------------------------------------------------------------------------
+    # mp_mouse_brain01 tables (written / read inside the methods: no file IO in the notebook)
+    # ---------------------------------------------------------------------------------------------------------
+    def calc_df_sections(self, adata, force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """Visium sections: n_spots, in_tissue, slide and hires image shape. Index = sample. Cached in tsv_sections."""
+        def compute():
+            df = adata.obs.groupby(self.sample_col, observed=True).agg(n_spots=("in_tissue", "size"),
+                                                                       in_tissue=("in_tissue", "sum"))
+            df["slide"] = list(df.index)
+            df["image_hires"] = ["x".join(map(str, adata.uns["spatial"][s]["images"]["hires"].shape)) for s in df.index]
+            return df.reset_index()
+        return self._cached_table("tsv_sections", compute, force=force, verbose=verbose).set_index(self.sample_col)
+
+    def calc_df_ref_samples(self, adata_ref, force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """snRNA reference: nuclei per sample. Index = sample. Cached in tsv_ref_samples."""
+        def compute():
+            return adata_ref.obs[self.sample_col].value_counts().rename_axis(self.sample_col).reset_index(name="n_nuclei")
+        return self._cached_table("tsv_ref_samples", compute, force=force, verbose=verbose).set_index(self.sample_col)
+
+    def calc_df_ref_broad_types(self, adata_ref, force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """snRNA reference after QC + annotation: nuclei per broad class (params['broad_col']) and % of the nuclei.
+        Index = broad class. Cached in tsv_ref_broad."""
+        col = self.params["broad_col"]
+
+        def compute():
+            df = adata_ref.obs[col].astype(str).value_counts().rename_axis(col).reset_index(name="n_nuclei")
+            df["perc"] = (100 * df.n_nuclei / df.n_nuclei.sum()).round(2)
+            return df
+        return self._cached_table("tsv_ref_broad", compute, force=force, verbose=verbose).set_index(col)
+
+    def calc_df_ref_celltype_by_sample(self, adata_ref, force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """snRNA reference: nuclei of each cell type (params['celltype_col']) per sample (columns) + broad class.
+        Index = cell type. Cached in tsv_ref_celltype_sample."""
+        ct_col, br_col = self.params["celltype_col"], self.params["broad_col"]
+
+        def compute():
+            obs = adata_ref.obs
+            df = pd.crosstab(obs[ct_col].astype(str), obs[self.sample_col].astype(str))
+            broad = obs.groupby(obs[ct_col].astype(str), observed=True)[br_col].agg(lambda v: v.astype(str).mode().iat[0])
+            df.insert(0, br_col, broad.reindex(df.index).values)
+            return df.reset_index(names=ct_col)
+        return self._cached_table("tsv_ref_celltype_sample", compute, force=force, verbose=verbose).set_index(ct_col)
+
+    def save_region_clusters(self, df_regions: pd.DataFrame, df_edge: pd.DataFrame, force: bool = False,
+                             verbose: bool = False) -> pd.DataFrame:
+        """Region clusters (df_regions: region_cluster, label, label_final, ...) + mean_frac_edge of df_edge ->
+        tsv_regions_spots, read by mp_mouse_brain02-04. File present and not force: kept (force=True after
+        re-clustering or changing region_label_override). Returns the table of the current clusters."""
+        df = df_regions.join(df_edge[["mean_frac_edge"]], on="region_cluster")
+        path = self.file_path("tsv_regions_spots")
+        if path.exists() and not force:
+            print(f"File exists: {path} (force=True to rewrite)")
+        else:
+            self.write_tsv(df, "tsv_regions_spots", verbose=verbose)
+        return df
+
+    def calc_df_layer_prop(self, df_allen_prop: pd.DataFrame, df_c2l_prop: pd.DataFrame, types: Sequence[str],
+                           force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """Figure 2J table: per cell type (rows, `types`), the share by cortical layer in the Allen Smart-seq
+        reference ('allen_<layer>') and in the cell2location map ('cell2location_<layer>'). Index = cell_type.
+        Cached in tsv_layer."""
+        def compute():
+            df = pd.concat({"allen": df_allen_prop.reindex(types), "cell2location": df_c2l_prop.reindex(types)}, axis=1)
+            df.columns = [f"{a}_{l}" for a, l in df.columns]
+            return df.round(5).reset_index(names="cell_type")
+        return self._cached_table("tsv_layer", compute, force=force, verbose=verbose).set_index("cell_type")
 
     def add_region_labels(self, df_regions: pd.DataFrame, adata=None, key: Optional[str] = None,
                           label_col: str = "region_label", override: Optional[Dict[str, str]] = None) -> pd.Series:

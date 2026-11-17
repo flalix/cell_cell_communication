@@ -260,6 +260,13 @@ PDAC_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
         fig_umap_dotplot=("figure", "pdac01_reference_umap_celltype_dotplot.png"),
         fig_umap_sub_dotplot=("figure", "pdac01_reference_umap_subcluster_dotplot.png"),
         tsv_ref_comp=("result", "pdac01_reference_celltype_by_tissue.tsv"),
+        tsv_gene_panel=("result", "pdac01_gene_panel.tsv"),
+        tsv_qc_ref=("result", "pdac01_qc_reference_samples.tsv"),
+        tsv_gene_best_major=("result", "pdac01_gene_best_major_type.tsv"),
+        tsv_gene_best_celltype=("result", "pdac01_gene_best_celltype.tsv"),
+        fig_regions_sections_html=("figure", "pdac01_regions_on_sections.html"),
+        tsv_sections_summary=("result", "pdac01_sections_by_ni_technique.tsv"),
+        tsv_ref_major_types=("result", "pdac01_reference_major_types.tsv"),              # PDAC_GENES: role, presence in reference / Visium
         fig_subclusters=("figure", "pdac01_reference_subclusters_{comp}.png"),
         tsv_subcluster_clusters=("result", "pdac01_reference_subcluster_clusters.tsv"),
         fig_genes=("figure", "pdac01_visium_genes_{k}.png"),
@@ -271,6 +278,7 @@ PDAC_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
         tsv_c2l_vs_rctd=("result", "pdac01_c2l_vs_rctd_correlation.tsv"),
         fig_c2l_vs_rctd=("figure", "pdac01_c2l_vs_rctd.png"),
         fig_regions=("figure", "pdac01_umap_region_section.png"),
+        fig_regions_3plot_html=("figure", "pdac01_umap_region_section.html"),
         fig_regions_sections=("figure", "pdac01_regions_on_sections.png"),
         fig_regions_html=("figure", "pdac01_regions_{lib}.html"),
         tsv_niches=("result", "pdac01_region_niches.tsv"),
@@ -396,12 +404,32 @@ class SingleCellPDAC(SingleCell):
             self.files = keep
 
     def _cached_any(self, fname: Optional[str], compute, force: bool = False, verbose: bool = False) -> pd.DataFrame:
-        """Cached table given as a key of self.files or as a file name with an extension in root_result."""
+        """Cached table given as a key of self.files or as a file name with an extension in root_result. File present
+        and not force -> read; else compute() -> written and read back. df.attrs (JSON-serialisable values: counts,
+        settings) are kept in <file>.attrs.json and restored on a cached read."""
         if fname is None:
             return compute()
+        holder = {}
+
+        def _compute():
+            df = compute()
+            holder["attrs"] = dict(df.attrs)
+            return df
         if fname in self.files:
-            return self._cached_table(fname, compute, force=force, verbose=verbose)
-        return self._cached_frames({"t": fname}, lambda: {"t": compute()}, force=force, verbose=verbose)["t"]
+            df = self._cached_table(fname, _compute, force=force, verbose=verbose)
+        else:
+            df = self._cached_frames({"t": fname}, lambda: {"t": _compute()}, force=force, verbose=verbose)["t"]
+        path = self._resolve_table(fname)
+        if path is None:
+            return df
+        side = path.parent / (path.name + ".attrs.json")
+        if "attrs" in holder:
+            df.attrs.update(holder["attrs"])
+            if holder["attrs"] or side.exists():
+                side.write_text(json.dumps(holder["attrs"], default=str, indent=1))
+        elif side.exists():
+            df.attrs.update(json.loads(side.read_text()))
+        return df
 
     # =================================================================================================================
     # 1. building the complete h5ad files (src/programs/pdac_build_h5ad.py)
@@ -1460,39 +1488,173 @@ class SingleCellPDAC(SingleCell):
         out.attrs = dict(df_abund.attrs)
         return out
 
-    def assign_niches(self, adata, df_abund: pd.DataFrame, key: str = "region_label", min_share: float = 0.08
-                      ) -> pd.DataFrame:
-        """Each region -> one of the paper's 12 niches: per region the mean share of every niche group
-        (niche_groups) and its enrichment (region / all spots); niche = the group with the highest enrichment among
-        those with share >= min_share (else the highest share). Malignant regions are ordered by their dominant
-        ductal subtype and named N07..N10 'Malignant_ductal_k' (a 5th and more get suffixes). Returns one row per
-        region: region_label, niche, niche_share, niche_enrichment, dominant (top cell types), malignant_top."""
+    def calc_df_sections_summary(self, df_sections: pd.DataFrame, force: bool = False,
+                                 verbose: bool = False) -> pd.DataFrame:
+        """Sections by NI status x technique: n_sections, n_patients, n_spots, median of the section median UMIs.
+        Cached in tsv_sections_summary."""
+        def compute():
+            return (df_sections.groupby(["ni_status", "technique"], observed=True)
+                    .agg(n_sections=("section_id", "size"), n_patients=("patient", "nunique"),
+                         n_spots=("n_spots", "sum"), median_umis=("median_umis", "median")).reset_index())
+        return self._cached_any("tsv_sections_summary", compute, force=force, verbose=verbose).set_index(["ni_status", "technique"])
+
+    def calc_df_ref_major_types(self, adata_ref, force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """sc + sn reference: cells of each GEO major type (columns) per technology x tissue (rows), with totals
+        (crosstab margins 'All'). Cached in tsv_ref_major_types."""
+        def compute():
+            obs = adata_ref.obs
+            df = pd.crosstab([obs.technology.astype(str), obs.tissue.astype(str)], obs.major_type.astype(str), margins=True)
+            return df.reset_index()
+        return self._cached_any("tsv_ref_major_types", compute, force=force, verbose=verbose).set_index(["technology", "tissue"])
+
+    def calc_df_gene_best_group(self, df_dot: pd.DataFrame, groupby: str = "cell_type",
+                                genes: Optional[Sequence[str]] = None, fname: Optional[str] = None,
+                                force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """Per gene: the group (groupby column of the dot table of plot_umap_celltype_dotplot: major_type or
+        cell_type) with the highest mean expression, its % expressing (frac) and mean, the group's lineage and the
+        gene's role (PDAC_GENES). Ordered as genes (default PDAC_GENES). Index = gene. fname: cache (key)."""
+        genes = list(genes or PDAC_GENES)
+
+        def compute():
+            d = df_dot.loc[df_dot.groupby("gene")["mean"].idxmax(), ["gene", groupby, "frac", "mean"]]
+            d = d.set_index("gene").loc[[g for g in genes if g in set(d.gene)]].reset_index()
+            d.insert(1, "role", d.gene.map(PDAC_GENES).fillna(""))
+            d.insert(3, "lineage", [self.lineage_of_celltype(c) for c in d[groupby]])
+            return d.round({"frac": 3, "mean": 3})
+        return self._cached_any(fname, compute, force=force, verbose=verbose).set_index("gene")
+
+    def calc_df_gene_panel(self, adata_ref, adata_vis, genes: Optional[Dict[str, str]] = None, force: bool = False,
+                           verbose: bool = False) -> pd.DataFrame:
+        """The gene panel (default PDAC_GENES: symbol -> role): gene, role, in_reference, gene_id_reference,
+        in_visium, gene_id_visium (var_names; '' when absent). Cached in tsv_gene_panel: force=True after changing
+        the panel. Prints how many genes are found in each dataset."""
+        genes = dict(genes or PDAC_GENES)
+
+        def compute():
+            ids = {}
+            for name, a in (("reference", adata_ref), ("visium", adata_vis)):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    found, gid = self.resolve_gene_ids(list(genes), a)
+                ids[name] = dict(zip(found, gid))
+            df = pd.DataFrame({"gene": list(genes), "role": list(genes.values())})
+            for name in ("reference", "visium"):
+                df[f"in_{name}"] = df.gene.isin(list(ids[name]))
+                df[f"gene_id_{name}"] = df.gene.map(ids[name]).fillna("")
+            return df
+        df = self._cached_any("tsv_gene_panel", compute, force=force, verbose=verbose)
+        df["in_reference"] = df["in_reference"].astype(bool)
+        df["in_visium"] = df["in_visium"].astype(bool)
+        print(f"{int(df.in_reference.sum())} of {len(df)} in the reference; {int(df.in_visium.sum())} in the Visium data"
+              + (f"; missing: {df.loc[~(df.in_reference & df.in_visium), 'gene'].tolist()}" if not (df.in_reference & df.in_visium).all() else ""))
+        return df
+
+    def calc_df_section_qc(self, adata, df_sections: pd.DataFrame, cols: Sequence[str] = ("ni_status", "technique"),
+                           force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """Per-section QC (calc_df_qc: n, median / q25 / q75 of genes, counts and % MT) joined with the columns cols
+        of df_sections (by section_id). Cached in tsv_section_qc: force=True after changing the QC filters.
+        Index = section."""
+        def compute():
+            return self.calc_df_qc(adata=adata).join(df_sections.set_index("section_id")[list(cols)]).reset_index()
+        df = self._cached_any("tsv_section_qc", compute, force=force, verbose=verbose)
+        return df.set_index(df.columns[0])
+
+    def annotate_niches(self, adata, df_abund: pd.DataFrame, abundance_source: str = "", key: str = "region_label",
+                        force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """assign_niches on the regions of adata.obs[key] -> obs 'region_name' and 'niche' (the niche name of the
+        region), plus n_spots, n_sections and abundance_source per region. Written to tsv_niches when the file is
+        missing or force (the same rule as save_region_labels, so the niche table and the region labels written
+        to disk always come from the same clustering). Returns the table of the current regions."""
+        df_niche = self.assign_niches(adata, df_abund, key=key)
+        names = dict(zip(df_niche[key], df_niche.niche))
+        adata.obs["region_name"] = adata.obs[key].map(names).astype(str)
+        adata.obs["niche"] = adata.obs["region_name"]
+        counts = adata.obs.groupby(key, observed=True).agg(n_spots=("section", "size"), n_sections=("section", "nunique"))
+        df_niche = df_niche.merge(counts, left_on=key, right_index=True)
+        df_niche["abundance_source"] = abundance_source
+        if "tsv_niches" in self.files and (force or not self.file_path("tsv_niches").exists()):
+            self.write_tsv(df_niche, "tsv_niches", verbose=verbose)
+        elif verbose and "tsv_niches" in self.files:
+            print(f"File exists: {self.file_path('tsv_niches')} (force=True to rewrite)")
+        return df_niche
+
+    def save_region_labels(self, adata, abundance_source: str = "",
+                           cols: Sequence[str] = ("region_cluster", "region_label", "region_name", "niche", "section"),
+                           force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """Region labels of adata.obs (barcode + cols + abundance_source) -> region_labels.tsv, the input of
+        mp_pdac02-04. File present and not force: kept, and the share of spots whose label agrees with it is printed
+        (re-clustering is not bit-reproducible across machines / library versions). Returns the current labels."""
+        df = adata.obs[list(cols)].reset_index(names="barcode")
+        df["abundance_source"] = abundance_source
+        path = self.file_path("region_labels")
+        if path.exists() and not force:
+            df_old = pdreadcsv(path.name, path.parent)
+            same = (df_old.set_index("barcode").region_label.reindex(df.barcode).astype(str).values
+                    == df.region_label.astype(str).values)
+            print(f"File exists: {path} (same labels: {same.mean():.1%}; force=True to rewrite)")
+        else:
+            self.write_tsv(df, "region_labels", verbose=verbose)
+        return df
+
+    def assign_niches(self, adata, df_abund: pd.DataFrame, key: str = "region_label", min_share: float = 0.10,
+                      min_score: float = 0.10) -> pd.DataFrame:
+        """Each region -> one of the paper's niches (rules on the RCTD / cell2location shares). Per region: mean share of
+        every niche group (niche_groups) and its enrichment (region / all spots); score = share x log2(enrichment) for
+        the groups with share >= min_share and enrichment > 1; niche = the group with the highest score, 'mixed' when
+        the best score < min_score, 'N00_unassigned' for regions of spots without deconvolution (all zero, e.g. RCTD
+        drops spots < 100 UMIs). Malignant regions are named after their dominant subtype,
+        'N07-10_Malignant (<subtype>)' (the paper's N07-N10 numbering is not public, except N10 = D02_Ductal-APOA2).
+        Returns one row per region: region_label, niche, niche_group, niche_share, niche_enrichment, niche_score,
+        dominant (top cell types), malignant_top."""
         df_s = self.shares(df_abund.loc[adata.obs_names])
         groups = self.niche_groups(df_s.columns)
         lab = adata.obs[key].astype(str).values
         G = pd.DataFrame({g: df_s[c].sum(1) if c else 0.0 for g, c in groups.items()})
         Gm = G.groupby(lab).mean()
         En = Gm / G.mean(0).replace(0, np.nan)
+        Sc = Gm * np.log2(En.clip(lower=1)).fillna(0)
+        Sc = Sc.where(Gm >= min_share, 0.0)
         Cm = df_s.groupby(lab).mean()
         rows = []
         for r in Gm.index:
-            ok = Gm.loc[r][Gm.loc[r] >= min_share]
-            g = En.loc[r, ok.index].idxmax() if len(ok) else Gm.loc[r].idxmax()
-            mal = Cm.loc[r, [c for c in groups["malignant"]]].sort_values(ascending=False) if groups["malignant"] else None
-            rows.append(dict(region_label=r, niche_group=g, niche_share=round(float(Gm.loc[r, g]), 3),
-                             niche_enrichment=round(float(En.loc[r, g]), 2),
+            mal = Cm.loc[r, groups["malignant"]].sort_values(ascending=False) if groups["malignant"] else pd.Series(dtype=float)
+            if Gm.loc[r].sum() <= 1e-9:
+                g, niche = "unassigned", "N00_unassigned (no deconvolution)"
+            elif Sc.loc[r].max() < min_score:
+                g = "mixed"
+                niche = "mixed (" + " / ".join(Gm.loc[r].sort_values(ascending=False).index[:2]) + ")"
+            else:
+                g = Sc.loc[r].idxmax()
+                niche = f"N07-10_Malignant ({mal.index[0]})" if g == "malignant" else g
+            rows.append(dict(region_label=r, niche=niche, niche_group=g,
+                             niche_share=round(float(Gm.loc[r, g]), 3) if g in Gm.columns else 0.0,
+                             niche_enrichment=round(float(En.loc[r, g]), 2) if g in En.columns else np.nan,
+                             niche_score=round(float(Sc.loc[r, g]), 3) if g in Sc.columns else 0.0,
                              dominant=", ".join(f"{c} ({v:.0%})" for c, v in Cm.loc[r].sort_values(ascending=False)[:3].items()),
-                             malignant_top=mal.index[0] if mal is not None and len(mal) else ""))
-        df = pd.DataFrame(rows)
-        # malignant niches: N07..N10 by dominant subtype (paper: N10 enriched in D02_Ductal-APOA2)
-        mal = df[df.niche_group == "malignant"].copy()
-        names = {}
-        mal_subtypes = sorted(set(mal.malignant_top), key=lambda s: (s == "D02_Ductal-APOA2", s))
-        for i, s in enumerate(mal_subtypes):
-            num = 7 + i
-            names[s] = f"N{num:02d}_Malignant_ductal_{i + 1} ({s.split('_', 1)[1] if '_' in s else s})"
-        df["niche"] = [names.get(t, "") if g == "malignant" else g for g, t in zip(df.niche_group, df.malignant_top)]
-        return df
+                             malignant_top=mal.index[0] if len(mal) else ""))
+        return pd.DataFrame(rows)
+
+    def niche_colors(self, niches: Sequence[str]) -> Dict[str, str]:
+        """The paper's niche colours (myUtiliity.R); malignant niches take the paper's four malignant colours, then
+        three extra ones (more than four malignant subtypes are found here); mixed = slate blue, unassigned = dark grey."""
+        mal_cols = [PAPER_NICHES[k] for k in PAPER_NICHES if "Malignant" in k] + ["#C71585", "#7FFFD4", "#B8860B"]
+        out, k = {}, 0
+        for n in sorted(niches):
+            base = n.split(" (")[0]
+            if base in PAPER_NICHES:
+                out[n] = PAPER_NICHES[base]
+            elif "Malignant" in n:
+                out[n] = mal_cols[k % len(mal_cols)]; k += 1
+            elif n.startswith("mixed"):
+                out[n] = "#5C6BC0"           # slate blue: distinct from the paper's grey of N02_Endocrine
+            else:
+                out[n] = "#3A3A3A"
+        return out
+
+    def unassigned_regions(self) -> List[str]:
+        """Regions of mp_pdac01 named N00_unassigned (spots without deconvolution): skipped by subregions / LR."""
+        d = self.read_tsv("region_niches")
+        return d.loc[d.niche.str.startswith("N00"), "region_label"].astype(str).tolist()
 
     def read_region_info(self, source: Optional[str] = None, verbose: bool = False) -> pd.DataFrame:
         """Region table (region_id, region_name, compartment, description, abundance_source): the curated
@@ -1547,10 +1709,16 @@ class SingleCellPDAC(SingleCell):
         return self._cached_any(fname, _compute, force=force, verbose=verbose)
 
     def calc_df_ni_test(self, df_long: pd.DataFrame, value: str = "share", group_col: str = "group",
-                        techniques: Optional[Sequence[str]] = None) -> pd.DataFrame:
+                        techniques: Optional[Sequence[str]] = None, fname: Optional[str] = None,
+                        force: bool = False, verbose: bool = False) -> pd.DataFrame:
         """High vs low NI per group (sections as replicates): medians, log2 ratio of means, two-sided Mann-Whitney U
         p-value and BH FDR (all sections, and with techniques= a subset, e.g. ('CytAssist',): all low-NI sections are
-        CytAssist, so the subset compares like with like)."""
+        CytAssist, so the subset compares like with like). fname: cache (key or file name), None = not written."""
+        return self._cached_any(fname, lambda: self._ni_test(df_long, value, group_col, techniques), force=force,
+                                verbose=verbose)
+
+    def _ni_test(self, df_long: pd.DataFrame, value: str, group_col: str,
+                 techniques: Optional[Sequence[str]]) -> pd.DataFrame:
         from scipy.stats import mannwhitneyu
         d = df_long if techniques is None else df_long[df_long.technique.isin(list(techniques))]
         rows = []
@@ -1647,9 +1815,15 @@ class SingleCellPDAC(SingleCell):
         p = p[p > 0] / p[p > 0].sum() if (p > 0).any() else p
         return float(-(p * np.log(p)).sum()) if len(p) else 0.0
 
-    def calc_df_malignant_diversity(self, adata, df_abund: pd.DataFrame) -> pd.DataFrame:
-        """Per section: share of each malignant subtype (D02-D09) among malignant cells and the Shannon index
-        (Figure 2J analogue)."""
+    def calc_df_malignant_diversity(self, adata, df_abund: pd.DataFrame, fname: Optional[str] = None,
+                                    force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """Per section (index): share of each malignant subtype (D02-D09) among malignant cells, the Shannon index,
+        ni_status and technique (Figure 2J analogue). fname: cache, None = not written."""
+        df = self._cached_any(fname, lambda: self._malignant_diversity(adata, df_abund).reset_index(names="section"),
+                              force=force, verbose=verbose)
+        return df.set_index("section")
+
+    def _malignant_diversity(self, adata, df_abund: pd.DataFrame) -> pd.DataFrame:
         df_s = self.shares(df_abund.loc[adata.obs_names])
         mal = [c for c in df_s.columns if re.match(r"D0[2-9]_", c)]
         M = df_s[mal].groupby(adata.obs[self.sample_col].astype(str).values).sum()
@@ -1659,6 +1833,99 @@ class SingleCellPDAC(SingleCell):
         M["ni_status"] = df_sec.loc[M.index, "ni_status"].astype(str).values
         M["technique"] = df_sec.loc[M.index, "technique"].astype(str).values
         return M.round(4)
+
+    def calc_df_diversity_test(self, df_div: pd.DataFrame, techniques: Sequence[Optional[str]] = (None, "CytAssist"),
+                               ) -> pd.DataFrame:
+        """Shannon index of the malignant subtypes, low vs high NI: medians and two-sided Mann-Whitney p, over all
+        sections (None) and the CytAssist subset."""
+        from scipy.stats import mannwhitneyu
+        rows = []
+        for t in techniques:
+            d = df_div if t is None else df_div[df_div.technique == t]
+            lo, hi = d[d.ni_status == "low"].shannon, d[d.ni_status == "high"].shannon
+            rows.append(dict(sections=t or "all", n_low=len(lo), n_high=len(hi), median_low=lo.median(),
+                             median_high=hi.median(),
+                             p=mannwhitneyu(lo, hi).pvalue if len(lo) > 1 and len(hi) > 1 else np.nan))
+        return pd.DataFrame(rows).round(4)
+
+    def plot_malignant_diversity(self, df_div: pd.DataFrame, figsize=(16, 8), fname: Optional[str] = None,
+                                 force: bool = False, verbose: bool = False):
+        """Top: Shannon index per section (blue = low NI, red = high NI); bottom: stacked malignant-subtype shares.
+        Sections ordered by NI status, then Shannon (Figure 2J analogue)."""
+        mal = [c for c in df_div.columns if re.match(r"D0[2-9]_", c)]
+        order = df_div.sort_values(["ni_status", "shannon"]).index
+        fig, axes = plt.subplots(2, 1, figsize=figsize, gridspec_kw=dict(height_ratios=[1, 3]), sharex=True)
+        x = np.arange(len(order))
+        axes[0].bar(x, df_div.loc[order, "shannon"],
+                    color=["#4C9BE8" if v == "low" else "#E8504C" for v in df_div.loc[order, "ni_status"]])
+        axes[0].set_ylabel("Shannon")
+        bottom = np.zeros(len(order))
+        col = self.celltype_colors(mal)
+        for c in mal:
+            axes[1].bar(x, df_div.loc[order, c], bottom=bottom, color=col[c], label=c, width=0.85)
+            bottom += df_div.loc[order, c].values
+        axes[1].set_xticks(x)
+        axes[1].set_xticklabels([f"{s}\n{df_div.loc[s, 'ni_status']}" for s in order], rotation=90)
+        axes[1].set_ylabel("share of malignant cells")
+        axes[1].legend(bbox_to_anchor=(1.01, 1), loc="upper left", frameon=False)
+        fig.suptitle("Malignant subtypes per section (Figure 2J analogue)")
+        self.style_figure(fig, self.params["font_color"], self.params["bg_color"], self.params["fontsize_scale"])
+        self._save_figure(fig, fname, force=force, verbose=verbose)
+        return fig
+
+    def calc_df_celltype_correlation(self, df_ct_sec: pd.DataFrame) -> pd.DataFrame:
+        """Spearman correlation (cell types x cell types) of the cell-type shares over the sections
+        (df_ct_sec: calc_df_celltype_by_section)."""
+        M = df_ct_sec.pivot_table(index="section", columns="cell_type", values="share")
+        R = M.corr(method="spearman")
+        R.index.name, R.columns.name = "cell_type_1", "cell_type_2"
+        return R
+
+    def calc_df_cooccurrence(self, R: pd.DataFrame, min_rho: float = 0.6, fname: Optional[str] = None,
+                             force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """Cell-type pairs with Spearman rho > min_rho (the paper's threshold) from calc_df_celltype_correlation,
+        sorted by rho. fname: cache, None = not written."""
+        def _compute():
+            pairs = R.where(np.triu(np.ones(R.shape, bool), 1)).stack().rename("rho").reset_index()
+            pairs.columns = ["cell_type_1", "cell_type_2", "rho"]
+            return pairs[pairs.rho > min_rho].sort_values("rho", ascending=False).reset_index(drop=True)
+        return self._cached_any(fname, _compute, force=force, verbose=verbose)
+
+    def plot_cooccurrence(self, R: pd.DataFrame, figsize=(14, 12), fname: Optional[str] = None, force: bool = False,
+                          verbose: bool = False):
+        """Heatmap of the cell-type Spearman correlation over sections (lineage order)."""
+        order = self.celltype_order(R.index)
+        fig, ax = plt.subplots(figsize=figsize)
+        im = ax.imshow(R.loc[order, order].values, cmap="RdBu_r", vmin=-1, vmax=1)
+        ax.set_xticks(range(len(order)))
+        ax.set_xticklabels(order, rotation=90, fontsize=7)
+        ax.set_yticks(range(len(order)))
+        ax.set_yticklabels(order, fontsize=7)
+        fig.colorbar(im, ax=ax, fraction=0.03).set_label(f"Spearman rho over {R.attrs.get('n_sections', 'the')} sections")
+        ax.set_title("Co-occurrence of cell types across sections")
+        self.style_figure(fig, self.params["font_color"], self.params["bg_color"], self.params["fontsize_scale"])
+        self._save_figure(fig, fname, force=force, verbose=verbose)
+        return fig
+
+    def calc_df_region_summary(self, adata, df_share: pd.DataFrame, names: Dict[str, str],
+                               fname: Optional[str] = None, force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """One row per region: niche, n_spots, n_sections, low / high NI spots, technique mix, median UMIs, the three
+        cell types of highest mean share and of highest enrichment (mean share / overall mean share)."""
+        def _compute():
+            obs = adata.obs
+            df_m = df_share.groupby(obs.region_label.values, observed=True).mean()
+            df_e = df_m / df_share.mean(0)
+            rows = []
+            for r, sub in obs.groupby("region_label", observed=True):
+                tech = sub.technique.value_counts(normalize=True)
+                rows.append(dict(region_label=r, niche=names.get(r, ""), n_spots=len(sub), n_sections=sub.section.nunique(),
+                                 n_low_NI=int((sub.ni_status == "low").sum()), n_high_NI=int((sub.ni_status == "high").sum()),
+                                 techniques=", ".join(f"{t} {v:.0%}" for t, v in tech.items() if v > 0.02),
+                                 median_UMIs=float(sub.total_counts.median()),
+                                 top_share=", ".join(f"{c} ({v:.0%})" for c, v in df_m.loc[r].sort_values(ascending=False)[:3].items()),
+                                 top_enriched=", ".join(f"{c} ({v:.1f}x)" for c, v in df_e.loc[r].sort_values(ascending=False)[:3].items())))
+            return pd.DataFrame(rows)
+        return self._cached_any(fname, _compute, force=force, verbose=verbose)
 
     # =================================================================================================================
     # 9. nerves: spots, invasion, juxta- (1-2) and peri-neural (3-5) rings (paper Figures 4, 5, S5A, 6A)
@@ -1785,9 +2052,50 @@ class SingleCellPDAC(SingleCell):
         adata.obs["nerve_ring"] = df["nerve_ring"].values
         return df.reset_index(names="barcode")
 
-    def calc_df_nerve_table(self, df_nerve: pd.DataFrame) -> pd.DataFrame:
+    # =================================================================================================================
+    # TGF-beta / HGF -> Schwann subsets (paper Figure 6)
+    # =================================================================================================================
+    TGFB_LIGANDS = ("TGFB1^", "TGFB2^", "TGFB3^", "HGF^")
+
+    def _tgfb_rows(self, df_ct: pd.DataFrame) -> pd.DataFrame:
+        tgf = [i for i in df_ct.interaction.unique() if i.startswith(self.TGFB_LIGANDS)]
+        return df_ct[df_ct.interaction.isin(tgf) & df_ct.receiver.str.startswith("S0")]
+
+    def calc_df_tgfb_to_schwann(self, df_ct: pd.DataFrame, top: int = 5, fname: Optional[str] = None,
+                                force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """TGF-beta 1-3 / HGF pairs received by the Schwann subsets (df_ct: calc_df_celltype_lr): the top senders
+        (score) per interaction and receiver. fname: cache, None = not written."""
+        return self._cached_any(fname, lambda: self._tgfb_rows(df_ct).sort_values("score", ascending=False)
+                                .groupby(["interaction", "receiver"]).head(top), force=force, verbose=verbose)
+
+    def plot_tgfb_to_schwann(self, df_ct: pd.DataFrame, n_senders: int = 15, figsize=(7, 6),
+                             fname: Optional[str] = None, force: bool = False, verbose: bool = False):
+        """Heatmap senders x Schwann subsets of the summed TGF-beta / HGF pair scores (None when no such pair)."""
+        d = self._tgfb_rows(df_ct)
+        if not len(d):
+            print("no TGF-beta / HGF pair received by Schwann subsets")
+            return None
+        M = d.pivot_table(index="sender", columns="receiver", values="score", aggfunc="sum")
+        M = M.loc[M.sum(1).sort_values(ascending=False).index[:n_senders]]
+        fig, ax = plt.subplots(figsize=figsize)
+        im = ax.imshow(M.values, cmap="magma", aspect="auto")
+        ax.set_xticks(range(M.shape[1]))
+        ax.set_xticklabels(M.columns, rotation=30, ha="right")
+        ax.set_yticks(range(M.shape[0]))
+        ax.set_yticklabels(M.index)
+        fig.colorbar(im, ax=ax, fraction=0.04).set_label("sum of TGF-beta / HGF pair scores")
+        ax.set_title("Senders of TGF-beta / HGF to Schwann subsets")
+        self.style_figure(fig, self.params["font_color"], self.params["bg_color"], self.params["fontsize_scale"])
+        self._save_figure(fig, fname, force=force, verbose=verbose)
+        return fig
+
+    def calc_df_nerve_table(self, df_nerve: pd.DataFrame, fname: Optional[str] = None, force: bool = False,
+                            verbose: bool = False) -> pd.DataFrame:
         """One row per nerve bundle: section, n_spots, status, mean Schwann / malignant share, ring-1 malignant share,
-        and the section's NI status."""
+        and the section's NI status. fname: cache, None = not written."""
+        return self._cached_any(fname, lambda: self._nerve_table(df_nerve), force=force, verbose=verbose)
+
+    def _nerve_table(self, df_nerve: pd.DataFrame) -> pd.DataFrame:
         d = df_nerve[df_nerve.nerve_id != ""]
         df_sec = self.read_sections_table().set_index("section_id")
         out = d.groupby("nerve_id").agg(section=("section", "first"), n_spots=("barcode", "size"),
@@ -1796,10 +2104,15 @@ class SingleCellPDAC(SingleCell):
         out["ni_status"] = out.section.map(df_sec["ni_status"].astype(str))
         return out.sort_values(["section", "n_spots"], ascending=[True, False]).round(3)
 
-    def calc_df_ring_profile(self, adata, df_values: pd.DataFrame, max_ring: Optional[int] = None) -> pd.DataFrame:
+    def calc_df_ring_profile(self, adata, df_values: pd.DataFrame, max_ring: Optional[int] = None,
+                             fname: Optional[str] = None, force: bool = False, verbose: bool = False) -> pd.DataFrame:
         """Mean of every column of df_values (spots x features: cell-type shares or niche indicators) per ring
         (0 = nerve, 1 .. 5) and ring_status (invaded / non-invaded). Long table: ring_status, ring, feature, mean,
-        n_spots (Figure 4B analogue)."""
+        n_spots (Figure 4B analogue). fname: cache, None = not written."""
+        return self._cached_any(fname, lambda: self._ring_profile(adata, df_values, max_ring), force=force,
+                                verbose=verbose)
+
+    def _ring_profile(self, adata, df_values: pd.DataFrame, max_ring: Optional[int] = None) -> pd.DataFrame:
         max_ring = max_ring or self.params["nerve_n_rings"]
         r = adata.obs["nerve_ring"].values
         st = adata.obs["ring_status"].astype(str).values
@@ -1812,9 +2125,83 @@ class SingleCellPDAC(SingleCell):
         df = M.stack().rename("mean").reset_index()
         return df.merge(n.reset_index(), on=["ring_status", "ring"])
 
-    def calc_df_juxta_enrichment(self, adata, df_share: pd.DataFrame, zone: str = "juxta-neural") -> pd.DataFrame:
+    def calc_df_juxta_enrichment(self, adata, df_share: pd.DataFrame, zone: str = "juxta-neural",
+                                 fname: Optional[str] = None, force: bool = False, verbose: bool = False) -> pd.DataFrame:
         """Cell types in the juxta-neural spots (rings 1-2) of invaded vs non-invaded nerves: means, log2 ratio,
-        two-sided Mann-Whitney p and BH FDR over spots (Figure 4A analogue; spots are not independent: rank by effect)."""
+        two-sided Mann-Whitney p and BH FDR over spots (Figure 4A analogue; spots are not independent: rank by effect).
+        attrs: n_invaded, n_non_invaded. fname: cache, None = not written."""
+        return self._cached_any(fname, lambda: self._juxta_enrichment(adata, df_share, zone), force=force,
+                                verbose=verbose)
+
+    def plot_juxta_enrichment(self, df_juxta: pd.DataFrame, max_fdr: float = 0.05, fname: Optional[str] = None,
+                              force: bool = False, verbose: bool = False):
+        """Bars of log2 (invaded / non-invaded) of the cell types with FDR < max_fdr (Figure 4A analogue)."""
+        d = df_juxta[df_juxta.fdr < max_fdr]
+        fig, ax = plt.subplots(figsize=(8, max(4, 0.28 * len(d))))
+        ax.barh(range(len(d)), d.log2_ratio, color=["#E8504C" if v > 0 else "#4C9BE8" for v in d.log2_ratio])
+        ax.set_yticks(range(len(d)))
+        ax.set_yticklabels(d.cell_type)
+        ax.invert_yaxis()
+        ax.axvline(0, color="#888888", lw=0.8)
+        ax.set_xlabel("log2 (invaded / non-invaded), juxta-neural rings 1-2")
+        ax.set_title(f"Juxta-neural cell types (Figure 4A analogue; FDR < {max_fdr} over spots)")
+        self.style_figure(fig, self.params["font_color"], self.params["bg_color"], self.params["fontsize_scale"])
+        self._save_figure(fig, fname, force=force, verbose=verbose)
+        return fig
+
+    def plot_ring_heatmap(self, df_ring: pd.DataFrame, title: str = "", figsize=(14, 5), fname: Optional[str] = None,
+                          force: bool = False, verbose: bool = False):
+        """Heatmap of a calc_df_ring_profile table: features (rows) x (ring_status, ring) columns, mean share."""
+        M = df_ring.pivot_table(index="feature", columns=["ring_status", "ring"], values="mean") if len(df_ring) else pd.DataFrame()
+        if M.empty:
+            M = pd.DataFrame(np.zeros((1, 1)), index=["no nerves called"], columns=pd.MultiIndex.from_tuples([("", 0)]))
+        fig, ax = plt.subplots(figsize=figsize)
+        im = ax.imshow(M.values, cmap="magma", aspect="auto")
+        ax.set_xticks(range(M.shape[1]))
+        ax.set_xticklabels([f"{s}\nring {r}" for s, r in M.columns], fontsize=7)
+        ax.set_yticks(range(M.shape[0]))
+        ax.set_yticklabels(M.index)
+        fig.colorbar(im, ax=ax, fraction=0.03).set_label("mean share")
+        ax.set_title(title)
+        self.style_figure(fig, self.params["font_color"], self.params["bg_color"], self.params["fontsize_scale"])
+        self._save_figure(fig, fname, force=force, verbose=verbose)
+        return fig
+
+    def calc_df_schwann_by_distance(self, adata, df_abund: pd.DataFrame, df_share: pd.DataFrame, n_rings: int = 5,
+                                    fname: Optional[str] = None, force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """Nerve spots (ring 0): mean share of each Schwann subset (S0*, renormalised to the Schwann total) by radius
+        (spots) to the nearest malignant niche, plus n_spots (Figure 6A analogue). Sets obs['dist_malignant']
+        (always computed: later cells use it). Index = radius. fname: cache, None = not written."""
+        dist = self.calc_df_distance_to_malignant(adata, df_abund, n_rings=n_rings)
+        adata.obs["dist_malignant"] = dist
+
+        def _compute():
+            schw = [c for c in df_share.columns if c.startswith("S0")]
+            nv = adata.obs.nerve_ring.values == 0
+            S = df_share.loc[nv, schw]
+            S = S.div(S.sum(1).replace(0, np.nan), axis=0).fillna(0)
+            df = S.groupby(np.asarray(dist)[nv]).mean()
+            df["n_spots"] = pd.Series(np.asarray(dist)[nv]).value_counts().sort_index().values
+            return df.reset_index(names="radius")
+        return self._cached_any(fname, _compute, force=force, verbose=verbose).set_index("radius")
+
+    def plot_schwann_distance(self, df_sd: pd.DataFrame, figsize=(7, 4.5), fname: Optional[str] = None,
+                              force: bool = False, verbose: bool = False):
+        """Share of each Schwann subset vs radius to the nearest malignant niche (Figure 6A analogue)."""
+        schw = [c for c in df_sd.columns if c.startswith("S0")]
+        col = self.celltype_colors(schw)
+        fig, ax = plt.subplots(figsize=figsize)
+        for c in schw:
+            ax.plot(df_sd.index, df_sd[c], marker="o", color=col[c], label=c)
+        ax.set_xlabel("radius (spots) to the nearest malignant niche")
+        ax.set_ylabel("share of Schwann cells")
+        ax.legend(frameon=False)
+        ax.set_title("Schwann subsets vs distance to tumour (Figure 6A analogue)")
+        self.style_figure(fig, self.params["font_color"], self.params["bg_color"], self.params["fontsize_scale"])
+        self._save_figure(fig, fname, force=force, verbose=verbose)
+        return fig
+
+    def _juxta_enrichment(self, adata, df_share: pd.DataFrame, zone: str) -> pd.DataFrame:
         from scipy.stats import mannwhitneyu
         z = adata.obs["nerve_zone"].astype(str).values == zone
         st = adata.obs["ring_status"].astype(str).values

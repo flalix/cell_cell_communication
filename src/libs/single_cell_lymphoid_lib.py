@@ -182,6 +182,10 @@ LYMPHOID_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
         fig_genes_celltype=("figure", "lymph01_genes_per_cell_type.png"),
         # tables (region_labels: inputs, written here)
         tsv_mln_panel=("result", "lymph01_mln_panel_by_celltype_age.tsv"),
+        tsv_ref_obs_levels=("result", "lymph01_reference_obs_levels.tsv"),            # reference metadata level counts
+        tsv_gene_panel=("result", "lymph01_gene_panel.tsv"),                          # panel genes: presence in reference / Visium
+        tsv_umap_groups=("result", "lymph01_celltype_umap_dotplot_groups.tsv"),      # df_groups of umap_cell_type_plot
+        fig_regions_3plot_html=("figure", "lymph01_umap_region_sample.html"),
         tsv_mln_age=("result", "lymph01_mln_cells_donors_by_age.tsv"),                 # cache of calc_df_panel_celltype_age
         tsv_factor_load=("result", "lymph01_nmf_factor_loadings_n{n}.tsv"),
     ),
@@ -283,6 +287,36 @@ class SingleCellLymphoid(SingleCell):
     # =====================================================================================================
     # data: Visium section, reference re-indexing, symbol index, sample table
     # =====================================================================================================
+    # ---------------------------------------------------------------------------------------------------------
+    # mp_lymphoid01 tables (written / read inside the methods: no file IO in the notebook)
+    # ---------------------------------------------------------------------------------------------------------
+    def calc_df_ref_obs_levels(self, adata_ref, cols: Sequence[str], force: bool = False,
+                               verbose: bool = False) -> pd.DataFrame:
+        """scRNA reference metadata: cells per level of each obs column in cols (NaN kept). Long table: column,
+        level, n_cells. Cached in tsv_ref_obs_levels."""
+        def compute():
+            rows = []
+            for c in cols:
+                vc = adata_ref.obs[c].astype(object).where(adata_ref.obs[c].notna(), "NaN").astype(str).value_counts()
+                rows.append(pd.DataFrame({"column": c, "level": vc.index, "n_cells": vc.values}))
+            return pd.concat(rows, ignore_index=True)
+        return self._cached_table("tsv_ref_obs_levels", compute, force=force, verbose=verbose)
+
+    def save_region_labels(self, adata, cols: Sequence[str] = ("region_cluster", "region_name"),
+                           force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """Region labels of adata.obs (barcode + cols) -> region_labels.tsv, the input of mp_lymphoid02-04. File present
+        and not force: kept, and the share of spots whose label agrees with it is printed. Returns the current labels."""
+        df = adata.obs[list(cols)].reset_index(names="barcode")
+        path = self.file_path("region_labels")
+        if path.exists() and not force:
+            df_old = pdreadcsv(path.name, path.parent)
+            key = cols[0]
+            same = (df_old.set_index("barcode")[key].reindex(df.barcode).astype(str).values == df[key].astype(str).values)
+            print(f"File exists: {path} (same {key}: {same.mean():.1%}; force=True to rewrite)")
+        else:
+            self.write_tsv(df, "region_labels", verbose=verbose)
+        return df
+
     def read_visium(self, root_raw: Path, sample_id: str, count_file: str = "filtered_feature_bc_matrix.h5",
                     set_self: bool = False, verbose: bool = False) -> ad.AnnData:
         """One Space Ranger output (root_raw/sample_id/: count_file + spatial/), as sc.datasets.visium_sge reads it:
@@ -463,14 +497,15 @@ class SingleCellLymphoid(SingleCell):
 
     def umap_cell_type_plot(self, adata_ref, genes, lineage, focus, cmaps=None, 
                             sizes=(8, 7, 6), figsize=(14, 8),
-                            fname: Optional[str] = "celltype_umap_dotplot.png",
+                            fname: Optional[str] = "celltype_umap_dotplot.png", fname_tsv: Optional[str] = None,
                             font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
                             force: bool = False, verbose: bool = False) -> pd.DataFrame:
         """
         Reference UMAP coloured by cell type + dot plot of the panel genes by cell type.
         Style (None = params): font_color, bg_color, fontsize_scale (style_figure; non-focus cell types in a muted grey that
         follows bg_color). force: rewrite an existing file; verbose: print the file status.
-        Returns df_groups (per tissue x age group panel table).
+        Returns df_groups (per tissue x age group panel table); fname_tsv (key of self.files): df_groups is written
+        there when the file is missing or force.
         """
         font_color = self.get_param("font_color", font_color)   # style: None -> params
         bg_color = self.get_param("bg_color", bg_color)
@@ -530,6 +565,8 @@ class SingleCellLymphoid(SingleCell):
         ax2.legend(title="% cells >0", loc="upper left", bbox_to_anchor=(1.18, 0.35), frameon=False, fontsize=6, title_fontsize=7)
         self.style_figure(fig, font_color, bg_color, fontsize_scale)
         self._savefig(fig, fname, force=force, verbose=verbose)
+        if fname_tsv is not None and fname_tsv in self.files and (force or not self.file_path(fname_tsv).exists()):
+            self.write_tsv(df_groups.reset_index() if df_groups.index.name else df_groups, fname_tsv, verbose=verbose)
         return df_groups
 
     def spatial_plot_cell_types(self, adata_vis, focus, lineage, cmaps=None, ncols: int = 4, figsize:tuple=(20,16),

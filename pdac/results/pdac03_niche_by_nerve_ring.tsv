@@ -1,0 +1,181 @@
+ring_status	ring	feature	mean	n_spots
+invaded	0	N00_unassigned (no deconvolution)	0.0	103
+invaded	0	N01_TLS	0.0	103
+invaded	0	N02_Endocrine	0.0	103
+invaded	0	N03_Peri-vascular	0.0	103
+invaded	0	N04_Plasma-enriched	0.009708737864077669	103
+invaded	0	N05_CAF-enriched	0.019417475728155338	103
+invaded	0	N06_TAM-enriched	0.0	103
+invaded	0	N07-10_Malignant (D04_Ductal-GABRP)	0.21359223300970873	103
+invaded	0	N07-10_Malignant (D05_Ductal-PRSS1)	0.04854368932038835	103
+invaded	0	N07-10_Malignant (D07_Ductal-MKI67)	0.13592233009708737	103
+invaded	0	N07-10_Malignant (D08_Ductal-CEACAM5)	0.1262135922330097	103
+invaded	0	N07-10_Malignant (Ductal-other)	0.009708737864077669	103
+invaded	0	N11_Non-malignant-pancreas	0.009708737864077669	103
+invaded	0	N12_Nerve	0.4174757281553398	103
+invaded	0	mixed (malignant / N05_CAF-enriched)	0.009708737864077669	103
+invaded	1	N00_unassigned (no deconvolution)	0.015306122448979591	196
+invaded	1	N01_TLS	0.0	196
+invaded	1	N02_Endocrine	0.0	196
+invaded	1	N03_Peri-vascular	0.0	196
+invaded	1	N04_Plasma-enriched	0.02040816326530612	196
+invaded	1	N05_CAF-enriched	0.10714285714285714	196
+invaded	1	N06_TAM-enriched	0.0	196
+invaded	1	N07-10_Malignant (D04_Ductal-GABRP)	0.2193877551020408	196
+invaded	1	N07-10_Malignant (D05_Ductal-PRSS1)	0.061224489795918366	196
+invaded	1	N07-10_Malignant (D07_Ductal-MKI67)	0.15306122448979592	196
+invaded	1	N07-10_Malignant (D08_Ductal-CEACAM5)	0.30612244897959184	196
+invaded	1	N07-10_Malignant (Ductal-other)	0.061224489795918366	196
+invaded	1	N11_Non-malignant-pancreas	0.02040816326530612	196
+invaded	1	N12_Nerve	0.03571428571428571	196
+invaded	1	mixed (malignant / N05_CAF-enriched)	0.0	196
+invaded	2	N00_unassigned (no deconvolution)	0.011583011583011582	259
+invaded	2	N01_TLS	0.0	259
+invaded	2	N02_Endocrine	0.0	259
+invaded	2	N03_Peri-vascular	0.003861003861003861	259
+invaded	2	N04_Plasma-enriched	0.019305019305019305	259
+invaded	2	N05_CAF-enriched	0.20463320463320464	259
+invaded	2	N06_TAM-enriched	0.0	259
+invaded	2	N07-10_Malignant (D04_Ductal-GABRP)	0.16216216216216217	259
+invaded	2	N07-10_Malignant (D05_Ductal-PRSS1)	0.07722007722007722	259
+invaded	2	N07-10_Malignant (D07_Ductal-MKI67)	0.138996138996139	259
+invaded	2	N07-10_Malignant (D08_Ductal-CEACAM5)	0.28957528957528955	259
+invaded	2	N07-10_Malignant (Ductal-other)	0.05405405405405406	259
+invaded	2	N11_Non-malignant-pancreas	0.03088803088803089	259
+invaded	2	N12_Nerve	0.007722007722007722	259
+invaded	2	mixed (malignant / N05_CAF-enriched)	0.0	259
+invaded	3	N00_unassigned (no deconvolution)	0.016556291390728478	302
+invaded	3	N01_TLS	0.0033112582781456954	302
+invaded	3	N02_Endocrine	0.0	302
+invaded	3	N03_Peri-vascular	0.0	302
+invaded	3	N04_Plasma-enriched	0.029801324503311258	302
+invaded	3	N05_CAF-enriched	0.26490066225165565	302
+invaded	3	N06_TAM-enriched	0.0	302
+invaded	3	N07-10_Malignant (D04_Ductal-GABRP)	0.152317880794702	302
+invaded	3	N07-10_Malignant (D05_Ductal-PRSS1)	0.08278145695364239	302
+invaded	3	N07-10_Malignant (D07_Ductal-MKI67)	0.08278145695364239	302
+invaded	3	N07-10_Malignant (D08_Ductal-CEACAM5)	0.28807947019867547	302
+invaded	3	N07-10_Malignant (Ductal-other)	0.033112582781456956	302
+invaded	3	N11_Non-malignant-pancreas	0.04304635761589404	302
+invaded	3	N12_Nerve	0.0	302
+invaded	3	mixed (malignant / N05_CAF-enriched)	0.0033112582781456954	302
+invaded	4	N00_unassigned (no deconvolution)	0.017543859649122806	342
+invaded	4	N01_TLS	0.008771929824561403	342
+invaded	4	N02_Endocrine	0.0029239766081871343	342
+invaded	4	N03_Peri-vascular	0.0029239766081871343	342
+invaded	4	N04_Plasma-enriched	0.038011695906432746	342
+invaded	4	N05_CAF-enriched	0.28362573099415206	342
+invaded	4	N06_TAM-enriched	0.0	342
+invaded	4	N07-10_Malignant (D04_Ductal-GABRP)	0.15789473684210525	342
+invaded	4	N07-10_Malignant (D05_Ductal-PRSS1)	0.043859649122807015	342
+invaded	4	N07-10_Malignant (D07_Ductal-MKI67)	0.06140350877192982	342
+invaded	4	N07-10_Malignant (D08_Ductal-CEACAM5)	0.2894736842105263	342
+invaded	4	N07-10_Malignant (Ductal-other)	0.029239766081871343	342
+invaded	4	N11_Non-malignant-pancreas	0.06140350877192982	342
+invaded	4	N12_Nerve	0.0	342
+invaded	4	mixed (malignant / N05_CAF-enriched)	0.0029239766081871343	342
+invaded	5	N00_unassigned (no deconvolution)	0.0160857908847185	373
+invaded	5	N01_TLS	0.005361930294906166	373
+invaded	5	N02_Endocrine	0.010723860589812333	373
+invaded	5	N03_Peri-vascular	0.002680965147453083	373
+invaded	5	N04_Plasma-enriched	0.013404825737265416	373
+invaded	5	N05_CAF-enriched	0.28418230563002683	373
+invaded	5	N06_TAM-enriched	0.0	373
+invaded	5	N07-10_Malignant (D04_Ductal-GABRP)	0.16621983914209115	373
+invaded	5	N07-10_Malignant (D05_Ductal-PRSS1)	0.01876675603217158	373
+invaded	5	N07-10_Malignant (D07_Ductal-MKI67)	0.040214477211796246	373
+invaded	5	N07-10_Malignant (D08_Ductal-CEACAM5)	0.28150134048257375	373
+invaded	5	N07-10_Malignant (Ductal-other)	0.04289544235924933	373
+invaded	5	N11_Non-malignant-pancreas	0.11528150134048257	373
+invaded	5	N12_Nerve	0.0	373
+invaded	5	mixed (malignant / N05_CAF-enriched)	0.002680965147453083	373
+non-invaded	0	N00_unassigned (no deconvolution)	0.0	870
+non-invaded	0	N01_TLS	0.0034482758620689655	870
+non-invaded	0	N02_Endocrine	0.009195402298850575	870
+non-invaded	0	N03_Peri-vascular	0.0	870
+non-invaded	0	N04_Plasma-enriched	0.09080459770114943	870
+non-invaded	0	N05_CAF-enriched	0.05632183908045977	870
+non-invaded	0	N06_TAM-enriched	0.0	870
+non-invaded	0	N07-10_Malignant (D04_Ductal-GABRP)	0.0	870
+non-invaded	0	N07-10_Malignant (D05_Ductal-PRSS1)	0.005747126436781609	870
+non-invaded	0	N07-10_Malignant (D07_Ductal-MKI67)	0.0022988505747126436	870
+non-invaded	0	N07-10_Malignant (D08_Ductal-CEACAM5)	0.004597701149425287	870
+non-invaded	0	N07-10_Malignant (Ductal-other)	0.0	870
+non-invaded	0	N11_Non-malignant-pancreas	0.0	870
+non-invaded	0	N12_Nerve	0.825287356321839	870
+non-invaded	0	mixed (malignant / N05_CAF-enriched)	0.0022988505747126436	870
+non-invaded	1	N00_unassigned (no deconvolution)	0.0012048192771084338	830
+non-invaded	1	N01_TLS	0.05421686746987952	830
+non-invaded	1	N02_Endocrine	0.030120481927710843	830
+non-invaded	1	N03_Peri-vascular	0.006024096385542169	830
+non-invaded	1	N04_Plasma-enriched	0.3746987951807229	830
+non-invaded	1	N05_CAF-enriched	0.3036144578313253	830
+non-invaded	1	N06_TAM-enriched	0.004819277108433735	830
+non-invaded	1	N07-10_Malignant (D04_Ductal-GABRP)	0.0012048192771084338	830
+non-invaded	1	N07-10_Malignant (D05_Ductal-PRSS1)	0.016867469879518072	830
+non-invaded	1	N07-10_Malignant (D07_Ductal-MKI67)	0.0036144578313253013	830
+non-invaded	1	N07-10_Malignant (D08_Ductal-CEACAM5)	0.06746987951807229	830
+non-invaded	1	N07-10_Malignant (Ductal-other)	0.0	830
+non-invaded	1	N11_Non-malignant-pancreas	0.008433734939759036	830
+non-invaded	1	N12_Nerve	0.09518072289156626	830
+non-invaded	1	mixed (malignant / N05_CAF-enriched)	0.03253012048192771	830
+non-invaded	2	N00_unassigned (no deconvolution)	0.0	980
+non-invaded	2	N01_TLS	0.07244897959183673	980
+non-invaded	2	N02_Endocrine	0.05102040816326531	980
+non-invaded	2	N03_Peri-vascular	0.02142857142857143	980
+non-invaded	2	N04_Plasma-enriched	0.32448979591836735	980
+non-invaded	2	N05_CAF-enriched	0.3693877551020408	980
+non-invaded	2	N06_TAM-enriched	0.018367346938775512	980
+non-invaded	2	N07-10_Malignant (D04_Ductal-GABRP)	0.0	980
+non-invaded	2	N07-10_Malignant (D05_Ductal-PRSS1)	0.027551020408163266	980
+non-invaded	2	N07-10_Malignant (D07_Ductal-MKI67)	0.011224489795918367	980
+non-invaded	2	N07-10_Malignant (D08_Ductal-CEACAM5)	0.036734693877551024	980
+non-invaded	2	N07-10_Malignant (Ductal-other)	0.0010204081632653062	980
+non-invaded	2	N11_Non-malignant-pancreas	0.00816326530612245	980
+non-invaded	2	N12_Nerve	0.015306122448979591	980
+non-invaded	2	mixed (malignant / N05_CAF-enriched)	0.04285714285714286	980
+non-invaded	3	N00_unassigned (no deconvolution)	0.0	1105
+non-invaded	3	N01_TLS	0.07782805429864253	1105
+non-invaded	3	N02_Endocrine	0.07239819004524888	1105
+non-invaded	3	N03_Peri-vascular	0.034389140271493215	1105
+non-invaded	3	N04_Plasma-enriched	0.26334841628959277	1105
+non-invaded	3	N05_CAF-enriched	0.4108597285067873	1105
+non-invaded	3	N06_TAM-enriched	0.019909502262443438	1105
+non-invaded	3	N07-10_Malignant (D04_Ductal-GABRP)	0.0	1105
+non-invaded	3	N07-10_Malignant (D05_Ductal-PRSS1)	0.028054298642533938	1105
+non-invaded	3	N07-10_Malignant (D07_Ductal-MKI67)	0.01085972850678733	1105
+non-invaded	3	N07-10_Malignant (D08_Ductal-CEACAM5)	0.006334841628959276	1105
+non-invaded	3	N07-10_Malignant (Ductal-other)	0.0	1105
+non-invaded	3	N11_Non-malignant-pancreas	0.02262443438914027	1105
+non-invaded	3	N12_Nerve	0.007239819004524887	1105
+non-invaded	3	mixed (malignant / N05_CAF-enriched)	0.046153846153846156	1105
+non-invaded	4	N00_unassigned (no deconvolution)	0.0	1194
+non-invaded	4	N01_TLS	0.07705192629815745	1194
+non-invaded	4	N02_Endocrine	0.0745393634840871	1194
+non-invaded	4	N03_Peri-vascular	0.031825795644891124	1194
+non-invaded	4	N04_Plasma-enriched	0.23283082077051925	1194
+non-invaded	4	N05_CAF-enriched	0.4380234505862647	1194
+non-invaded	4	N06_TAM-enriched	0.008375209380234505	1194
+non-invaded	4	N07-10_Malignant (D04_Ductal-GABRP)	0.0	1194
+non-invaded	4	N07-10_Malignant (D05_Ductal-PRSS1)	0.020100502512562814	1194
+non-invaded	4	N07-10_Malignant (D07_Ductal-MKI67)	0.019262981574539362	1194
+non-invaded	4	N07-10_Malignant (D08_Ductal-CEACAM5)	0.01340033500837521	1194
+non-invaded	4	N07-10_Malignant (Ductal-other)	0.002512562814070352	1194
+non-invaded	4	N11_Non-malignant-pancreas	0.025963149078726967	1194
+non-invaded	4	N12_Nerve	0.005025125628140704	1194
+non-invaded	4	mixed (malignant / N05_CAF-enriched)	0.05108877721943048	1194
+non-invaded	5	N00_unassigned (no deconvolution)	0.0	1244
+non-invaded	5	N01_TLS	0.07958199356913183	1244
+non-invaded	5	N02_Endocrine	0.08279742765273312	1244
+non-invaded	5	N03_Peri-vascular	0.03295819935691318	1244
+non-invaded	5	N04_Plasma-enriched	0.20337620578778134	1244
+non-invaded	5	N05_CAF-enriched	0.44212218649517687	1244
+non-invaded	5	N06_TAM-enriched	0.002411575562700965	1244
+non-invaded	5	N07-10_Malignant (D04_Ductal-GABRP)	0.002411575562700965	1244
+non-invaded	5	N07-10_Malignant (D05_Ductal-PRSS1)	0.02090032154340836	1244
+non-invaded	5	N07-10_Malignant (D07_Ductal-MKI67)	0.024115755627009645	1244
+non-invaded	5	N07-10_Malignant (D08_Ductal-CEACAM5)	0.021704180064308683	1244
+non-invaded	5	N07-10_Malignant (Ductal-other)	0.00482315112540193	1244
+non-invaded	5	N11_Non-malignant-pancreas	0.03135048231511254	1244
+non-invaded	5	N12_Nerve	0.0008038585209003215	1244
+non-invaded	5	mixed (malignant / N05_CAF-enriched)	0.05064308681672026	1244

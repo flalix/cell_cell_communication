@@ -50,11 +50,12 @@ md("""### Critique of the analysis and how it is handled
 md("## Loading packages")
 code(IMPORTS + "\nprint({p: version(p) for p in ['scanpy', 'anndata', 'plotly']})")
 md("## Parameters")
-code("""force=False
+code("""force=False       # True: recompute every table and redraw every figure (after changing parameters or inputs)
 verbose=True
 
 apply_figure_style()
 scp = SingleCellPDAC(ROOT0, analysis='pdac03')
+scp.set_params(subregion_skip=tuple(scp.unassigned_regions()))     # spots without deconvolution are not subclustered
 root_data, root_figure, root_result = scp.root_data, scp.root_figure, scp.root_result
 print(scp)
 print({k: scp.params[k] for k in ['nerve_min_schwann_share', 'nerve_min_marker_z', 'nerve_min_size', 'nerve_invaded_min_malignant', 'nerve_n_rings']})
@@ -149,8 +150,7 @@ md("""### 7. B1 - Nerve spots and bundles; invaded vs non-invaded
 
 **scp.call_nerves** (cached in **pdac03_nerve_spots.tsv**). The table lists one row per bundle; the maps show nerve spots (yellow: non-invaded, red: invaded) and the rings around them on the representative sections. Compare PA98 with the paper's Figure 1E (red: invaded, blue: non-invaded nerves on the H&E).""")
 code("""df_nerve = scp.call_nerves(adata_vis, df_abund, fname='nerve_spots', force=force, verbose=verbose)
-df_bundles = scp.calc_df_nerve_table(df_nerve)
-scp._write_table(df_bundles, scp.fname('nerve_table'), force=True)
+df_bundles = scp.calc_df_nerve_table(df_nerve, fname='nerve_table', force=force, verbose=verbose)
 print(f"nerve spots: {(df_nerve.nerve_id != '').sum():,}; bundles: {len(df_bundles)} "
       f"(invaded {int((df_bundles.status == 'invaded').sum())}, non-invaded {int((df_bundles.status == 'non-invaded').sum())})")
 display(df_bundles.groupby(['ni_status', 'status']).agg(n_bundles=('nerve_id', 'size'), n_spots=('n_spots', 'sum')))
@@ -173,8 +173,7 @@ md("""### 8. B2 - Figure 4B: niches by ring around invaded / non-invaded nerves
 
 Share of each niche among the spots of every ring (5 -> 1 = juxta, 0 = nerve), around invaded (dashed) and non-invaded nerves (solid). Paper: TLS, plasma and peri-vascular niches near non-invaded nerves; CAF / TAM / malignant niches near invaded nerves.""")
 code("""D_niche = pd.get_dummies(adata_vis.obs['niche'].astype(str)).astype(float)
-df_ring_niche = scp.calc_df_ring_profile(adata_vis, D_niche)
-scp._write_table(df_ring_niche, scp.fname('tsv_ring_niche'), force=True)
+df_ring_niche = scp.calc_df_ring_profile(adata_vis, D_niche, fname='tsv_ring_niche', force=force, verbose=verbose)
 fig = scp.plot_ring_profile(df_ring_niche, sorted(D_niche.columns), ncols=4, ylabel='share of the ring spots',
                             title='Niches around nerves (Figure 4B analogue)', fname=scp.fname('fig_ring_niche'), force=force, verbose=verbose)
 plt.show()""")
@@ -182,19 +181,9 @@ plt.show()""")
 md("""### 9. B3 - Figure 4A: cell types of the juxta-neural spots, invaded vs non-invaded
 
 Mean share in rings 1-2 around invaded vs non-invaded nerves; two-sided Mann-Whitney over spots. Paper: around invaded nerves M07_Macro-NLRP3, myCAF (F01) and malignant cells; around non-invaded nerves TLS cells (B, Tfh), plasma cells, progenitor CAF.""")
-code("""df_juxta = scp.calc_df_juxta_enrichment(adata_vis, df_share)
-scp._write_table(df_juxta, scp.fname('tsv_juxta'), force=True)
+code("""df_juxta = scp.calc_df_juxta_enrichment(adata_vis, df_share, fname='tsv_juxta', force=force, verbose=verbose)
 print(df_juxta.attrs)
-d = df_juxta[df_juxta.fdr < 0.05]
-fig, ax = plt.subplots(figsize=(8, max(4, 0.28 * len(d))))
-col = ['#E8504C' if v > 0 else '#4C9BE8' for v in d.log2_ratio]
-ax.barh(range(len(d)), d.log2_ratio, color=col)
-ax.set_yticks(range(len(d))); ax.set_yticklabels(d.cell_type); ax.invert_yaxis()
-ax.axvline(0, color='#888888', lw=0.8)
-ax.set_xlabel('log2 (invaded / non-invaded), juxta-neural rings 1-2')
-ax.set_title('Juxta-neural cell types (Figure 4A analogue; FDR < 0.05 over spots)')
-scp.style_figure(fig, scp.params['font_color'], scp.params['bg_color'], scp.params['fontsize_scale'])
-scp._savefig(fig, scp.fname('fig_juxta'), force=force, verbose=verbose)
+fig = scp.plot_juxta_enrichment(df_juxta, max_fdr=0.05, fname='fig_juxta', force=force, verbose=verbose)
 plt.show()
 df_juxta.head(12)""")
 
@@ -202,19 +191,9 @@ md("""### 10. B4 - Figure 2L: malignant subtypes by ring; Figure 5K: Schwann sub
 
 Paper (2L): D09_Ductal-CEACAM6 and D04_Ductal-GABRP most prevalent within 1 spot of invaded nerves. Paper (5K): S03_Schwann-SERPINA3 higher in non-invaded nerve spots.""")
 code("""mal = [c for c in df_share.columns if c[:3] in ('D02', 'D03', 'D04', 'D05', 'D06', 'D07', 'D08', 'D09')]
-df_ring_mal = scp.calc_df_ring_profile(adata_vis, df_share[mal])
-scp._write_table(df_ring_mal, scp.fname('tsv_ring_malignant'), force=True)
-M = df_ring_mal.pivot_table(index='feature', columns=['ring_status', 'ring'], values='mean') if len(df_ring_mal) else pd.DataFrame()
-fig, ax = plt.subplots(figsize=(14, 5))
-if M.empty:
-    M = pd.DataFrame(np.zeros((1, 1)), index=['no nerves called'], columns=pd.MultiIndex.from_tuples([('', 0)]))
-im = ax.imshow(M.values, cmap='magma', aspect='auto')
-ax.set_xticks(range(M.shape[1])); ax.set_xticklabels([f"{s}\\nring {r}" for s, r in M.columns], fontsize=7)
-ax.set_yticks(range(M.shape[0])); ax.set_yticklabels(M.index)
-fig.colorbar(im, ax=ax, fraction=0.03).set_label('mean share')
-ax.set_title('Malignant subtypes by ring (0 = nerve; Figure 2L analogue)')
-scp.style_figure(fig, scp.params['font_color'], scp.params['bg_color'], scp.params['fontsize_scale'])
-scp._savefig(fig, scp.fname('fig_ring_malignant'), force=force, verbose=verbose)
+df_ring_mal = scp.calc_df_ring_profile(adata_vis, df_share[mal], fname='tsv_ring_malignant', force=force, verbose=verbose)
+fig = scp.plot_ring_heatmap(df_ring_mal, title='Malignant subtypes by ring (0 = nerve; Figure 2L analogue)',
+                            fname='fig_ring_malignant', force=force, verbose=verbose)
 plt.show()
 schw = [c for c in df_share.columns if c.startswith('S0')]
 nv = adata_vis.obs.nerve_ring.values == 0
@@ -224,22 +203,8 @@ df_s5k.div(df_s5k.sum(1), axis=0).round(3)""")
 md("""### 11. B5 - Figure 6A: Schwann subsets by distance to the malignant niches
 
 Nerve spots grouped by graph distance to the nearest malignant-niche spot ('radius 1-5', farther spots in 5); share of each Schwann subset among the Schwann cells. Paper: S02_Schwann-TGFBI increases towards the tumour (leading edge of NI).""")
-code("""dist = scp.calc_df_distance_to_malignant(adata_vis, df_abund, n_rings=5)
-adata_vis.obs['dist_malignant'] = dist
-nv = adata_vis.obs.nerve_ring.values == 0
-S = df_share.loc[nv, schw]
-S = S.div(S.sum(1).replace(0, np.nan), axis=0).fillna(0)
-df_sd = S.groupby(dist[nv]).mean()
-df_sd['n_spots'] = pd.Series(dist[nv]).value_counts().sort_index().values
-scp._write_table(df_sd.reset_index(names='radius'), scp.fname('tsv_schwann_distance'), force=True)
-fig, ax = plt.subplots(figsize=(7, 4.5))
-col = scp.celltype_colors(schw)
-for c in schw:
-    ax.plot(df_sd.index, df_sd[c], marker='o', color=col[c], label=c)
-ax.set_xlabel('radius (spots) to the nearest malignant niche'); ax.set_ylabel('share of Schwann cells')
-ax.legend(frameon=False); ax.set_title('Schwann subsets vs distance to tumour (Figure 6A analogue)')
-scp.style_figure(fig, scp.params['font_color'], scp.params['bg_color'], scp.params['fontsize_scale'])
-scp._savefig(fig, scp.fname('fig_schwann_distance'), force=force, verbose=verbose)
+code("""df_sd = scp.calc_df_schwann_by_distance(adata_vis, df_abund, df_share, n_rings=5, fname='tsv_schwann_distance', force=force, verbose=verbose)
+fig = scp.plot_schwann_distance(df_sd, fname='fig_schwann_distance', force=force, verbose=verbose)
 plt.show()
 df_sd.round(3)""")
 

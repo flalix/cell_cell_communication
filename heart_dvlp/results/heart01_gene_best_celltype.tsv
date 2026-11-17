@@ -1,0 +1,21 @@
+gene	role	cell_type	lineage	frac	mean
+NKX2-5	core cardiac TF (first + second heart field)	MetAct_vCM_1	cardiomyocyte	0.765	1.801
+GATA4	core cardiac TF, septation and valves	Mat_aCM	cardiomyocyte	0.768	1.739
+TBX5	left ventricle / atria; septation, conduction	Mat_aCM	cardiomyocyte	0.81	1.942
+TBX20	cardiac TF, chamber and valve development	Int_FB	fibroblast	0.873	2.016
+HAND1	left ventricle (first heart field)	MetAct_vCM_1	cardiomyocyte	0.295	0.502
+HAND2	right ventricle / outflow tract (second heart field)	NB-N	neural	0.511	0.745
+ISL1	second heart field progenitors, sinoatrial node	NB-N	neural	0.536	0.877
+MYH6	atrial myosin (alpha-MHC)	Mat_aCM	cardiomyocyte	0.939	3.614
+MYH7	ventricular myosin (beta-MHC), compact myocardium	Mat_vCM	cardiomyocyte	0.861	3.253
+MYL7	atrial myosin light chain (MLC2a)	MetAct_aCM	cardiomyocyte	1.0	6.183
+MYL2	ventricular myosin light chain (MLC2v)	MetAct_vCM_1	cardiomyocyte	0.871	3.703
+NPPA	atrial / trabecular natriuretic peptide (ANP)	Mat_aCM	cardiomyocyte	0.971	4.491
+IRX4	ventricular identity TF	MetAct_vCM_1	cardiomyocyte	0.2	0.3
+PITX2	left-right asymmetry, left atrium	Mat_aCM	cardiomyocyte	0.172	0.213
+BMP10	right atrium; trabeculation	Mat_aCM	cardiomyocyte	0.245	0.5
+TBX3	conduction system (SAN, AVN, bundle)	NB-N	neural	0.55	0.867
+SHOX2	sinoatrial node pacemaker	AnnFibr_FB	fibroblast	0.168	0.198
+HCN4	pacemaker channel (SAN, AVN)	Mat_aCM	cardiomyocyte	0.234	0.221
+WT1	epicardium, epicardium-derived cells	EpC	epicardial	0.652	1.012
+TCF21	epicardium-derived fibroblast progenitors	Int_FB	fibroblast	0.839	1.816

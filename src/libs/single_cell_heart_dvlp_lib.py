@@ -171,8 +171,12 @@ HEART_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
         region_info=("data", "heart_regions.tsv"),                     # curated region table (editable)
         mean_signatures=("result", "heart_reference_mean_counts_per_celltype.tsv.gz"),   # fallback signatures
         subregion_descriptions=("data", "heart_subregion_descriptions.tsv"),
+        lineage_table=("root0", "tables/heart_lineage.tsv"),            # HL_ID (lineage), HL_SUBID (cell type), description, summary
     ),
     "heart01": dict(
+        tsv_ref_celltypes=("result", "heart01_reference_celltypes.tsv"),  # cell types of the filtered reference
+        tsv_gene_panel=("result", "heart01_gene_panel.tsv"),              # HEART_GENES: role, presence in reference / Visium
+        tsv_gene_best_celltype=("result", "heart01_gene_best_celltype.tsv"),  # per gene: cell type of highest mean expression
         fig_sections=("figure", "heart01_sections_he_gallery.png"),
         fig_sections_rep=("figure", "heart01_sections_he_by_age.png"),
         fig_qc_visium=("figure", "heart01_qc_visium_sections.png"),
@@ -180,6 +184,8 @@ HEART_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
         fig_umap_dotplot=("figure", "heart01_reference_umap_celltype_dotplot.png"),
         fig_umap_genes_age=("figure", "heart01_reference_umap_genes_by_age.png"),
         fig_ref_age_comp=("figure", "heart01_reference_celltype_by_age.png"),
+        fig_ref_age_comp_row=("figure", "heart01_reference_celltype_by_age_row_norm.png"),
+        fig_ref_age_counts=("figure", "heart01_reference_celltype_by_age_counts.png"),
         fig_genes_age=("figure", "heart01_visium_genes_by_age_{k}.png"),
         fig_ref_history=("figure", "heart01_ref_training_history.png"),
         fig_ref_qc=("figure", "heart01_ref_qc.png"),
@@ -189,10 +195,14 @@ HEART_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
         fig_abund_c2l_vs_stereo=("figure", "heart01_c2l_vs_stereoscope.png"),
         fig_regions=("figure", "heart01_umap_region_section.png"),
         fig_regions_age=("figure", "heart01_regions_by_age.png"),
+        fig_regions_age_html=("figure", "heart01_regions_by_age.html"),
+        fig_regions_3plot_html=("figure", "heart01_umap_region_section.html"),
         fig_regions_html=("figure", "heart01_regions_{lib}.html"),
         fig_factor_dotplot=("figure", "heart01_nmf_factors_lineage_dotplot_n{n}.png"),
         tsv_section_qc=("result", "heart01_section_qc.tsv"),
         tsv_ref_age_comp=("result", "heart01_reference_celltype_by_age.tsv"),
+        tsv_ref_age_comp_row=("result", "heart01_reference_celltype_by_age_row_norm.tsv"),
+        tsv_ref_age_counts=("result", "heart01_reference_celltype_by_age_counts.tsv"),
         tsv_c2l_vs_stereo=("result", "heart01_c2l_vs_stereoscope_correlation.tsv"),
         tsv_factor_load=("result", "heart01_nmf_factor_loadings_n{n}.tsv"),
     ),
@@ -203,6 +213,7 @@ HEART_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
         fig_region_celltype=("figure", "heart02_region_celltype_heatmap.png"),
         fig_region_genes=("figure", "heart02_region_gene_dotplot.png"),
         fig_regions_age=("figure", "heart02_regions_by_age.png"),
+        fig_regions_age_html=("figure", "heart02_regions_by_age.html"),
         fig_conduction=("figure", "heart02_conduction_system_by_age.png"),
         fig_factor_dotplot=("figure", "heart02_nmf_factors_lineage_dotplot_n{n}.png"),
         fig_region_map=("figure", "heart02_region_map_{lib}.html"),
@@ -426,52 +437,73 @@ class SingleCellHeart(SingleCell):
 
     def build_visium_h5ad(self, df_sections: Optional[pd.DataFrame] = None, fname: str = "visium",
                           force: bool = False, verbose: bool = True) -> ad.AnnData:
-        """Complete Visium AnnData of the 38 sections (read_visium_samples) + section metadata (obs), the paper's
+        """
+        Complete Visium AnnData of the 38 sections (read_visium_samples) + section metadata (obs), the paper's
         spatial cluster of the 17 clustered sections (obs['paper_cluster'], 'paper_cluster_name'), the paper's
         stereoscope proportions (obsm['stereoscope_hl'] 33 types, obsm['stereoscope_dl'] 74 states; obs['in_paper_qc']
-        = spot in the paper's 69,114). X = raw counts. Written to files[fname] (read when it exists and not force)."""
+        = spot in the paper's 69,114). X = raw counts. Written to files[fname] (read when it exists and not force).
+        """
+
         path = self.file_path(fname)
         if path.exists() and not force:
             return self.read_h5ad(fname, set_self=False, verbose=verbose)
+        
         df_sec = df_sections if df_sections is not None else self.read_sections_table()
+        
         self.make_lowres_images(df_sec.section_id.tolist(), verbose=verbose)
+        
         a = self.read_visium_samples(self.file_path("visium_raw"), df_sec.section_id.tolist(), set_self=False)
+        
         a.X = sp.csr_matrix(a.X, dtype=np.float32)
+        
         a.obs["barcode"] = [n[len(s) + 1:] for n, s in zip(a.obs_names, a.obs[self.sample_col].astype(str))]   # '<section>_<barcode>'
         self.add_section_obs(a, df_sec)
         a.obs["spot_id_paper"] = a.obs["barcode"].astype(str) + "_" + a.obs["section_num"].astype(int).astype(str)
+        
         # paper clusters (HDCA_heart_clustering.rds: 17 sections, 25,309 spots)
         df_st = pd.read_csv(self.file_path("bundle_st") / "metadata.csv", index_col=0)
+        
         key = df_st["section.name"].astype(str) + "_" + df_st.index.str.rsplit("_", n=1).str[0]
         names = self.paper_cluster_names()
+        
         cl = pd.Series(df_st["seurat_clusters"].astype(str).values, index=key.values)
+        
         a.obs["paper_cluster"] = pd.Categorical(cl.reindex(a.obs_names).values)
         a.obs["paper_cluster_name"] = pd.Categorical(a.obs["paper_cluster"].astype(str).map(names).where(
             a.obs["paper_cluster"].notna()))
+        
         # stereoscope proportions (all 38 sections)
         for level in ("hl", "dl"):
             df_w = self.read_stereoscope(level)
             a.obsm[f"stereoscope_{level}"] = df_w.reindex(a.obs["spot_id_paper"].values).fillna(0.0).set_index(a.obs_names)
             if level == "hl":
                 a.obs["in_paper_qc"] = a.obs["spot_id_paper"].isin(df_w.index).values
+        
         a.uns["dataset"] = dict(paper="Lazar et al. 2025, Nat Genet 57:2756, doi:10.1038/s41588-025-02352-6",
                                 source="Mendeley doi:10.17632/fhtb99mdzd.1 (Space Ranger outputs)",
                                 n_sections=int(len(df_sec)), n_hearts=int(df_sec["heart"].nunique()))
+        
         a.write_h5ad(path, compression="gzip")
+        
         if verbose:
             print(f"Writing {path}: {a.n_obs:,} spots x {a.n_vars:,} genes, {a.obs[self.sample_col].nunique()} sections; "
                   f"paper clusters on {int(a.obs['paper_cluster'].notna().sum()):,} spots")
+        
         return a
 
     def build_reference_h5ad(self, fname: str = "reference", force: bool = False, verbose: bool = True) -> ad.AnnData:
-        """Complete scRNA AnnData from the export of HDCA_heart_sc_full_extended.rds (76,991 cells): X = raw counts,
+        """
+        Complete scRNA AnnData from the export of HDCA_heart_sc_full_extended.rds (76,991 cells): X = raw counts,
         var_names = Ensembl IDs (symbols mapped through the Visium features; symbols without a unique Ensembl ID, e.g.
         the transgene markers of the Cell Ranger reference, are dropped), var['symbol']; obs: cell_type (35 labels,
         4 HL_excl_* removed by the authors -> obs['excluded']), cluster, sample_id (10x library), heart_id, age,
-        age_group, QC; obsm['X_umap'] = the paper's UMAP (umap_oi), obsm['X_umap_df'], 'X_pca', 'X_harmony_oi'."""
+        age_group, QC; obsm['X_umap'] = the paper's UMAP (umap_oi), obsm['X_umap_df'], 'X_pca', 'X_harmony_oi'.
+        """
+
         path = self.file_path(fname)
         if path.exists() and not force:
             return self.read_h5ad(fname, set_self=False, verbose=verbose)
+        
         a = self.assemble_bundle(self.file_path("bundle_sc"), verbose=verbose)
         df_f = self.visium_features()
         df_u = df_f[~df_f.symbol.duplicated(keep=False)]
@@ -539,9 +571,16 @@ class SingleCellHeart(SingleCell):
         return out
 
     def calc_df_ref_age_composition(self, adata_ref, groupby: Optional[str] = None, age_col: Optional[str] = None,
-                                    fname: Optional[str] = None, force: bool = False, verbose: bool = False
-                                    ) -> pd.DataFrame:
-        """% of cells of each cell type per scRNA age group (columns) + n per age group (attrs['n'])."""
+                                    normalize: str = "col", fname: Optional[str] = None, force: bool = False,
+                                    verbose: bool = False) -> pd.DataFrame:
+        """Cell types (rows) x scRNA age groups (columns) of the reference cells, + lineage.
+        normalize='none': number of cells.
+        normalize='col': % of the cells of the age group (each column sums to 100): composition of each age.
+        normalize='row': the 'col' percentages rescaled so each cell type sums to 100 over the ages: in which ages a
+        cell type is frequent, corrected for the unequal number of cells sequenced per age (row % of raw counts
+        would mostly follow that sampling depth)."""
+        if normalize not in ("none", "col", "row"):
+            raise ValueError("normalize: 'none', 'col' or 'row'")
         groupby = self.get_param("celltype_col", groupby)
         age_col = self.get_param("ref_age_col", age_col)
 
@@ -549,7 +588,10 @@ class SingleCellHeart(SingleCell):
             df_ct = pd.crosstab(adata_ref.obs[groupby].astype(str), adata_ref.obs[age_col])
             order = [c for c in self.lineage_order(HEART_LINEAGE) if c in df_ct.index]
             df_ct = df_ct.reindex(order)
-            df_pct = (100 * df_ct / df_ct.sum(0)).round(3)
+            df_pct = df_ct.astype(int) if normalize == "none" else 100 * df_ct / df_ct.sum(0)
+            if normalize == "row":
+                df_pct = 100 * df_pct.div(df_pct.sum(1), axis=0)
+            df_pct = df_pct.round(3)
             df_pct.insert(0, "lineage", [self.lineage_of(HEART_LINEAGE).get(c, "") for c in df_pct.index])
             return df_pct.reset_index(names="cell_type")
 
@@ -707,6 +749,15 @@ class SingleCellHeart(SingleCell):
             ax.set_title(title)
         return sca
 
+    def section_plot_title(self, lib: str) -> str:
+        """Title of a section in the interactive maps: section | age (age group) | heart, e.g.
+        'V10A13-160_A1 | w6 (w6-w7) | XDD363'."""
+        df_sec = self.read_sections_table().set_index("section_id")
+        if lib not in df_sec.index:
+            return str(lib)
+        r = df_sec.loc[lib]
+        return f"{lib} | {r.age_label} ({r.age_group}) | {r.heart}"
+
     def section_title(self, lib: str, df_sections: Optional[pd.DataFrame] = None, short: bool = False) -> str:
         df_sec = (df_sections if df_sections is not None else self.read_sections_table()).set_index("section_id")
         r = df_sec.loc[lib]
@@ -835,6 +886,7 @@ class SingleCellHeart(SingleCell):
                             panel_size: float = 3.0, colors: Optional[Dict[str, str]] = None,
                             legend_ncol: int = 4, fname: Optional[str] = None,
                             font_color: Optional[str] = None, bg_color: Optional[str] = None,
+                            bottom: float = 0.1, wspace: float = 0.02, hspace: float = 0.12,
                             fontsize_scale: Optional[float] = None, force: bool = False, verbose: bool = False):
         """Categorical key (regions, paper clusters) on the sections ordered by age, one shared legend."""
         font_color = self.get_param("font_color", font_color)
@@ -859,14 +911,17 @@ class SingleCellHeart(SingleCell):
                           label=f"{c} - {names[c]}" if names and c in names else c) for c in cats if c in present]
         fig.legend(handles=handles, loc="lower center", ncol=legend_ncol, frameon=False, fontsize=8,
                    bbox_to_anchor=(0.5, -0.02))
-        fig.subplots_adjust(bottom=1.6 / (panel_size * nrows + 1.6) + 0.05, wspace=0.02, hspace=0.12)
+        fig.subplots_adjust(bottom=bottom, wspace=wspace, hspace=hspace)
         self.style_figure(fig, font_color, bg_color, fontsize_scale, relayout=False)
         self._savefig(fig, fname, dpi=self.params["dpi_maps"], force=force, verbose=verbose)
         return fig
 
-    # =====================================================================================================
-    # figures: reference
-    # =====================================================================================================
+    def plotly_regions_by_age(self, adata, key: str = "region_label", sections: Optional[Sequence[str]] = None,
+                              **kwargs):
+        """Interactive version of plot_regions_by_age: plotly_regions_on_sections on the sections ordered by age
+        (default representative_sections), panel titles = age | section."""
+        return self.plotly_regions_on_sections(adata, key=key, sections=sections, **kwargs)
+
     def plot_umap_celltype_dotplot(self, adata_ref, genes: Sequence[str], lineage: Optional[Dict[str, Sequence[str]]] = None,
                                    groupby: Optional[str] = None, figsize=(26, 12), point_size: float = 1.5,
                                    fname: Optional[str] = None, font_color: Optional[str] = None,
@@ -874,25 +929,32 @@ class SingleCellHeart(SingleCell):
                                    fontsize_x:int=12, fontsize_y:int=12,
                                    force: bool = False, verbose: bool = False) -> pd.DataFrame:
         
-        """Left: the paper's UMAP coloured by cell type (shades of the lineage colour, labels at the medians).
+        """
+        Left: the paper's UMAP coloured by cell type (shades of the lineage colour, labels at the medians).
         Right: dot plot cell types (rows, grouped by lineage) x genes: size = % cells > 0, colour = mean log1p(CP10k)
-        scaled to the maximum per gene. Returns the long table (cell_type, gene, frac, mean, rel)."""
+        scaled to the maximum per gene. Returns the long table (cell_type, gene, frac, mean, rel).
+        """
         font_color = self.get_param("font_color", font_color)
         bg_color = self.get_param("bg_color", bg_color)
         fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         lineage = lineage or HEART_LINEAGE
         groupby = self.get_param("celltype_col", groupby)
+        
         order = [c for c in self.lineage_order(lineage) if c in set(adata_ref.obs[groupby].astype(str))]
         df_frac, df_mean, df_rel = self.calc_df_dotplot(list(genes), groupby, adata_ref, order=order)
+        
         colors = self.celltype_colors(lineage)
         fig = plt.figure(figsize=figsize)
+        
         gs = fig.add_gridspec(1, 2, width_ratios=[1.0, 1.15], wspace=0.08)
+        
         ax0 = fig.add_subplot(gs[0])
         U = adata_ref.obsm["X_umap"]
         labs = adata_ref.obs[groupby].astype(str).values
         self.plot_umap_labeled(ax0, U, labs, {k: mpl.colors.to_hex(v) for k, v in colors.items()},
                                title=f"scRNA reference: {adata_ref.n_obs:,} cells, {len(order)} cell types",
                                point_size=point_size, fontsize=8, seed=self.params["seed"])
+        
         ax1 = fig.add_subplot(gs[1])
         n_r, n_c = len(order), df_frac.shape[1]
         yy, xx = np.meshgrid(np.arange(n_r), np.arange(n_c), indexing="ij")
@@ -972,10 +1034,13 @@ class SingleCellHeart(SingleCell):
         self._savefig(fig, fname, dpi=self.params["dpi_maps"], force=force, verbose=verbose)
         return pd.DataFrame(rows)
 
-    def plot_ref_age_composition(self, df_pct: pd.DataFrame, figsize=(7, 12), fname: Optional[str] = None,
-                                 font_color: Optional[str] = None, bg_color: Optional[str] = None, cmap="magma",
-                                 fontsize_scale: Optional[float] = None, force: bool = False, verbose: bool = False):
-        """Heatmap of calc_df_ref_age_composition (% cells per age group); rows coloured by lineage."""
+    def plot_ref_age_composition(self, df_pct: pd.DataFrame, normalize: str = "col", figsize=(7, 12),
+                                 fname: Optional[str] = None, font_color: Optional[str] = None,
+                                 bg_color: Optional[str] = None, cmap="magma", fontsize_scale: Optional[float] = None,
+                                 force: bool = False, verbose: bool = False):
+        """Heatmap of calc_df_ref_age_composition; rows coloured by lineage. normalize: the one used for df_pct
+        ('none': cell counts; 'col': columns sum to 100; 'row': rows sum to 100) - sets the colour-bar label, the title
+        and the number format of the cells."""
         font_color = self.get_param("font_color", font_color)
         bg_color = self.get_param("bg_color", bg_color)
         fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
@@ -992,10 +1057,14 @@ class SingleCellHeart(SingleCell):
         for i in range(M.shape[0]):
             for j in range(M.shape[1]):
                 val = M.values[i, j]
-                ax.text(j, i, f"{val:.1f}", ha="center", va="center", fontsize=7,
+                ax.text(j, i, f"{val:,.0f}" if normalize == "none" else f"{val:.1f}", ha="center", va="center", fontsize=7,
                         color="black" if val > 0.6 * np.nanmax(M.values) else "white")
-        fig.colorbar(im, ax=ax, fraction=0.04).set_label("% of cells in the age group")
-        ax.set_title("scRNA reference: cell-type composition by age")
+        label, title = {"none": ("number of cells", "scRNA reference: cells per cell type and age"),
+                        "col": ("% of cells in the age group", "scRNA reference: cell-type composition by age"),
+                        "row": ("% of the cell type over ages (age-size corrected)",
+                                "scRNA reference: age profile of each cell type")}[normalize]
+        fig.colorbar(im, ax=ax, fraction=0.04).set_label(label)
+        ax.set_title(title)
         self.style_figure(fig, font_color, bg_color, fontsize_scale)
         self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
@@ -1020,6 +1089,8 @@ class SingleCellHeart(SingleCell):
         if source == "c2l":
             df_abund = self.calc_df_abundance(adata)
         else:
+            if "stereoscope_hl" not in adata.obsm:          # e.g. adata = the cell2location map (sp.h5ad)
+                self.add_paper_slots(adata)
             df_abund = pd.DataFrame(adata.obsm["stereoscope_hl"]).copy()
             df_abund.index = adata.obs_names
         if drop_excluded:
@@ -1028,6 +1099,35 @@ class SingleCellHeart(SingleCell):
         df_abund = df_abund[order + [c for c in df_abund.columns if c not in order]]
         df_abund.attrs["source"] = source
         return df_abund
+
+    def add_paper_slots(self, adata, keys: Sequence[str] = ("stereoscope_hl", "stereoscope_dl"),
+                        obs_cols: Sequence[str] = ("paper_cluster", "paper_cluster_name", "in_paper_qc")) -> ad.AnnData:
+        """Copy the paper's stereoscope proportions (obsm) and spatial clusters / QC flag (obs) from the Visium h5ad
+        (files['visium']) into adata when missing, aligned on obs_names. Needed when adata is the cell2location map
+        (sp.h5ad: src/programs/run_c2l_heart_dvlp.py drops the stereoscope obsm before training). Only these slots are
+        read from disk (h5py), not X."""
+        import h5py
+        from anndata.io import read_elem
+        need_obsm = [k for k in keys if k not in adata.obsm]
+        need_obs = [c for c in obs_cols if c not in adata.obs]
+        if not need_obsm and not need_obs:
+            return adata
+        with h5py.File(self.file_path("visium"), "r") as f:
+            obs_names = pd.Index(read_elem(f["obs"]).index.astype(str))
+            pos = obs_names.get_indexer(adata.obs_names.astype(str))
+            if (pos < 0).any():
+                raise KeyError(f"{int((pos < 0).sum())} spots of adata are not in {self.file_path('visium')}")
+            for k in need_obsm:
+                if k in f["obsm"]:
+                    df = read_elem(f["obsm"][k])
+                    df = pd.DataFrame(df) if not isinstance(df, pd.DataFrame) else df
+                    adata.obsm[k] = df.iloc[pos].set_axis(adata.obs_names)
+            if need_obs:
+                df_obs = read_elem(f["obs"])
+                for c in need_obs:
+                    if c in df_obs:
+                        adata.obs[c] = df_obs[c].iloc[pos].values
+        return adata
 
     def calc_df_c2l_vs_stereoscope(self, adata, fname: Optional[str] = None, force: bool = False,
                                    verbose: bool = False) -> pd.DataFrame:
@@ -1068,6 +1168,128 @@ class SingleCellHeart(SingleCell):
         names = {labels[c]: names_cl[c] for c in labels}
         adata.obs["region_name"] = adata.obs["region_label"].map(names).astype("category")
         return names
+
+    def plot_lr_auroc_by_age_group(self, df_lr_age: pd.DataFrame, df_age_top: pd.DataFrame, vmin: float = 0.35,
+                                   vmax: float = 0.65, fname: Optional[str] = "heart04_lr_by_age_group_top.png",
+                                   force: bool = False, verbose: bool = False):
+        """Heatmap: AUROC (stage vs the other stages) of the top-ranked LR pairs of every developmental stage
+        (df_age_top) in all stages (df_lr_age: interaction, group, auroc); 0.5 = as in the other stages. Rows ordered
+        by the stage of maximal AUROC."""
+        order_age = [g for g in self.params["age_group_order"] if g in set(df_lr_age.group)]
+        lr_union = list(dict.fromkeys(df_age_top.sort_values(["group", "auroc"], ascending=[True, False]).interaction))
+        M = df_lr_age[df_lr_age.interaction.isin(lr_union)].pivot_table(index="interaction", columns="group",
+                                                                         values="auroc")[order_age]
+        M = M.loc[M.idxmax(1).map({g: i for i, g in enumerate(order_age)}).sort_values(kind="stable").index]
+        fig, ax = plt.subplots(figsize=(6, 0.32 * len(M) + 1.5))
+        im = ax.imshow(M.values, cmap="RdBu_r", vmin=vmin, vmax=vmax, aspect="auto")
+        ax.set_xticks(range(len(order_age)))
+        ax.set_xticklabels(order_age)
+        ax.set_yticks(range(len(M)))
+        ax.set_yticklabels(M.index, fontsize=8)
+        fig.colorbar(im, ax=ax, fraction=0.05).set_label("AUROC (stage vs other stages)")
+        ax.set_title("Top-ranked LR pairs per developmental stage")
+        self.style_figure(fig, self.params["font_color"], self.params["bg_color"], self.params["fontsize_scale"])
+        self._save_figure(fig, fname, force=force, verbose=verbose)
+        return fig
+
+    def read_lineage_table(self) -> Optional[pd.DataFrame]:
+        """tables/heart_lineage.tsv: HL_ID (lineage), HL_SUBID (cell type), description, functional_summary; indexed by
+        HL_SUBID. None when the file is missing."""
+        if "lineage_table" not in self.files or not self.file_path("lineage_table").exists():
+            return None
+        return self.read_tsv("lineage_table").drop_duplicates("HL_SUBID").set_index("HL_SUBID")
+
+    def calc_df_gene_best_celltype(self, df_dot: pd.DataFrame, genes: Optional[Sequence[str]] = None,
+                                   lineage: Optional[Dict[str, Sequence[str]]] = None, force: bool = False,
+                                   verbose: bool = False) -> pd.DataFrame:
+        """Per gene: the cell type with the highest mean expression in the dot plot table (df_dot of
+        plot_umap_celltype_dotplot: gene, cell_type, frac, mean), its % expressing (frac), mean, the cell type's
+        lineage and the gene's role (HEART_GENES). Ordered as genes (default HEART_GENES). Index = gene.
+        Cached in tsv_gene_best_celltype: force=True after changing the reference or the panel."""
+        genes = list(genes or HEART_GENES)
+        lin = self.lineage_of(lineage or HEART_LINEAGE)
+
+        def compute():
+            d = df_dot.loc[df_dot.groupby("gene")["mean"].idxmax(), ["gene", "cell_type", "frac", "mean"]]
+            d = d.set_index("gene").loc[[g for g in genes if g in set(d.gene)]].reset_index()
+            d.insert(1, "role", d.gene.map(HEART_GENES).fillna(""))
+            d.insert(3, "lineage", d.cell_type.map(lin).fillna(""))
+            return d.round({"frac": 3, "mean": 3})
+        return self._cached_any("tsv_gene_best_celltype", compute, force=force, verbose=verbose).set_index("gene")
+
+    def calc_df_gene_panel(self, adata_ref, adata_vis, genes: Optional[Dict[str, str]] = None, force: bool = False,
+                           verbose: bool = False) -> pd.DataFrame:
+        """The gene panel (default HEART_GENES: symbol -> role): gene, role, in_reference, gene_id_reference,
+        in_visium, gene_id_visium (var_names; '' when absent). Cached in tsv_gene_panel: force=True after changing
+        the panel. Prints how many genes are found in each dataset."""
+        genes = dict(genes or HEART_GENES)
+
+        def compute():
+            ids = {}
+            for name, a in (("reference", adata_ref), ("visium", adata_vis)):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    found, gid = self.resolve_gene_ids(list(genes), a)
+                ids[name] = dict(zip(found, gid))
+            df = pd.DataFrame({"gene": list(genes), "role": list(genes.values())})
+            for name in ("reference", "visium"):
+                df[f"in_{name}"] = df.gene.isin(list(ids[name]))
+                df[f"gene_id_{name}"] = df.gene.map(ids[name]).fillna("")
+            return df
+        df = self._cached_any("tsv_gene_panel", compute, force=force, verbose=verbose)
+        df["in_reference"] = df["in_reference"].astype(bool)
+        df["in_visium"] = df["in_visium"].astype(bool)
+        print(f"{int(df.in_reference.sum())} of {len(df)} in the reference; {int(df.in_visium.sum())} in the Visium data"
+              + (f"; missing: {df.loc[~(df.in_reference & df.in_visium), 'gene'].tolist()}" if not (df.in_reference & df.in_visium).all() else ""))
+        return df
+
+    def calc_df_reference_celltypes(self, adata_ref, lineage: Optional[Dict[str, Sequence[str]]] = None,
+                                    key: str = "cell_type", force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """Cell types of the (filtered) scRNA reference: cell_type, lineage, n_cells, perc (% of the reference cells),
+        plus description and functional_summary from tables/heart_lineage.tsv when present. Sorted by n_cells.
+        Cached in tsv_ref_celltypes: force=True after changing the reference filters."""
+        lineage = lineage or HEART_LINEAGE
+
+        def compute():
+            df = adata_ref.obs[key].astype(str).value_counts().rename_axis("cell_type").reset_index(name="n_cells")
+            df.insert(1, "lineage", df.cell_type.map(self.lineage_of(lineage)).fillna(""))
+            df["perc"] = (100 * df.n_cells / df.n_cells.sum()).round(2)
+            df_lin = self.read_lineage_table()
+            if df_lin is not None:
+                for c in ("description", "functional_summary"):
+                    if c in df_lin:
+                        df[c] = df.cell_type.map(df_lin[c]).fillna("")
+            return df
+        return self._cached_any("tsv_ref_celltypes", compute, force=force, verbose=verbose)
+
+    def calc_df_section_qc(self, adata, df_sections: pd.DataFrame, cols: Sequence[str] = ("age_label", "heart"),
+                           force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """Per-section QC (calc_df_qc: n, median / q25 / q75 of genes, counts and % MT) joined with the columns cols
+        of df_sections (by section_id). Cached in tsv_section_qc: force=True after changing the QC filters.
+        Index = section."""
+        def compute():
+            return self.calc_df_qc(adata=adata).join(df_sections.set_index("section_id")[list(cols)]).reset_index()
+        df = self._cached_any("tsv_section_qc", compute, force=force, verbose=verbose)
+        return df.set_index(df.columns[0])
+
+    def save_region_labels(self, adata, abundance_source: str = "",
+                           cols: Sequence[str] = ("region_cluster", "region_label", "region_name", "section"),
+                           force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """Region labels of adata.obs (barcode + cols + abundance_source) -> region_labels.tsv, the input of the later
+        notebooks (add_region_labels_from_table). File present and not force: kept, and the share of spots whose
+        label agrees with it is printed (re-clustering is not bit-reproducible across machines / library versions).
+        Returns the table of the current labels."""
+        df = adata.obs[list(cols)].reset_index(names="barcode")
+        df["abundance_source"] = abundance_source
+        path = self.file_path("region_labels")
+        if path.exists() and not force:
+            df_old = pdreadcsv(path.name, path.parent)
+            same = (df_old.set_index("barcode").region_label.reindex(df.barcode).astype(str).values
+                    == df.region_label.astype(str).values)
+            print(f"File exists: {path} (same labels: {same.mean():.1%}; force=True to rewrite)")
+        else:
+            self.write_tsv(df, "region_labels", verbose=verbose)
+        return df
 
     def add_region_labels_from_table(self, df_regions: pd.DataFrame, adata) -> Dict[str, str]:
         """Region labels of heart01 (region_labels.tsv: barcode, region_cluster, region_label, region_name) -> obs."""
@@ -1123,10 +1345,11 @@ class SingleCellHeart(SingleCell):
         return self._cached_any(fname, _compute, force=force, verbose=verbose)
 
     def calc_df_region_vs_paper(self, adata, key: str = "region_label", paper_key: str = "paper_cluster_name",
-                                min_overlap: Optional[float] = None) -> pd.DataFrame:
+                                min_overlap: Optional[float] = None, verbose: bool = False) -> pd.DataFrame:
         """On the spots of the paper's 17 clustered sections: per region, the share of each paper cluster (columns),
         n_shared, paper_best (when its share >= region_min_overlap, else 'mixed: A / B') and paper_share.
-        attrs: ARI and NMI between the two partitions."""
+        attrs: ARI and NMI between the two partitions. Always recomputed (fast) and written to tsv_region_vs_paper
+        (when registered), so the file matches the region labels in use."""
         from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
         min_overlap = self.get_param("region_min_overlap", min_overlap)
         obs = adata.obs[adata.obs[paper_key].notna()]
@@ -1142,6 +1365,8 @@ class SingleCellHeart(SingleCell):
         out.attrs["ARI"] = float(adjusted_rand_score(obs[key].astype(str), obs[paper_key].astype(str)))
         out.attrs["NMI"] = float(normalized_mutual_info_score(obs[key].astype(str), obs[paper_key].astype(str)))
         out.attrs["n_spots"] = int(len(obs))
+        if "tsv_region_vs_paper" in self.files:
+            self.write_tsv(out.reset_index(names=key), "tsv_region_vs_paper", verbose=verbose)
         return out
 
     def plot_region_vs_paper(self, df_vs: pd.DataFrame, names: Optional[Dict[str, str]] = None, figsize=(16, 10),

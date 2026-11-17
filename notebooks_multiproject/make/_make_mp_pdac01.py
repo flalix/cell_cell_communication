@@ -59,7 +59,7 @@ code(IMPORTS + "\nprint({p: version(p) for p in ['scanpy', 'squidpy', 'anndata',
 md("""## Parameters
 
 All parameters and file names are in the class (**src/libs/single_cell_pdac_lib.py**): **PDAC_PARAMS** (over **DEFAULT_PARAMS**) and **PDAC_FILES['inputs']** + **['pdac01']** (**scp.fname(key)**, **scp.file_path(key)**). Override in the constructor: `SingleCellPDAC(ROOT0, analysis='pdac01', params=dict(...))`.""")
-code("""force=False
+code("""force=False       # True: recompute every table and redraw every figure (after changing parameters or inputs)
 verbose=True
 
 apply_figure_style()
@@ -81,8 +81,7 @@ scp.summary(adata_vis)
 print(adata_vis.var[['in_FF', 'in_FFPE', 'in_CytAssist', 'in_all_panels']].sum())""")
 code("""df_sections = scp.section_table(adata_vis)
 df_sections""")
-code("""df_sections.groupby(['ni_status', 'technique'], observed=True).agg(n_sections=('section_id', 'size'), n_patients=('patient', 'nunique'),
-                                                                    n_spots=('n_spots', 'sum'), median_umis=('median_umis', 'median'))""")
+code("""scp.calc_df_sections_summary(df_sections, force=force, verbose=verbose)""")
 code("""sections_rep = scp.representative_sections()
 print(len(sections_rep), "representative sections:", sections_rep)""")
 
@@ -99,8 +98,7 @@ code("""scp.calc_qc_metrics(adata_vis)
 fig = scp.plot_qc(groupby='section', adata=adata_vis, figsize=(24, 5), fontsize_scale=1.3, fname=scp.fname('fig_qc_visium'),
                   title='Visium spots per section (ordered: low-NI, then high-NI; FF, FFPE, CytAssist)', force=force, verbose=verbose)
 plt.show()""")
-code("""df_qc_vis = scp.calc_df_qc(adata=adata_vis).join(df_sections.set_index('section_id')[['ni_status', 'technique']])
-pdwritecsv(df_qc_vis.reset_index(), scp.fname('tsv_section_qc'), root_result, verbose=verbose)
+code("""df_qc_vis = scp.calc_df_section_qc(adata=adata_vis, df_sections=df_sections, cols=['ni_status', 'technique'], force=force, verbose=verbose)
 df_qc_vis""")
 code("""n0 = adata_vis.n_vars
 adata_vis = scp.remove_mt_genes(adata_vis)
@@ -112,11 +110,14 @@ GSE278688 (scRNA, 10x 5' v2: 13 tumours, 8 adjacent normal, 12 blood samples of 
 code("""adata_ref = scp.read_h5ad('reference', set_self=False, verbose=verbose)
 print(f"{os.path.getsize(scp.file_path('reference')) / 1e9:.2f} GB; raw counts: {scp.is_raw_counts(adata_ref)}")
 scp.summary(adata_ref)
-pd.crosstab([adata_ref.obs.technology, adata_ref.obs.tissue], adata_ref.obs.major_type, margins=True)""")
+df_ref_major = scp.calc_df_ref_major_types(adata_ref, force=force, verbose=verbose)
+df_ref_major""")
 code("""scp.calc_qc_metrics(adata_ref)
 fig = scp.plot_qc(groupby='sample_id', adata=adata_ref, figsize=(26, 5), fontsize_scale=1.3, fname=scp.fname('fig_qc_ref'),
                   title='sc / sn cells per sample (10x library or FFPE sample)', force=force, verbose=verbose)
 plt.show()""")
+code("""df_qc_ref = scp.calc_df_qc_table(adata_ref, 'tsv_qc_ref', groupby='sample_id', force=force, verbose=verbose)
+df_qc_ref""")
 
 md("""### 4. Re-derived subclusters
 
@@ -139,14 +140,21 @@ md("""### 5. Figure 1B: reference UMAP + dot plot of 26 PDAC / neural-invasion g
 
 UMAP of a per-type subsample of the tissue cells (<= 3,000 per type; scVI, batch = sample, covariate = technology; cached in **pdac01_reference_umap.tsv**). The paper's Figure 1B integrates sc + sn of all samples with BBKNN; the layout differs, the cell types and their markers are the comparison.""")
 code("""genes_plot = list(PDAC_GENES)
-pd.DataFrame({'gene': genes_plot, 'role': list(PDAC_GENES.values())})""")
+df_genes = scp.calc_df_gene_panel(adata_ref, adata_vis, genes=PDAC_GENES, force=force, verbose=verbose)
+df_genes""")
 code("""df_umap = scp.calc_reference_umap(adata_ref, fname='reference_umap', force=False, verbose=verbose)
 df_dot = scp.plot_umap_celltype_dotplot(df_umap, adata_ref, genes_plot, groupby='major_type', figsize=(26, 10),
                                         fname=scp.fname('fig_umap_dotplot'), force=force, verbose=verbose)
 plt.show()""")
+code("""# major type with the highest mean expression of each gene (and its % expressing)
+df_best_major = scp.calc_df_gene_best_group(df_dot, groupby='major_type', genes=genes_plot, fname='tsv_gene_best_major', force=force, verbose=verbose)
+df_best_major""")
 code("""df_dot2 = scp.plot_umap_celltype_dotplot(df_umap, adata_ref, genes_plot, groupby='cell_type', figsize=(28, 16), point_size=1.2,
                                          fname=scp.fname('fig_umap_sub_dotplot'), force=force, verbose=verbose)
 plt.show()""")
+code("""# cell type (subcluster) with the highest mean expression of each gene (and its % expressing)
+df_best = scp.calc_df_gene_best_group(df_dot2, groupby='cell_type', genes=genes_plot, fname='tsv_gene_best_celltype', force=force, verbose=verbose)
+df_best""")
 
 md("""### 6. The 26 genes on the Visium sections
 
@@ -225,7 +233,7 @@ else:
 
 md("""### 10. Regions: Leiden on the cell-type shares, named after the paper's niches
 
-**scp.cluster_regions**: kNN (**region_n_neighbors** = 30) on the shares of the 42 types, Leiden (**region_resolution** = 1.0, igraph, seed 0) jointly over the 21 sections. **assign_niches**: each region is named after the paper's niche whose defining cell types are most enriched (TLS: B + T; endocrine; peri-vascular: endothelial + stellate; plasma; CAF; TAM; malignant ductal 1-4 by dominant subtype; non-malignant pancreas: acinar + D01; nerve: Schwann + F07). Curated names can be written in **pdac/data/pdac_regions.tsv**.
+**scp.cluster_regions**: kNN (**region_n_neighbors** = 30) on the shares of the 42 types, Leiden (**region_resolution** = 1.0, igraph, seed 0) jointly over the 21 sections. **assign_niches**: niche groups of the paper (TLS: B + T; endocrine; peri-vascular: endothelial + stellate; plasma; CAF; TAM; malignant ductal; non-malignant pancreas: acinar + D01; nerve: Schwann + F07); per region the group share, its enrichment over all spots and **score = share x log2(enrichment)** (groups with share >= 0.10); niche = highest score, **mixed** when the best score < 0.1, **N00_unassigned** for spots RCTD could not deconvolve (< 100 UMIs). Malignant regions are named after their dominant subtype, **N07-10_Malignant (<subtype>)** (the paper's N07-N10 numbering is not public, except N10 = D02_Ductal-APOA2). Curated names can be written in **pdac/data/pdac_regions.tsv**.
 
 **Caveat**: the sections are not batch corrected in abundance space; a region found in one section only, or only on one platform, is a candidate technical effect (n_sections, technique mix in mp_pdac02).""")
 code("""scp.cluster_regions(adata_vis, df_abund=df_share)
@@ -234,30 +242,24 @@ fmt = scp.params['region_id_fmt']
 cl = adata_vis.obs['region_cluster'].astype(str)
 labels = {c: fmt.format(int(c)) for c in sorted(cl.unique(), key=int)}
 adata_vis.obs['region_label'] = pd.Categorical(cl.map(labels), categories=list(labels.values()))
-df_niche = scp.assign_niches(adata_vis, df_abund)
+df_niche = scp.annotate_niches(adata_vis, df_abund, abundance_source=source, force=force, verbose=verbose)
 names = dict(zip(df_niche.region_label, df_niche.niche))
-adata_vis.obs['region_name'] = adata_vis.obs['region_label'].map(names).astype(str)
-adata_vis.obs['niche'] = adata_vis.obs['region_name']
-df_niche = df_niche.merge(adata_vis.obs.groupby('region_label', observed=True).agg(n_spots=('section', 'size'), n_sections=('section', 'nunique')),
-                          left_on='region_label', right_index=True)
-df_niche['abundance_source'] = source
-pdwritecsv(df_niche, scp.fname('tsv_niches'), root_result, verbose=verbose)
 df_niche""")
-code("""df_regions = adata_vis.obs[['region_cluster', 'region_label', 'region_name', 'niche', 'section']].reset_index(names='barcode')
-df_regions['abundance_source'] = source
-filename = scp.file_path('region_labels')
-if filename.exists() and not force:
-    df_old = pdreadcsv(filename.name, filename.parent)
-    same = df_old.set_index('barcode').region_label.reindex(df_regions.barcode).astype(str).values == df_regions.region_label.astype(str).values
-    print(f"File exists: {filename} (same labels: {same.mean():.1%}; force=True to rewrite)")
-else:
-    pdwritecsv(df_regions, filename.name, filename.parent, verbose=verbose)""")
+code("""df_regions = scp.save_region_labels(adata_vis, abundance_source=source, force=force, verbose=verbose)""")
 code("""fig = scp.umap_spatial_3plot(adata_vis, names=names, key='region_label', library_id=scp.params['library_main'], figsize=(24, 9),
                              fname=scp.fname('fig_regions'), force=force, verbose=verbose)
 plt.show()""")
+code("""# interactive version (HTML in pdac/figures): one legend drives the region UMAP and the section map
+fig = scp.plotly_umap_spatial_3plot(adata_vis, names=names, key='region_label', library_id=scp.params['library_main'],
+                                    fname='fig_regions_3plot_html', force=force, verbose=verbose)
+fig.show()""")
 code("""fig = scp.plot_regions_on_sections(adata_vis, key='region_label', sections=sections_rep, names=names, ncols=3, panel_size=4.2,
                                    legend_ncol=2, fname=scp.fname('fig_regions_sections'), force=force, verbose=verbose)
 plt.show()""")
+code("""# interactive version (HTML in pdac/figures): click a region to hide it, double-click to isolate it in every section
+fig = scp.plotly_regions_on_sections(adata_vis, key='region_label', sections=sections_rep, names=names, ncols=3,
+                                     fname='fig_regions_sections_html', force=force, verbose=verbose)
+fig.show()""")
 code("""# interactive: the paper's representative section PA98 (Figure 1D right); the others as HTML files
 for lib in sections_rep:
     fig = scp.plotly_spatial_visium(names, adata_vis, key='region_label', library_id=lib, fontsize_title=20, fontsize_legend=12,

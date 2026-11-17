@@ -54,6 +54,7 @@ verbose=False
 
 apply_figure_style()
 scp = SingleCellPDAC(ROOT0, analysis='pdac04')
+scp.set_params(subregion_skip=tuple(scp.unassigned_regions()))     # spots without deconvolution: not a region of LR analysis
 print(scp)
 print({k: scp.params[k] for k in ['liana_resource', 'liana_bandwidth_spots', 'liana_nz_prop', 'lr_group_min_auroc', 'lr_display_exclude']})
 print('CellChatDB in liana:', 'cellchatdb' in li.resource.show_resources())
@@ -90,7 +91,7 @@ celltypes = [c for c in df_abund.columns if c in df_sig.columns]
 df_sub03 = scp.read_tsv('subregion_table_pdac03', verbose=verbose)
 sub_supported = df_sub03.loc[df_sub03.status.str.startswith('supported'), 'sub_region_id'].tolist()
 adata_expr.obs['nerve_zone_status'] = adata_map.obs.loc[adata_expr.obs_names, 'nerve_zone_status'].values
-groups = {'region': scp._groups(adata_expr, 'region_label'),
+groups = {'region': scp._groups(adata_expr, 'region_label', skip=set(scp.params['subregion_skip'])),
           'subregion': scp._groups(adata_expr, 'sub_region_id'),
           'ni_status': scp._groups(adata_expr, 'ni_status'),
           'nerve_zone': scp._groups(adata_expr, 'nerve_zone_status', skip={''})}
@@ -209,22 +210,9 @@ df_links_nerve[~df_links_nerve.self_link].groupby('group').head(4)[['group', 'li
 md("""### 8. TGF-beta and HGF towards S02_Schwann-TGFBI; CXCL12 -> CXCR4 around non-invaded nerves
 
 Paper (Figure 6): TGFB1 from M07_Macro-NLRP3, myCAF and malignant cells induces TGFBI+ Schwann cells (CellChat TGF-beta network; NicheNet ligands TGFB1, HGF). Here: sender -> receiver scores of the TGF-beta / HGF pairs with **S02_Schwann-TGFBI** (and S01 / S03 for comparison) as receivers, whole tissue and per nerve zone. Paper (Figure 4H): CXCL12 from LUM+ fibroblasts and CXCR4+ B cells around non-invaded nerves.""")
-code("""tgf = [i for i in df_ct.interaction.unique() if i.startswith(('TGFB1^', 'TGFB2^', 'TGFB3^', 'HGF^'))]
-d_t = df_ct[df_ct.interaction.isin(tgf) & df_ct.receiver.str.startswith('S0')]
-df_tgfb = d_t.sort_values('score', ascending=False).groupby(['interaction', 'receiver']).head(5)
-scp._write_table(df_tgfb, scp.fname('tsv_tgfb'), force=True)
-if len(d_t):
-    M = d_t.pivot_table(index='sender', columns=['receiver'], values='score', aggfunc='sum')
-    M = M.loc[M.sum(1).sort_values(ascending=False).index[:15]]
-    fig, ax = plt.subplots(figsize=(7, 6))
-    im = ax.imshow(M.values, cmap='magma', aspect='auto')
-    ax.set_xticks(range(M.shape[1])); ax.set_xticklabels(M.columns, rotation=30, ha='right')
-    ax.set_yticks(range(M.shape[0])); ax.set_yticklabels(M.index)
-    fig.colorbar(im, ax=ax, fraction=0.04).set_label('sum of TGF-beta / HGF pair scores')
-    ax.set_title('Senders of TGF-beta / HGF to Schwann subsets')
-    scp.style_figure(fig, scp.params['font_color'], scp.params['bg_color'], scp.params['fontsize_scale'])
-    scp._savefig(fig, scp.fname('fig_tgfb'), force=force, verbose=verbose)
-    plt.show()
+code("""df_tgfb = scp.calc_df_tgfb_to_schwann(df_ct, top=5, fname='tsv_tgfb', force=force, verbose=verbose)
+fig = scp.plot_tgfb_to_schwann(df_ct, n_senders=15, fname='fig_tgfb', force=force, verbose=verbose)
+plt.show()
 df_tgfb.head(20)""")
 code("""cx = [i for i in df_group_ct.interaction.unique() if i.startswith('CXCL12^')]
 d_c = df_group_ct[df_group_ct.interaction.isin(cx) & (df_group_ct.level == 'nerve_zone')]
