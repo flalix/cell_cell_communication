@@ -46,6 +46,9 @@ Sections of SingleCell
                                plotly_coloc_heatmap
 10. Static helpers             wtab
 
+11. plot_factor_dotplot
+                            
+
 Usage (notebook)
 ----------------
     ROOT0 = Path("/home/flavio/uv/cell_cell_communication")
@@ -1829,8 +1832,8 @@ class SingleCell(object):
 
     def run_colocation_cached(self, adata_vis: ad.AnnData, run_dir: Path, n_facts: Optional[Sequence[int]] = None,
                               n_restarts: Optional[int] = None, alpha: Optional[float] = None,
-                              n_iter: Optional[int] = None, force: bool = False,
-                              verbose: bool = True) -> Tuple[ad.AnnData, Optional[dict], bool]:
+                              n_iter: Optional[int] = None, df_abund: Optional[pd.DataFrame] = None,
+                              force: bool = False, verbose: bool = True) -> Tuple[ad.AnnData, Optional[dict], bool]:
         """
         NMF co-location of the cell abundances (cell2location CoLocatedGroupsSklearnNMF on
         obsm['q05_cell_abundance_w_sf'], one model per number of factors), with a disk cache.
@@ -1842,6 +1845,11 @@ class SingleCell(object):
         refitted; (2) only the abundance matrix is used (run_colocation copies the whole AnnData); (3) the per-section
         spatial PDFs, stability and accuracy plots of run_colocation are not drawn (they took ~50 s per section and
         factor set). Results go to adata.obs (mean_nUMI_factors...) and adata.uns['mod_coloc_n_fact<n>'] as before.
+        df_abund: spots x cell types used instead of the cell2location q05 abundances (e.g. RCTD weights, rows sum
+        to 1: the factors then describe co-occurring cell-type shares, not cell numbers); the cache folder gets the
+        source (df_abund.attrs['source'], e.g. ..._42factors_rctd_x30), so it never mixes with a c2l model.
+        Proportions (max <= 1) are multiplied by params['coloc_scale'] (None: params['c2l_N_cells_per_location']):
+        at their own scale coloc_alpha shrinks every factor to 0.
         force=True: refit and rewrite the cache. Returns (adata_vis, {n_fact<n>: res} or None when nothing was
         loaded / fitted, edited).
         """
@@ -1858,11 +1866,28 @@ class SingleCell(object):
                 print(f"NMF co-location already in adata.uns: {list(keys.values())}")
             return adata_vis, None, False
 
-        X = np.asarray(adata_vis.obsm["q05_cell_abundance_w_sf"], dtype=float)
-        var_names = list(adata_vis.uns["mod"]["factor_names"])
+        if df_abund is None:
+            X = np.asarray(adata_vis.obsm["q05_cell_abundance_w_sf"], dtype=float)
+            var_names = list(adata_vis.uns["mod"]["factor_names"])
+            tag = ""
+        else:
+            df_x = df_abund.loc[adata_vis.obs_names]
+            X = np.nan_to_num(df_x.values.astype(float))
+            var_names = [str(c) for c in df_x.columns]
+            src = str(df_abund.attrs.get("source", "") or "")
+            # proportions (max <= 1, e.g. RCTD weights): coloc_alpha (tuned on c2l cells per spot) sets every
+            # factor to 0 -> x params['coloc_scale'] (None: params['c2l_N_cells_per_location'], expected cells/spot)
+            scale = self.params.get("coloc_scale")
+            if scale is None and X.max() <= 1.0 + 1e-6:
+                scale = float(self.params.get("c2l_N_cells_per_location", 20))
+            if scale:
+                X = X * float(scale)
+            tag = (f"_{src}" if src and src != "c2l" else "") + (f"_x{float(scale):g}" if scale else "")
+            if verbose and scale:
+                print(f"abundances x {float(scale):g} (proportions -> cells per spot; params coloc_scale)")
         sample_id = adata_vis.obs[self.sample_col]
-        model_dir = (Path(run_dir) / "CoLocatedComb" / f"{Model.__name__}_{X.shape[0]}locations_{X.shape[1]}factors"
-                     / "models")
+        model_dir = (Path(run_dir) / "CoLocatedComb" /
+                     f"{Model.__name__}_{X.shape[0]}locations_{X.shape[1]}factors{tag}" / "models")
         res_dict, edited = {}, False
         for n, key in keys.items():
             if key in adata_vis.uns and not force:
@@ -1939,21 +1964,30 @@ class SingleCell(object):
                            fname: Optional[str] = "umap_region_sample.png", library_id: Optional[str] = None,
                            font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
                            force: bool = False, verbose: bool = False):
-        """UMAP by region, UMAP by sample, spatial map by region (one library) with a shared legend.
-        Style (None = params): font_color, bg_color, fontsize_scale (style_figure). force: rewrite an existing file; verbose: print the file status."""
+        """
+        UMAP by region, UMAP by sample, spatial map by region (one library) with a shared legend.
+        Style (None = params): font_color, bg_color, fontsize_scale (style_figure). force: 
+        rewrite an existing file; verbose: print the file status.
+        """
         font_color = self.get_param("font_color", font_color)   # style: None -> params
         bg_color = self.get_param("bg_color", bg_color)
         fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
+        
         a = self._check_adata(adata)
+        
         key = self.get_param("region_key", key)
         fig, axes = plt.subplots(1, 3, figsize=figsize, layout="constrained")
+        
         sc.pl.umap(a, color=key, size=30, legend_loc="on data", legend_fontsize=12, ax=axes[0], show=False, title=key)
         sc.pl.umap(a, color=self.sample_col, size=30, legend_loc="none", ax=axes[1], show=False, title=self.sample_col)
+        
         lib = library_id or self.library_id(a)
         sub = a[a.obs[self.sample_col] == lib] if self.sample_col in a.obs else a
+        
         with self._image_bg(a, [lib]):                                       # H&E glass: params['image_bg_color']
             sc.pl.spatial(sub, color=key, library_id=lib, ax=axes[2], size=self.params["spot_size"],
                           img_key=self.params["img_key"], alpha=0.5, title=lib, legend_loc="none", show=False)
+        
         names = names if names is not None else self.region_names(a, key=key)
         self.legend_figure_bottom(fig, a, key, names=names, ncol=4)
         self.style_figure(fig, font_color, bg_color, fontsize_scale)          # constrained layout: re-laid out on draw
@@ -2897,19 +2931,23 @@ class SingleCell(object):
                                   font_color: Optional[str] = None, bg_color: Optional[str] = None,
                                   fname: Optional[str] = None, include_plotlyjs=None, force: bool = False,
                                   verbose: bool = False):
-        """Interactive version of umap_spatial_3plot: UMAP by region, UMAP by sample, spatial map by region of one
+        """
+        Interactive version of umap_spatial_3plot: UMAP by region, UMAP by sample, spatial map by region of one
         library on its H&E. One legend (regions) drives both region panels: click to hide, double-click to isolate.
         Hover: spot, sample, region and its name. legend_ncol: legend below the panels in that many columns (the
         figure grows by the legend height, panels keep `height`); None = legend on the right, one column. colors: region -> colour (None = the colours of the matplotlib
         figure: adata.uns['<key>_colors'], else _region_palette). fname: key of self.files or an .html name
-        (None = not saved); an existing file is kept unless force."""
+        (None = not saved); an existing file is kept unless force.
+        """
         import plotly.graph_objects as go
         from plotly.subplots import make_subplots
+
         font_color = self.get_param("font_color", font_color)
         bg_color = self.get_param("bg_color", bg_color)
         a = self._check_adata(adata)
         key = self.get_param("region_key", key)
         names = names if names is not None else self.region_names(a, key=key)
+        
         labs = a.obs[key].astype(str).values
         cats = [c for c in (list(a.obs[key].cat.categories) if hasattr(a.obs[key], "cat") else sorted(set(labs))) if c != "nan"]
         colors = colors or self._category_colors(a, key, cats)
@@ -2917,8 +2955,10 @@ class SingleCell(object):
         scats = list(a.obs[self.sample_col].cat.categories) if hasattr(a.obs[self.sample_col], "cat") else sorted(set(samples))
         scol = self._category_colors(a, self.sample_col, scats) if len(a.uns.get(f"{self.sample_col}_colors", [])) >= len(scats) \
             else {s: (KELLY_COLORS + [mpl.colors.to_hex(c) for c in plt.get_cmap("tab20").colors])[i % 40] for i, s in enumerate(scats)}
+        
         lib = library_id or self.library_id(a)
         U = np.asarray(a.obsm["X_umap"])
+        
         fig = make_subplots(rows=1, cols=3, column_widths=[0.32, 0.32, 0.36], horizontal_spacing=0.03,
                             subplot_titles=(key, self.sample_col, self.section_plot_title(lib)))
         m, xy = self.spot_xy(lib, a)
@@ -2983,14 +3023,17 @@ class SingleCell(object):
                               fontsize_hover: int = 12, font_color: Optional[str] = None, bg_color: Optional[str] = None,
                               fname: Optional[str] = None, include_plotlyjs=None, force: bool = False,
                               verbose: bool = False):
-        """Interactive grid of sections on their H&E, spots coloured by a categorical key (default colours:
+        """
+        Interactive grid of sections on their H&E, spots coloured by a categorical key (default colours:
         _region_palette, as the matplotlib section grids), one legend for all panels (click = hide, double-click =
         isolate a category in every section). Panel titles: section_title(lib, short=True) when the project defines
         it, else the section id. Hover: spot, section, category and its name. sections: default
         representative_sections(). fname: key of self.files or an .html name (None = not saved); an existing file is
-        kept unless force."""
+        kept unless force.
+        """
         import plotly.graph_objects as go
         from plotly.subplots import make_subplots
+
         font_color = self.get_param("font_color", font_color)
         bg_color = self.get_param("bg_color", bg_color)
         sections = list(sections) if sections is not None else self.representative_sections()
@@ -4145,3 +4188,56 @@ class SingleCell(object):
         df_wtab = pd.DataFrame({"gene": rgg["names"][group], "lfc": rgg["logfoldchanges"][group],
                                 "padj": rgg["pvals_adj"][group], "score": rgg["scores"][group]}).set_index("gene")
         return df_wtab
+
+
+
+    def plot_factor_dotplot(self, adata, n_fact: int, lineage: Optional[Dict[str, Sequence[str]]] = None,
+                            figsize=(13, 11), fname: Optional[str] = None, fname_tsv: Optional[str] = None,
+                            font_color: Optional[str] = None, bg_color: Optional[str] = None,
+                            fontsize_scale: Optional[float] = None, force: bool = False, verbose: bool = False):
+        """
+        NMF co-location (cell2location run_colocation): cell types (rows, by lineage) x factors (columns ordered by
+        their top cell type, labelled with the top 2); dot size and colour = relative weight (rows sum to 1).
+        lineage (required): {lineage: [cell types]} - row order and the colour of the row labels (one colour per
+        lineage: params['lineage_cmaps'][lineage] at 0.75 when the project has lineage_cmaps, else tab10).
+        """
+
+        font_color = self.get_param("font_color", font_color)
+        bg_color = self.get_param("bg_color", bg_color)
+        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
+        if not lineage:
+            raise ValueError("lineage is required: {lineage: [cell types]} (e.g. HEART_LINEAGE)")
+
+        df_load = self.calc_df_coloc_loadings(adata, n_fact, normalize=True)
+        df_load.index = [str(i).replace("mean_cell_type_factors", "") for i in df_load.index]
+        order = [c for v in lineage.values() for c in v if c in df_load.index]
+        if not order:
+            raise ValueError(f"no cell type of lineage in the NMF loadings (e.g. {list(df_load.index[:3])})")
+        df_load = df_load.reindex(order)
+        top_row = df_load.values.argmax(0)
+        cols = [df_load.columns[i] for i in np.argsort(top_row, kind="stable")]
+        df_load = df_load[cols]
+        labels = [f"{c}: " + " / ".join(df_load[c].sort_values(ascending=False).index[:2]) for c in cols]
+        fig, ax = plt.subplots(figsize=figsize)
+        yy, xx = np.meshgrid(np.arange(len(order)), np.arange(len(cols)), indexing="ij")
+        sca = ax.scatter(xx.ravel(), yy.ravel(), s=df_load.values.ravel() * 260, c=df_load.values.ravel(),
+                         cmap="magma_r", vmin=0, vmax=1, edgecolors=self._muted(bg_color),
+                         linewidths=0.3 if self._luminance(bg_color) > 0.5 else 0.6)   # dark dots visible on black
+        ax.set_xticks(range(len(cols)))
+        ax.set_xticklabels(labels, rotation=70, ha="right")
+        ax.set_yticks(range(len(order)))
+        ax.set_yticklabels(order)
+        cmaps = self.params.get("lineage_cmaps")
+        lc = ({lin: plt.get_cmap(cmaps.get(lin, "Greys"))(0.75) for lin in lineage} if cmaps else
+              {lin: plt.get_cmap("tab10")(i % 10) for i, lin in enumerate(lineage)})
+        lin_of = {c: k for k, v in lineage.items() for c in v}
+        for t, c in zip(ax.get_yticklabels(), order):
+            t.set_color(mpl.colors.to_hex(lc[lin_of[c]]))
+        ax.set_ylim(len(order) - 0.5, -0.5)
+        fig.colorbar(sca, ax=ax, fraction=0.03).set_label("relative weight of the cell type")
+        ax.set_title(f"NMF co-location, {n_fact} factors")
+        self.style_figure(fig, font_color, bg_color, fontsize_scale)
+        self._savefig(fig, fname, force=force, verbose=verbose)
+        if fname_tsv is not None:
+            self._write_table(df_load.round(4).reset_index(names="cell_type"), fname_tsv, force=force, verbose=verbose)
+        return fig, df_load

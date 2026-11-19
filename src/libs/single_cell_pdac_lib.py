@@ -254,6 +254,8 @@ PDAC_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
         subregion_descriptions=("data", "pdac_subregion_descriptions.tsv"),
     ),
     "pdac01": dict(
+        fig_factor_dotplot=("figure", "pdac01_nmf_factors_dotplot_n{n}.png"),   # NMF co-location (RCTD or c2l)
+        tsv_factor_load=("result", "pdac01_nmf_factor_loadings_n{n}.tsv"),
         tsv_region_names=("result", "pdac01_region_names.tsv"),         # calc_region_names: automatic + curated name, n spots
         fig_sections=("figure", "pdac01_sections_he_gallery.png"),
         fig_qc_visium=("figure", "pdac01_qc_visium_sections.png"),
@@ -941,6 +943,15 @@ class SingleCellPDAC(RegionCacheMixin, SingleCell):
         cols = list(cols)
         return [c for c in order if c in cols] + [c for c in cols if c not in order]
 
+    def celltype_lineage(self, cols: Sequence[str]) -> Dict[str, List[str]]:
+        """{lineage: [cell types of cols]} in celltype_order, lineages as PDAC_MAJOR_LINEAGE (epithelial, stromal,
+        myeloid, lymphoid; unmapped types -> 'other'): the lineage argument of plot_factor_dotplot for the fine
+        RCTD / c2l types (e.g. scp.celltype_lineage(df_abund.columns))."""
+        d: Dict[str, List[str]] = {}
+        for c in self.celltype_order(cols):
+            d.setdefault(self.lineage_of_celltype(c) or "other", []).append(c)
+        return d
+
     def lineage_of_celltype(self, ct: str) -> str:
         ct = ct[: -len("-other")] if ct.endswith("-other") else ct
         for lin, majors in PDAC_MAJOR_LINEAGE.items():
@@ -1261,8 +1272,9 @@ class SingleCellPDAC(RegionCacheMixin, SingleCell):
                                  names: Optional[Dict[str, str]] = None, ncols: Optional[int] = None,
                                  panel_size: float = 3.4, colors: Optional[Dict[str, str]] = None,
                                  legend_ncol: int = 4, fname: Optional[str] = None, font_color: Optional[str] = None,
-                                 bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
+                                 bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None, bottom_scale:float=3.,
                                  force: bool = False, verbose: bool = False):
+        
         """Categorical key (regions, niches, nerve rings) on the sections, one shared legend."""
         font_color = self.get_param("font_color", font_color)
         bg_color = self.get_param("bg_color", bg_color)
@@ -1286,9 +1298,12 @@ class SingleCellPDAC(RegionCacheMixin, SingleCell):
                           label=f"{c} - {names[c]}" if names and c in names else c) for c in cats if c in present]
         fig.legend(handles=handles, loc="lower center", ncol=legend_ncol, frameon=False, fontsize=8,
                    bbox_to_anchor=(0.5, -0.02))
-        fig.subplots_adjust(bottom=1.6 / (panel_size * nrows + 1.6) + 0.05, wspace=0.02, hspace=0.12)
+        
+        fig.subplots_adjust(bottom=bottom_scale / (panel_size * nrows + 1.6) + 0.05, wspace=0.02, hspace=0.12)
+        
         self.style_figure(fig, font_color, bg_color, fontsize_scale, relayout=False)
         self._savefig(fig, fname, dpi=self.params["dpi_maps"], force=force, verbose=verbose)
+        
         return fig
 
 
@@ -1563,22 +1578,42 @@ class SingleCellPDAC(RegionCacheMixin, SingleCell):
         return df.set_index(df.columns[0])
 
     def annotate_niches(self, adata, df_abund: pd.DataFrame, abundance_source: str = "", key: str = "region_label",
-                        force: bool = False, verbose: bool = False) -> pd.DataFrame:
-        """assign_niches on the regions of adata.obs[key] -> obs 'region_name' and 'niche' (the niche name of the
-        region), plus n_spots, n_sections and abundance_source per region. Written to tsv_niches when the file is
-        missing or force (the same rule as save_region_labels, so the niche table and the region labels written
-        to disk always come from the same clustering). Returns the table of the current regions."""
+                        cluster_key: Optional[str] = None, force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """
+        assign_niches on the regions of adata.obs[key] -> obs 'region_name' and 'niche' (the niche name of the
+        region), plus n_spots, n_sections and abundance_source per region. obs[key] is first set from the Leiden
+        clusters obs[cluster_key] (params['region_key'], 'region_cluster'): '0' -> 'R00' (params['region_id_fmt']),
+        the same ids as calc_region_names; when obs has no cluster_key, the existing obs[key] is used. Written to
+        tsv_niches when the file is missing or force (the same rule as save_region_labels, so the niche table and
+        the region labels written to disk always come from the same clustering). Returns the table of the current
+        regions.
+        """
+        cluster_key = self.get_param("region_key", cluster_key)
+
+        if cluster_key in adata.obs:
+            fmt = self.params["region_id_fmt"]
+            cl = adata.obs[cluster_key].astype(str)
+            labels = {c: fmt.format(int(c)) for c in sorted(cl.unique(), key=int)}
+            adata.obs[key] = pd.Categorical(cl.map(labels), categories=list(labels.values()))
+        elif key not in adata.obs:
+            raise KeyError(f"obs has neither {cluster_key!r} (run cluster_regions) nor {key!r}")
+        
         df_niche = self.assign_niches(adata, df_abund, key=key)
         names = dict(zip(df_niche[key], df_niche.niche))
+
         adata.obs["region_name"] = adata.obs[key].map(names).astype(str)
         adata.obs["niche"] = adata.obs["region_name"]
+
         counts = adata.obs.groupby(key, observed=True).agg(n_spots=("section", "size"), n_sections=("section", "nunique"))
+
         df_niche = df_niche.merge(counts, left_on=key, right_index=True)
         df_niche["abundance_source"] = abundance_source
+
         if "tsv_niches" in self.files and (force or not self.file_path("tsv_niches").exists()):
             self.write_tsv(df_niche, "tsv_niches", verbose=verbose)
         elif verbose and "tsv_niches" in self.files:
             print(f"File exists: {self.file_path('tsv_niches')} (force=True to rewrite)")
+            
         return df_niche
 
     def save_region_labels(self, adata, abundance_source: str = "",

@@ -1690,44 +1690,6 @@ class SingleCellHeart(SingleCell):
         self._savefig(fig, fname, force=force, verbose=verbose)
         return df_enr
 
-    def plot_factor_dotplot(self, adata, n_fact: int, lineage: Optional[Dict[str, Sequence[str]]] = None,
-                            figsize=(13, 11), fname: Optional[str] = None, fname_tsv: Optional[str] = None,
-                            font_color: Optional[str] = None, bg_color: Optional[str] = None,
-                            fontsize_scale: Optional[float] = None, force: bool = False, verbose: bool = False):
-        """NMF co-location (cell2location run_colocation): cell types (rows, by lineage) x factors (columns ordered by
-        their top cell type, labelled with the top 2); dot size and colour = relative weight (rows sum to 1)."""
-        font_color = self.get_param("font_color", font_color)
-        bg_color = self.get_param("bg_color", bg_color)
-        fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
-        lineage = lineage or HEART_LINEAGE
-        df_load = self.calc_df_coloc_loadings(adata, n_fact, normalize=True)
-        df_load.index = [str(i).replace("mean_cell_type_factors", "") for i in df_load.index]
-        order = [c for c in self.lineage_order(lineage) if c in df_load.index]
-        df_load = df_load.reindex(order)
-        top_row = df_load.values.argmax(0)
-        cols = [df_load.columns[i] for i in np.argsort(top_row, kind="stable")]
-        df_load = df_load[cols]
-        labels = [f"{c}: " + " / ".join(df_load[c].sort_values(ascending=False).index[:2]) for c in cols]
-        fig, ax = plt.subplots(figsize=figsize)
-        yy, xx = np.meshgrid(np.arange(len(order)), np.arange(len(cols)), indexing="ij")
-        sca = ax.scatter(xx.ravel(), yy.ravel(), s=df_load.values.ravel() * 260, c=df_load.values.ravel(),
-                         cmap="magma_r", vmin=0, vmax=1, edgecolors="#555555", linewidths=0.3)
-        ax.set_xticks(range(len(cols)))
-        ax.set_xticklabels(labels, rotation=70, ha="right")
-        ax.set_yticks(range(len(order)))
-        ax.set_yticklabels(order)
-        lc = self.lineage_colors(lineage)
-        for t, c in zip(ax.get_yticklabels(), order):
-            t.set_color(mpl.colors.to_hex(lc[self.lineage_of(lineage)[c]]))
-        ax.set_ylim(len(order) - 0.5, -0.5)
-        fig.colorbar(sca, ax=ax, fraction=0.03).set_label("relative weight of the cell type")
-        ax.set_title(f"NMF co-location, {n_fact} factors")
-        self.style_figure(fig, font_color, bg_color, fontsize_scale)
-        self._savefig(fig, fname, force=force, verbose=verbose)
-        if fname_tsv is not None:
-            self._write_table(df_load.round(4).reset_index(names="cell_type"), fname_tsv, force=force, verbose=verbose)
-        return fig, df_load
-
     # =====================================================================================================
     # signatures by gene symbol (LIANA cell-type split) and subregion scores on the reference
     # =====================================================================================================
