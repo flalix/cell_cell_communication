@@ -1541,6 +1541,17 @@ class SingleCell(object):
                           f"(files['region_info']): automatic names are used")
         names = (dict(zip(df_region_info["region_id"].astype(str), df_region_info["region_name"].astype(str)))
                  if df_region_info is not None else names_auto)
+        if df_region_info is not None and "n_spots" in df_region_info and "region_id" in df_region_info:
+            # the curated names belong to one partition: spot counts that differ -> another clustering
+            n_now = adata.obs[key].astype(str).value_counts()
+            n_cur = pd.to_numeric(df_region_info.set_index(df_region_info["region_id"].astype(str))["n_spots"],
+                                  errors="coerce")
+            diff = [r for r in n_now.index if r in n_cur.index and pd.notna(n_cur[r]) and int(n_cur[r]) != int(n_now[r])]
+            if diff:
+                ex = ", ".join(f"{r} {int(n_cur[r])}->{int(n_now[r])}" for r in diff[:5])
+                warnings.warn(f"{len(diff)}/{len(n_now)} regions have other spot counts than the curated table "
+                              f"(n_spots; {ex}): the clustering differs from the one the names were written for - "
+                              f"check the names (or the clustering parameters / cache)")
         missing = sorted(set(labels.values()) - set(names))
         if missing:
             warnings.warn(f"{len(missing)} regions without a curated name (automatic name used): {missing[:10]}")

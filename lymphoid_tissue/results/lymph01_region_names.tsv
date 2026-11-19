@@ -1,0 +1,21 @@
+region_label	automatic (top cell types)	curated (region_info)	n_spots	abundance_source
+R00	B_activated / B_plasma / Macrophages_M2	Plasma-cell cords with sinus macrophages	419	c2l
+R01	B_naive / B_activated / Endo	B-rich parenchyma with sinus macrophages	350	c2l
+R02	B_naive / B_mem / B_activated	Primary follicle / follicle mantle	337	c2l
+R03	B_mem / B_preGC / Macrophages_M1	Perifollicular stroma and vessels	322	c2l
+R04	B_activated / T_TIM3+ / B_plasma	Mixed plasma-cell / activated-B zone	294	c2l
+R05	T_CD4+_naive / T_CD8+_naive / T_Treg	T-cell zone (paracortex)	254	c2l
+R06	B_GC_LZ / B_Cycling / FDC	Germinal centre, light zone	244	c2l
+R07	B_mem / B_naive / B_preGC	Memory-B follicle edge	224	c2l
+R08	B_naive / B_activated / B_GC_LZ	Follicle mantle next to germinal centres	182	c2l
+R09	T_CD4+_naive / B_mem / B_preGC	T-B border	175	c2l
+R10	B_preGC / T_TIM3+ / B_IFN	Interferon-active zone (ISG hotspot rim)	173	c2l
+R11	B_Cycling / B_GC_LZ / FDC	Germinal centre, dark zone / cycling	171	c2l
+R12	T_CD4+_naive / T_CD8+_naive / T_Treg	T-cell zone periphery	171	c2l
+R13	T_CD4+_naive / T_TIM3+ / T_CD8+_naive	T-B border with Treg and CCR7+ DC	163	c2l
+R14	B_mem / B_plasma / Endo	Sinus / vascular stroma	158	c2l
+R15	B_plasma / VSMC / Endo	Vessels with smooth muscle and plasma cells	154	c2l
+R16	T_CD4+_naive / T_CD8+_naive / T_Treg	T-cell zone core	88	c2l
+R17	B_IFN / T_TIM3+ / FDC	ISG hotspot core	72	c2l
+R18	T_CD4+_naive / B_IFN / T_CD8+_naive	ISG-high T-cell zone	43	c2l
+R19	B_Cycling / B_GC_DZ / B_GC_LZ	Low-quality strip (technical)	41	c2l

@@ -1,0 +1,53 @@
+{
+ "cluster": {
+  "source": "",
+  "n_obs": 4035,
+  "barcodes_md5": "908f5abfdd13dc6be63590a86e8d6a20",
+  "celltypes": [
+   "B_Cycling",
+   "B_GC_DZ",
+   "B_GC_LZ",
+   "B_GC_prePB",
+   "B_IFN",
+   "B_activated",
+   "B_mem",
+   "B_naive",
+   "B_plasma",
+   "B_preGC",
+   "DC_CCR7+",
+   "DC_cDC1",
+   "DC_cDC2",
+   "DC_pDC",
+   "Endo",
+   "FDC",
+   "ILC",
+   "Macrophages_M1",
+   "Macrophages_M2",
+   "Mast",
+   "Monocytes",
+   "NK",
+   "NKT",
+   "T_CD4+",
+   "T_CD4+_TfH",
+   "T_CD4+_TfH_GC",
+   "T_CD4+_naive",
+   "T_CD8+_CD161+",
+   "T_CD8+_cytotoxic",
+   "T_CD8+_naive",
+   "T_TIM3+",
+   "T_TfR",
+   "T_Treg",
+   "VSMC"
+  ],
+  "abund_sum": 127213.438,
+  "n_neighbors": 15,
+  "resolution": 1.1,
+  "flavor": "leidenalg",
+  "seed": 0
+ },
+ "umap": {
+  "min_dist": 0.3,
+  "spread": 1.0,
+  "seed": 0
+ }
+}
