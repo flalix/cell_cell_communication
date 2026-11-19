@@ -1,0 +1,29 @@
+region_label	automatic (top cell types)	curated (region_info)	n_spots	abundance_source
+R00	D01_Ductal-CFTR / Acinar	N11_Non-malignant-pancreas	3802	rctd
+R01	F02_Progenitor-CAF-DPT / Plasma	N04_Plasma-enriched	6036	rctd
+R02	Stellate / F02_Progenitor-CAF-DPT	N03_Peri-vascular	1536	rctd
+R03	B / F02_Progenitor-CAF-DPT	N01_TLS	1768	rctd
+R04	S01_Schwann-ABCA8 / M08_Macro-LYVE1	N12_Nerve	952	rctd
+R05	Plasma / F02_Progenitor-CAF-DPT	N04_Plasma-enriched	4511	rctd
+R06	Endothelial / D06_Ductal-MYO1A	mixed (malignant / N05_CAF-enriched)	1770	rctd
+R07	F01_myCAF-MMP11 / M08_Macro-LYVE1	N05_CAF-enriched	6153	rctd
+R08	Ductal-other / F01_myCAF-MMP11	N07-10_Malignant (Ductal-other)	1947	rctd
+R09	F01_myCAF-MMP11 / D08_Ductal-CEACAM5	N05_CAF-enriched	3286	rctd
+R10	F01_myCAF-MMP11 / D05_Ductal-PRSS1	N07-10_Malignant (D05_Ductal-PRSS1)	3828	rctd
+R11	Acinar / D01_Ductal-CFTR	N11_Non-malignant-pancreas	2963	rctd
+R12	Endocrine / F02_Progenitor-CAF-DPT	N02_Endocrine	4118	rctd
+R13	F02_Progenitor-CAF-DPT / M08_Macro-LYVE1	N05_CAF-enriched	8033	rctd
+R14	F01_myCAF-MMP11 / F02_Progenitor-CAF-DPT	N05_CAF-enriched	3147	rctd
+R15	F02_Progenitor-CAF-DPT / M13_Myeloid-str-HSPA1A	N06_TAM-enriched	502	rctd
+R16	F01_myCAF-MMP11 / M09_Macro-APOC1	N05_CAF-enriched	1425	rctd
+R17	D08_Ductal-CEACAM5 / D07_Ductal-MKI67	N07-10_Malignant (D08_Ductal-CEACAM5)	5089	rctd
+R18	D08_Ductal-CEACAM5 / D09_Ductal-CEACAM6	N07-10_Malignant (D08_Ductal-CEACAM5)	3892	rctd
+R19	F01_myCAF-MMP11 / Acinar	N11_Non-malignant-pancreas	2427	rctd
+R20	D04_Ductal-GABRP / D08_Ductal-CEACAM5	N07-10_Malignant (D04_Ductal-GABRP)	5839	rctd
+R21	D07_Ductal-MKI67 / D04_Ductal-GABRP	N07-10_Malignant (D07_Ductal-MKI67)	1303	rctd
+R22	D04_Ductal-GABRP / F05_dCAF-MKI67	N07-10_Malignant (D04_Ductal-GABRP)	3926	rctd
+R23	Acinar / S03_Schwann-SERPINA3	N11_Non-malignant-pancreas	1043	rctd
+R24	Acinar / F02_Progenitor-CAF-DPT	N11_Non-malignant-pancreas	897	rctd
+R25	F08_pro-mCAF-IGFBP5 / D04_Ductal-GABRP	N05_CAF-enriched	1481	rctd
+R26	D01_Ductal-CFTR / D02_Ductal-APOA2	N00_unassigned (no deconvolution)	91	rctd
+R27	D01_Ductal-CFTR / D02_Ductal-APOA2	N00_unassigned (no deconvolution)	81	rctd

@@ -52,6 +52,7 @@ import scanpy as sc
 
 from libs.Basic import pdreadcsv, pdwritecsv
 from libs.single_cell_lib import DEFAULT_PARAMS, SingleCell, cmap_byr, cmap_lbwr
+from libs.region_cache_lib import RegionCacheMixin
 from libs.matplotlib_figure_style import apply_figure_style
 
 __version__ = "1.2.0"
@@ -151,6 +152,7 @@ LYMPHOID_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
     "inputs": dict(
         c2l_map=("result", "lymph_nodes_analysis/cell2location_map/sp.h5ad"),     # cell2location map (mp_lymphoid01)
         region_labels=("result", "lymph01_region_labels.tsv"),                    # regions of mp_lymphoid01
+        regions_cache=("result", "lymph01_regions_cache.tsv.gz"),                 # cluster_regions / umap_regions cache (+ .json)
         reference=("data", "lymphoid_organ_sc.h5ad"),                             # scRNA reference
         region_info=("data", "lymph_node_regions.tsv"),                           # curated region table (editable)
         subregion_descriptions=("data", "lymph_node_subregion_descriptions.tsv"), # curated subregion descriptions
@@ -162,6 +164,7 @@ LYMPHOID_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
         c2l_map_dir=("result", "lymph_nodes_analysis/cell2location_map"),          # sp.h5ad + model.pt + posterior samples
     ),
     "lymph01": dict(
+        tsv_region_names=("result", "lymph01_region_names.tsv"),        # calc_region_names: automatic + curated name, n spots
         # figures
         fig_genes_visium=("figure", "lymph01_visium_genes.png"),
         fig_mln_dotplot=("figure", "lymph01_mln_panel_by_celltype_age.png"),
@@ -271,7 +274,7 @@ LYMPHOID_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
 }
 
 
-class SingleCellLymphoid(SingleCell):
+class SingleCellLymphoid(RegionCacheMixin, SingleCell):
     """Lymph node / lymphoid-organ analyses. Symbols in var['symbol'] by default (tutorial convention)."""
 
     default_params = {**DEFAULT_PARAMS, **LYMPHOID_PARAMS}

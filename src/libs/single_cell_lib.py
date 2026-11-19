@@ -1445,8 +1445,10 @@ class SingleCell(object):
     def region_names(self, adata=None, key: Optional[str] = None, df_abund: Optional[pd.DataFrame] = None,
                      top_n: Optional[int] = None, method: Optional[str] = None,
                      min_enrich: Optional[float] = None) -> Dict[str, str]:
-        """Name each region by top_n cell types (enrichment = region mean / overall mean).
-        method='abundance': among types with enrichment > min_enrich, the highest mean abundance; 'ratio': by enrichment."""
+        """
+        Name each region by top_n cell types (enrichment = region mean / overall mean).
+        method='abundance': among types with enrichment > min_enrich, the highest mean abundance; 'ratio': by enrichment.
+        """
         a = self._check_adata(adata)
         key = self.get_param("region_key", key)
         top_n = self.get_param("region_top_n", top_n)
@@ -1467,6 +1469,126 @@ class SingleCell(object):
                 top += [c for c in by_ratio if c not in top][:top_n - len(top)]
             names[str(cl)] = " / ".join(top)
         return names
+
+    # ======================================================================================================================
+    # They use only base-class pieces (region_names, file_path, read_tsv, write_tsv, params), so every
+    # project inherits them. A project class that defines its own save_region_labels / calc_region_names keeps its own
+    # (Python takes the subclass method); delete those to use these.
+    # Needs: files['region_labels'] (results) and, for curated names, files['region_info'] (region_id, region_name,
+    # optional abundance_source). Imports already in single_cell_lib.py: numpy as np, pandas as pd, typing.
+    # ======================================================================================================================
+
+    def _region_abundance_source(self, adata=None) -> str:
+        """
+        Abundance source of the regions: the project's abundance_source(adata) when it has one ('c2l', 'stereoscope',
+        'rctd', ...), else params['abundance_source'] when set (not 'auto'), else 'c2l'.
+        """
+        f = getattr(self, "abundance_source", None)
+        if callable(f):
+            return str(f(adata))
+        s = self.params.get("abundance_source", "auto")
+        return "c2l" if s in (None, "auto") else str(s)
+
+    def calc_region_names(self, adata, df_abund: Optional[pd.DataFrame] = None, key: str = "region_label",
+                          cluster_key: Optional[str] = None, fname: Optional[str] = None,
+                          force: bool = False, verbose: bool = False):
+        """
+        Region ids and names of the clustered spots (after cluster_regions):
+        - obs[key] = 'R00' ... from obs[cluster_key] (params['region_key'], the Leiden clusters; format
+          params['region_id_fmt'], default 'R{:02d}');
+        - names_auto: automatic names (region_names: top cell types);
+        - df_region_info: the project's read_region_info(source=...) when the class has one (heart: the rows of the
+          source; pdac: the curated file, else the niche table), else the rows of files['region_info'] for the
+          abundance source of the regions (column abundance_source, when present); None when nothing is found;
+        - names: curated names (region_id -> region_name) when df_region_info exists, else names_auto; written to
+          obs['region_name'];
+        - df_cur: per region (index key) the automatic and curated names, n_spots and abundance_source.
+        df_cur is always recomputed (cheap). fname (a key of self.files or a file name in root_result; None = not
+        written): written when missing or force=True; a file present is kept and reported as same / DIFFERENT.
+        Returns names_auto, df_region_info, names, df_cur.
+        """
+
+        cluster_key = self.get_param("region_key", cluster_key)
+        fmt = self.params.get("region_id_fmt", "R{:02d}")
+        names_cl = self.region_names(adata, key=cluster_key, df_abund=df_abund)
+        cl = adata.obs[cluster_key].astype(str)
+        labels = {c: fmt.format(int(c)) for c in sorted(cl.unique(), key=int)}
+        adata.obs[key] = pd.Categorical(cl.map(labels), categories=list(labels.values()))
+        names_auto = {labels[c]: names_cl[c] for c in labels}
+
+        source = self._region_abundance_source(adata)
+        df_region_info = None
+        reader = getattr(self, "read_region_info", None)
+        if callable(reader):                         # the project's own lookup (heart: rows of the source; pdac:
+            try:                                     # curated file, else the niche table of mp_pdac01)
+                df = reader(source=source, verbose=verbose)
+            except TypeError:
+                df = reader(source=source)
+            if df is not None and len(df):
+                df_region_info = df.reset_index(drop=True)
+        elif "region_info" in self.files and self.file_path("region_info").exists():
+            df = self.read_tsv("region_info", verbose=verbose)
+            if "abundance_source" in df:
+                df = df[df["abundance_source"].astype(str) == source]
+            df = df.reset_index(drop=True)
+            if len(df):
+                df_region_info = df
+        if df_region_info is None:
+            warnings.warn(f"no curated region names for abundance source {source!r} "
+                          f"(files['region_info']): automatic names are used")
+        names = (dict(zip(df_region_info["region_id"].astype(str), df_region_info["region_name"].astype(str)))
+                 if df_region_info is not None else names_auto)
+        missing = sorted(set(labels.values()) - set(names))
+        if missing:
+            warnings.warn(f"{len(missing)} regions without a curated name (automatic name used): {missing[:10]}")
+            names = {**{k: names_auto[k] for k in missing}, **names}
+        adata.obs["region_name"] = adata.obs[key].map(names).astype(str)
+        print(adata.obs[key].nunique(), "regions")
+
+        df_cur = pd.DataFrame({"automatic (top cell types)": names_auto,
+                               "curated (region_info)": {k: names.get(k) for k in names_auto}}).join(
+            adata.obs[key].value_counts().rename("n_spots"))
+        df_cur["n_spots"] = df_cur["n_spots"].fillna(0).astype(int)
+        df_cur.index.name = key
+        df_cur["abundance_source"] = source
+        if fname is not None:
+            path = self.file_path(fname) if fname in self.files else self.root_result / fname
+            if path.exists() and not force:
+                df_old = pd.read_csv(path, sep="\t", index_col=0)
+                same = df_old.astype(str).reindex_like(df_cur.astype(str)).equals(df_cur.astype(str))
+                print(f"File exists: {path} ({'same' if same else 'DIFFERENT'} table; force=True to rewrite)")
+            else:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                df_cur.to_csv(path, sep="\t")
+                if verbose:
+                    print(f"Region names written: {path}")
+        return names_auto, df_region_info, names, df_cur
+
+    def save_region_labels(self, adata, abundance_source: Optional[str] = None,
+                           cols: Sequence[str] = ("region_cluster", "region_label", "region_name", "section"),
+                           force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """Region labels of adata.obs (barcode + the cols present + abundance_source) -> files['region_labels'], the
+        input of the notebooks 02-04. abundance_source None: _region_abundance_source(adata). File present and not
+        force: kept; the share of spots whose label agrees and the source of the file are printed (a different
+        source, e.g. stereoscope -> c2l, needs force=True). Returns the table of the current labels."""
+        cols = [c for c in cols if c in adata.obs]
+        if abundance_source is None:
+            abundance_source = self._region_abundance_source(adata)
+        df = adata.obs[cols].reset_index(names="barcode")
+        df["abundance_source"] = abundance_source
+        path = self.file_path("region_labels")
+        if path.exists() and not force:
+            df_old = pd.read_csv(path, sep="\t")
+            k = "region_label" if "region_label" in cols and "region_label" in df_old else cols[0]
+            same = (df_old.set_index("barcode")[k].reindex(df.barcode).astype(str).values == df[k].astype(str).values)
+            src_old = sorted(df_old["abundance_source"].astype(str).unique()) if "abundance_source" in df_old else ["?"]
+            print(f"File exists: {path} (same {k}: {same.mean():.1%}; source of the file {src_old}, current "
+                  f"{abundance_source!r}; force=True to rewrite)")
+        else:
+            self.write_tsv(df, "region_labels", verbose=verbose)
+        return df
+
+
 
     # =====================================================================================================
     # 7b. cell2location model objects: cache-or-train returning the model (plot_history, plot_QC, samples)

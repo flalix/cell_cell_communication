@@ -47,6 +47,7 @@ import scanpy as sc
 
 from libs.Basic import pdreadcsv
 from libs.single_cell_lib import DEFAULT_PARAMS, KELLY_COLORS, SingleCell
+from libs.region_cache_lib import RegionCacheMixin
 
 __version__ = "1.0.0"
 
@@ -210,6 +211,7 @@ NEURO_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
     "inputs": dict(
         c2l_map=("data", "c2l_paper_map/sp_with_clusters.h5ad"),                 # paper cell2location map (v0.05 layout)
         region_info=("data", "mouse_brain_regions.tsv"),                         # curated region table (editable)
+        regions_cache=("result", "mb01_regions_cache.tsv.gz"),                   # cluster_regions / umap_regions cache (+ .json)
         subregion_descriptions=("data", "mouse_brain_subregion_descriptions.tsv"),  # curated subregion descriptions
         # H&E copy with the glass background recoloured (hires_image_bg; maps with image_bg_color=...); the original
         # image in the map h5ad is not changed
@@ -227,6 +229,7 @@ NEURO_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
         c2l_allen_dir=("result", "c2l_allen_ssp_{tag}"),                           # tag: params['c2l_tag_allen']
     ),
     "mb01": dict(
+        tsv_region_names=("result", "mb01_region_names.tsv"),           # calc_region_names: automatic + curated name, n spots
         fig_qc_visium=("figure", "mb01_qc_visium.png"),
         fig_qc_snrna=("figure", "mb01_qc_snrna.png"),
         fig_2B=("figure", "mb01_fig2B_umap.png"),
@@ -302,7 +305,7 @@ NEURO_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
 }
 
 
-class SingleCellNeuro(SingleCell):
+class SingleCellNeuro(RegionCacheMixin, SingleCell):
     """Mouse brain (neuro) analyses of the cell2location paper (Fig 2)."""
 
     default_params = {**DEFAULT_PARAMS, **NEURO_PARAMS}

@@ -49,6 +49,7 @@ import scanpy as sc
 
 from libs.Basic import pdreadcsv, pdwritecsv
 from libs.single_cell_lib import DEFAULT_PARAMS, REGION_COLORS, SingleCell, cmap_byr, cmap_lbwr
+from libs.region_cache_lib import RegionCacheMixin
 
 __version__ = "0.1.0"
 
@@ -244,6 +245,7 @@ PDAC_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
         c2l_map=("result", "c2l_{tag}/cell2location_map/sp.h5ad"),
         signatures=("result", "c2l_{tag}/reference_signatures/sc.h5ad"),
         region_labels=("result", "pdac01_region_labels.tsv"),
+        regions_cache=("result", "pdac01_regions_cache.tsv.gz"),         # cluster_regions / umap_regions cache (+ .json)
         region_niches=("result", "pdac01_region_niches.tsv"),            # niche assignment of mp_pdac01
         region_info=("data", "pdac_regions.tsv"),                     # curated region table (editable)
         lineage_table=("root0", "tables/pdac_lineage.tsv"),          # HL_ID (major type), HL_SUBID, description, summary
@@ -252,6 +254,7 @@ PDAC_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
         subregion_descriptions=("data", "pdac_subregion_descriptions.tsv"),
     ),
     "pdac01": dict(
+        tsv_region_names=("result", "pdac01_region_names.tsv"),         # calc_region_names: automatic + curated name, n spots
         fig_sections=("figure", "pdac01_sections_he_gallery.png"),
         fig_qc_visium=("figure", "pdac01_qc_visium_sections.png"),
         tsv_section_qc=("result", "pdac01_section_qc.tsv"),
@@ -376,7 +379,7 @@ PDAC_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
 }
 
 
-class SingleCellPDAC(SingleCell):
+class SingleCellPDAC(RegionCacheMixin, SingleCell):
     """PDAC and neural invasion (Chen et al. 2025): 21 Visium sections + sc/snRNA reference.
     obs['section'] = section id (= library_id of uns['spatial']); var_names = Ensembl IDs, symbols in var['symbol'].
     """
