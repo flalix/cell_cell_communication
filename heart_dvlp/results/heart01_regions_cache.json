@@ -1,0 +1,50 @@
+{
+ "cluster": {
+  "source": "c2l",
+  "n_obs": 69115,
+  "barcodes_md5": "db4fff258cf1f70f9c2e99e59fb6dd6e",
+  "celltypes": [
+   "Mat_vCM",
+   "MetAct_vCM_1",
+   "MetAct_vCM_2",
+   "Immat_CM",
+   "Prol_CM",
+   "Mat_aCM",
+   "MetAct_aCM",
+   "Int_FB",
+   "OFT_FB",
+   "AnnFibr_FB",
+   "PDE4Chigh_FB",
+   "Prol_FB",
+   "EpC",
+   "EPDC",
+   "Valve_MC",
+   "Peric_MC",
+   "OFT_SMC",
+   "CA_SMC",
+   "PC",
+   "Endoc_EC",
+   "EndocCush_EC",
+   "MicroVasc_EC",
+   "MacroVasc_EC",
+   "PDE4Chigh_EC",
+   "LEC",
+   "TMSB10high_C_1",
+   "TMSB10high_C_2",
+   "NB-N",
+   "SCP-GC",
+   "MyC",
+   "LyC"
+  ],
+  "abund_sum": 3612362.25,
+  "n_neighbors": 30,
+  "resolution": 1.0,
+  "flavor": "igraph",
+  "seed": 0
+ },
+ "umap": {
+  "min_dist": 0.3,
+  "spread": 1.0,
+  "seed": 0
+ }
+}

@@ -1,0 +1,35 @@
+region_label	automatic (top cell types)	curated (heart_regions.tsv)	n_spots	abundance_source
+R00	Mat_vCM / Prol_CM	Trabecular ventricular myocardium and endocardium	953	c2l
+R01	MetAct_vCM_2 / Immat_CM	Ventricular myocardium at the lumen, MetAct_vCM_2 (low genes)	2333	c2l
+R02	Mat_vCM / MetAct_vCM_1	Compact ventricular myocardium, depth tier 3	3089	c2l
+R03	MetAct_vCM_1 / Mat_vCM	Compact ventricular myocardium, depth tier 4, RV-rich	1866	c2l
+R04	Mat_vCM / Endoc_EC	Ventricular myocardium near endocardium and AV plane, low depth	3030	c2l
+R05	Mat_vCM / MetAct_vCM_1	Ventricular myocardium near endocardium, depth tier 2	2344	c2l
+R06	Valve_MC / EPDC	Subepicardial and perivascular tissue, mixed, low depth	4269	c2l
+R07	Mat_vCM / MetAct_vCM_1	Compact ventricular myocardium, depth tier 4, LV-rich	2629	c2l
+R08	Mat_vCM / MetAct_vCM_1	Compact ventricular myocardium, depth tier 5	1574	c2l
+R09	Mat_vCM / MetAct_vCM_1	Ventricular myocardium, Mat_vCM-rich, w8 onwards	1093	c2l
+R10	OFT_FB / EPDC	Atrial epicardium, AV fibrous tissue and nerves	2243	c2l
+R11	MetAct_aCM / Mat_aCM	Atrial wall with epicardium	2099	c2l
+R12	Valve_MC / EndocCush_EC	Valve mesenchyme and endocardial cushions	1654	c2l
+R13	Mat_vCM / LyC	Ventricular myocardium, Mat_vCM-rich, compact-trabecular	2780	c2l
+R14	Mat_vCM / MetAct_vCM_1	Compact ventricular myocardium, depth tier 2, microvascular	1211	c2l
+R15	MetAct_vCM_1 / Mat_vCM	Compact ventricular myocardium, depth tier 3, RV-rich	1392	c2l
+R16	OFT_SMC / OFT_FB	Great-artery tunica media	2734	c2l
+R17	OFT_SMC / OFT_FB	Great-artery media, low depth (late hearts)	2689	c2l
+R18	MetAct_vCM_1 / Mat_vCM	Ventricular myocardium, MetAct_vCM_2 (low genes)	1737	c2l
+R19	MetAct_vCM_1 / Mat_vCM	Ventricular myocardium with MetAct_vCM_2 and immature CM, deep (papillary)	2812	c2l
+R20	MetAct_vCM_1 / Mat_vCM	Ventricular myocardium with MetAct_vCM_2 and immature CM, tier 4	2109	c2l
+R21	MetAct_vCM_1 / Mat_vCM	Ventricular myocardium with MetAct_vCM_2 and immature CM, tier 3	1775	c2l
+R22	MetAct_vCM_1 / MetAct_vCM_2	Ventricular myocardium, MetAct_vCM_2 / TMSB10-high (low genes), section-concentrated	2283	c2l
+R23	MetAct_aCM / Mat_aCM	Atrial myocardium, depth tier 2	1589	c2l
+R24	MetAct_aCM / MetAct_vCM_2	Early atrial myocardium (w6-w7) with atrial blood	1367	c2l
+R25	MetAct_aCM / Mat_aCM	Atrial myocardium, depth tier 1	2917	c2l
+R26	MetAct_aCM / Mat_aCM	Atrial myocardium, depth tier 3	1877	c2l
+R27	OFT_FB / OFT_SMC	Great-artery adventitia with lymphatics, low depth (late hearts)	2642	c2l
+R28	MyC / LEC	Low-signal spots (few UMIs; immune / OFT)	1126	c2l
+R29	OFT_FB / OFT_SMC	Great-vessel adventitia with cardiac ganglia and nerves	2546	c2l
+R30	MetAct_vCM_1 / MetAct_vCM_2	Ventricular myocardium, MetAct_vCM_2 / TMSB10-high (low genes), section-concentrated, deep	1108	c2l
+R31	MetAct_aCM / Mat_aCM	Atrial myocardium, depth tier 4	1795	c2l
+R32	MetAct_aCM / Mat_aCM	Atrial myocardium, depth tier 5	758	c2l
+R33	MetAct_aCM / Mat_aCM	Atrioventricular junction, atrial side	692	c2l

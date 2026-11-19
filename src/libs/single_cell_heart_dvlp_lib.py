@@ -123,7 +123,7 @@ HEART_PARAMS: Dict[str, Any] = dict(
     region_id_fmt="R{:02d}",
     region_min_overlap=0.30,           # region -> paper cluster label when >= this share of its (shared) spots
     # --- subregions (heart03) and LIANA (heart04): SingleCell defaults; ComBat by section
-    subregion_skip=("R18",),
+    subregion_skip=("R28",),            # c2l partition: R28 = low-signal spots (618 UMIs); stereoscope partition: use ("R18",)
     sub_min_batch_spots=10,            # ComBat by section: sections with fewer spots in a region are pooled           # 20-spot outlier cluster of the stereoscope regions (heart_regions.tsv)
     region_table_first=("region_id", "region_name", "signature_genes", "functional_description"),
     region_table_depth=True,
@@ -168,6 +168,7 @@ HEART_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
         c2l_map=("result", "c2l_{tag}/cell2location_map/sp.h5ad"),
         signatures=("result", "c2l_{tag}/reference_signatures/sc.h5ad"),
         region_labels=("result", "heart01_region_labels.tsv"),
+        regions_cache=("result", "heart01_regions_cache.tsv.gz"),        # region_cluster + UMAP of cluster_regions / umap_regions (+ .json fingerprint)
         region_info=("data", "heart_regions.tsv"),                     # curated region table (editable)
         mean_signatures=("result", "heart_reference_mean_counts_per_celltype.tsv.gz"),   # fallback signatures
         subregion_descriptions=("data", "heart_subregion_descriptions.tsv"),
@@ -204,6 +205,7 @@ HEART_FILES: Dict[str, Dict[str, Tuple[str, str]]] = {
         tsv_ref_age_comp_row=("result", "heart01_reference_celltype_by_age_row_norm.tsv"),
         tsv_ref_age_counts=("result", "heart01_reference_celltype_by_age_counts.tsv"),
         tsv_c2l_vs_stereo=("result", "heart01_c2l_vs_stereoscope_correlation.tsv"),
+        tsv_region_names=("result", "heart01_region_names.tsv"),        # per region: automatic + curated name, n spots
         tsv_factor_load=("result", "heart01_nmf_factor_loadings_n{n}.tsv"),
     ),
     "heart02": dict(
@@ -1034,35 +1036,53 @@ class SingleCellHeart(SingleCell):
         self._savefig(fig, fname, dpi=self.params["dpi_maps"], force=force, verbose=verbose)
         return pd.DataFrame(rows)
 
+    def annot_color(self, im, val, dark_lum: float = 0.30) -> str:
+        """Text colour for a heatmap cell: black, white when the cell colour (im.cmap(im.norm(val))) is dark
+        (luminance < dark_lum). NaN cells (no colour) -> black."""
+        if val is None or not np.isfinite(val):
+            return "black"
+        return "white" if self._luminance(im.cmap(im.norm(val))) < dark_lum else "black"
+
     def plot_ref_age_composition(self, df_pct: pd.DataFrame, normalize: str = "col", figsize=(7, 12),
                                  fname: Optional[str] = None, font_color: Optional[str] = None,
-                                 bg_color: Optional[str] = None, cmap="magma", fontsize_scale: Optional[float] = None,
+                                 bg_color: Optional[str] = None, cmap="Reds", fontsize_scale: Optional[float] = None,
                                  force: bool = False, verbose: bool = False):
-        """Heatmap of calc_df_ref_age_composition; rows coloured by lineage. normalize: the one used for df_pct
+        """
+        Heatmap of calc_df_ref_age_composition; rows coloured by lineage. normalize: the one used for df_pct
         ('none': cell counts; 'col': columns sum to 100; 'row': rows sum to 100) - sets the colour-bar label, the title
-        and the number format of the cells."""
+        and the number format of the cells.
+        """
+
         font_color = self.get_param("font_color", font_color)
         bg_color = self.get_param("bg_color", bg_color)
         fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
-        M = df_pct.drop(columns=["lineage"])
+
+        df_pct2 = df_pct.drop(columns=["lineage"])
+
         fig, ax = plt.subplots(figsize=figsize)
-        im = ax.imshow(M.values, cmap=cmap, aspect="auto")
-        ax.set_xticks(range(M.shape[1]))
-        ax.set_xticklabels([f"PCW {c}" for c in M.columns])
-        ax.set_yticks(range(M.shape[0]))
-        ax.set_yticklabels(M.index)
+        im = ax.imshow(df_pct2.values, cmap=cmap, aspect="auto")
+
+        ax.set_xticks(range(df_pct2.shape[1]))
+        ax.set_xticklabels([f"PCW {c}" for c in df_pct2.columns])
+        ax.set_yticks(range(df_pct2.shape[0]))
+        ax.set_yticklabels(df_pct2.index)
+
+        
         lc = self.lineage_colors()
         for t, lin in zip(ax.get_yticklabels(), df_pct["lineage"]):
             t.set_color(mpl.colors.to_hex(lc.get(lin, "#888888")))
-        for i in range(M.shape[0]):
-            for j in range(M.shape[1]):
-                val = M.values[i, j]
+
+        for i in range(df_pct2.shape[0]):
+            for j in range(df_pct2.shape[1]):
+                val = df_pct2.values[i, j]
                 ax.text(j, i, f"{val:,.0f}" if normalize == "none" else f"{val:.1f}", ha="center", va="center", fontsize=7,
-                        color="black" if val > 0.6 * np.nanmax(M.values) else "white")
+                        color=self.annot_color(im, val))
+        
         label, title = {"none": ("number of cells", "scRNA reference: cells per cell type and age"),
                         "col": ("% of cells in the age group", "scRNA reference: cell-type composition by age"),
                         "row": ("% of the cell type over ages (age-size corrected)",
                                 "scRNA reference: age profile of each cell type")}[normalize]
+        
         fig.colorbar(im, ax=ax, fraction=0.04).set_label(label)
         ax.set_title(title)
         self.style_figure(fig, font_color, bg_color, fontsize_scale)
@@ -1272,6 +1292,100 @@ class SingleCellHeart(SingleCell):
         df = self._cached_any("tsv_section_qc", compute, force=force, verbose=verbose)
         return df.set_index(df.columns[0])
 
+    # ---- regions: Leiden + UMAP with a file cache (69,115 spots: kNN + UMAP take minutes) ----------------
+    def _regions_cache_paths(self):
+        path = self.file_path("regions_cache")
+        return path, path.with_name(path.name.replace(".tsv.gz", "") + ".json")
+
+    def _regions_cache_read(self):
+        path, path_js = self._regions_cache_paths()
+        if not (path.exists() and path_js.exists()):
+            return None, {}
+        return pd.read_csv(path, sep="\t", index_col=0, dtype={"region_cluster": str}), json.load(open(path_js))
+
+    def _regions_cache_write(self, df, meta, verbose: bool = False):
+        path, path_js = self._regions_cache_paths()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(path, sep="\t")
+        json.dump(meta, open(path_js, "w"), indent=1)
+        if verbose:
+            print(f"Region cache written: {path}")
+
+    def cluster_regions(self, adata=None, df_abund: Optional[pd.DataFrame] = None, n_neighbors: Optional[int] = None,
+                        resolution: Optional[float] = None, key_added: Optional[str] = None,
+                        flavor: Optional[str] = None, cache: bool = True, force: bool = False,
+                        verbose: bool = True) -> pd.Series:
+        """SingleCell.cluster_regions (kNN on the abundances, Leiden) with a file cache (files['regions_cache'] +
+        .json). The cache is read when the inputs are the same: abundance source, cell types, checksum of the
+        abundances, barcodes, n_neighbors, resolution, flavor, seed; otherwise (e.g. stereoscope -> c2l) the clustering
+        is recomputed and the cache rewritten. A cache hit does not build the kNN graph (umap_regions builds it only
+        when its own cache misses). force=True: recompute; cache=False: no file."""
+        import hashlib
+        a = self._check_adata(adata)
+        key_added = self.get_param("region_key", key_added)
+        df_abund = df_abund if df_abund is not None else self.calc_df_abundance(a)
+        X = df_abund.loc[a.obs_names]
+        fp = dict(source=str(df_abund.attrs.get("source", "")), n_obs=int(a.n_obs),
+                  barcodes_md5=hashlib.md5("\n".join(map(str, a.obs_names)).encode()).hexdigest(),
+                  celltypes=[str(c) for c in X.columns], abund_sum=round(float(np.nansum(X.values)), 3),
+                  n_neighbors=int(self.get_param("region_n_neighbors", n_neighbors)),
+                  resolution=float(self.get_param("region_resolution", resolution)),
+                  flavor=str(self.get_param("region_leiden_flavor", flavor)), seed=int(self.params["seed"]))
+        self._regions_graph = dict(abund=X.values, n_neighbors=fp["n_neighbors"], fp=fp)
+        if cache and not force:
+            df, meta = self._regions_cache_read()
+            if df is not None and meta.get("cluster") == fp and df.index.equals(pd.Index(a.obs_names.astype(str))):
+                lab = df["region_cluster"].astype(str)
+                a.obs[key_added] = pd.Categorical(lab.values, categories=sorted(lab.unique(), key=int))
+                a.obsm["_abund"] = X.values
+                a.uns.pop("abund", None)                     # a graph left from another clustering: not reused
+                for k in ("abund_connectivities", "abund_distances"):
+                    a.obsp.pop(k, None)
+                if verbose:
+                    print(f"Regions read from cache ({lab.nunique()} clusters, {fp['source']}): "
+                          f"{self._regions_cache_paths()[0]} (force=True to recompute)")
+                return a.obs[key_added]
+        res = super().cluster_regions(a, df_abund=df_abund, n_neighbors=fp["n_neighbors"],
+                                      resolution=fp["resolution"], key_added=key_added, flavor=fp["flavor"])
+        if cache:
+            df = pd.DataFrame({"region_cluster": a.obs[key_added].astype(str).values}, index=a.obs_names.astype(str))
+            df.index.name = "barcode"
+            self._regions_cache_write(df, dict(cluster=fp, umap=None), verbose=verbose)   # old UMAP: other graph
+        return res
+
+    def umap_regions(self, adata=None, min_dist: Optional[float] = None, spread: Optional[float] = None,
+                     neighbors_key: str = "abund", cache: bool = True, force: bool = False,
+                     verbose: bool = True) -> np.ndarray:
+        """SingleCell.umap_regions (obsm['X_umap'] on the abundance kNN graph) with the cache of cluster_regions:
+        read when the clustering inputs of this session (cluster_regions called first) and min_dist / spread are
+        the same; otherwise the kNN graph is built if missing (cache hit of cluster_regions), the UMAP computed and
+        stored in the cache. force=True: recompute; cache=False: no file."""
+        a = self._check_adata(adata)
+        g = getattr(self, "_regions_graph", None)
+        fp = dict(min_dist=float(self.get_param("region_umap_min_dist", min_dist)),
+                  spread=float(self.get_param("region_umap_spread", spread)), seed=int(self.params["seed"]))
+        df, meta = self._regions_cache_read() if (cache and g is not None) else (None, {})
+        ok = (df is not None and g is not None and meta.get("cluster") == g["fp"]
+              and df.index.equals(pd.Index(a.obs_names.astype(str))))
+        if ok and not force and meta.get("umap") == fp and {"umap_1", "umap_2"} <= set(df.columns):
+            a.obsm["X_umap"] = df[["umap_1", "umap_2"]].values.astype(np.float32)
+            if verbose:
+                print(f"UMAP read from cache: {self._regions_cache_paths()[0]} (force=True to recompute)")
+            return a.obsm["X_umap"]
+        if neighbors_key not in a.uns:
+            if g is None:
+                raise ValueError("no kNN graph: run cluster_regions first")
+            a.obsm["_abund"] = g["abund"]
+            sc.pp.neighbors(a, use_rep="_abund", n_neighbors=g["n_neighbors"], key_added=neighbors_key,
+                            random_state=self.params["seed"])
+        res = super().umap_regions(a, min_dist=fp["min_dist"], spread=fp["spread"], neighbors_key=neighbors_key)
+        if cache and ok:
+            df = df[["region_cluster"]].copy()
+            df["umap_1"], df["umap_2"] = res[:, 0], res[:, 1]
+            meta["umap"] = fp
+            self._regions_cache_write(df, meta, verbose=verbose)
+        return res
+
     def save_region_labels(self, adata, abundance_source: str = "",
                            cols: Sequence[str] = ("region_cluster", "region_label", "region_name", "section"),
                            force: bool = False, verbose: bool = False) -> pd.DataFrame:
@@ -1312,6 +1426,51 @@ class SingleCellHeart(SingleCell):
             warnings.warn(f"heart_regions.tsv has no rows for abundance source {source!r}: automatic region names are used")
             return None
         return df
+
+    def calc_region_names(self, adata, df_abund: Optional[pd.DataFrame] = None, key: str = "region_label",
+                          fname: Optional[str] = None, force: bool = False, verbose: bool = False):
+        """
+        Region ids and names of the clustered spots (after cluster_regions):
+        - names_auto = add_region_ids(adata, df_abund): obs['region_label'] R00 ... and the automatic names (top cell types);
+        - df_region_info = read_region_info(adata=adata): the curated rows of heart_regions.tsv for this abundance
+          source (None: no rows, e.g. the first cell2location run);
+        - names = curated names (region_id -> region_name), else names_auto; written to obs['region_name'];
+        - df_cur: per region (index region_label) the automatic and curated names, n_spots and abundance_source.
+        df_cur is always recomputed (cheap); fname (e.g. sch.fname('tsv_region_names')): written when the file is
+        missing or force=True; a file present that differs from df_cur is kept and reported (force=True to rewrite).
+        Returns names_auto, df_region_info, names, df_cur.
+        """
+
+        names_auto = self.add_region_ids(adata, df_abund=df_abund)
+
+        df_region_info = self.read_region_info(adata=adata)
+
+        names = (dict(zip(df_region_info.region_id, df_region_info.region_name)) if df_region_info is not None
+                 else names_auto)
+        
+        adata.obs["region_name"] = adata.obs[key].map(names).astype(str)
+
+        print(adata.obs[key].nunique(), "regions")
+
+        df_cur = pd.DataFrame({"automatic (top cell types)": names_auto, "curated (heart_regions.tsv)": names}).join(
+            adata.obs[key].value_counts().rename("n_spots"))
+        df_cur["n_spots"] = df_cur["n_spots"].fillna(0).astype(int)
+        df_cur.index.name = key
+        df_cur["abundance_source"] = self.abundance_source(adata)
+
+        if fname is not None:
+            path = self.file_path(fname) if fname in self.files else self.root_result / fname
+            if path.exists() and not force:
+                df_old = pd.read_csv(path, sep="\t", index_col=0)
+                same = df_old.astype(str).reindex_like(df_cur.astype(str)).equals(df_cur.astype(str))
+                print(f"File exists: {path} ({'same' if same else 'DIFFERENT'} table; force=True to rewrite)")
+            else:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                df_cur.to_csv(path, sep="\t")
+                if verbose:
+                    print(f"Region names written: {path}")
+                    
+        return names_auto, df_region_info, names, df_cur
 
     def calc_df_region_summary(self, adata, df_abund: pd.DataFrame, names: Optional[Dict[str, str]] = None,
                                key: str = "region_label", n_top: int = 3, fname: Optional[str] = None,
@@ -1391,7 +1550,7 @@ class SingleCellHeart(SingleCell):
             for j in range(M.shape[1]):
                 if M.values[i, j] >= 0.1:
                     ax.text(j, i, f"{M.values[i, j]:.2f}", ha="center", va="center", fontsize=6,
-                            color="black" if M.values[i, j] > 0.6 else "white")
+                            color=self.annot_color(im, M.values[i, j]))
         fig.colorbar(im, ax=ax, fraction=0.03).set_label("share of the region's spots")
         ax.set_title(f"Regions (this study) vs the paper's 23 spatial clusters; {df_vs.attrs.get('n_spots', 0):,} spots of 17 "
                      f"sections; ARI {df_vs.attrs.get('ARI', np.nan):.2f}, NMI {df_vs.attrs.get('NMI', np.nan):.2f}")
@@ -1721,7 +1880,7 @@ class SingleCellHeart(SingleCell):
             for j in range(M.shape[1]):
                 if M.values[i, j] > 0:
                     ax.text(j, i, f"{100 * M.values[i, j]:.1f}", ha="center", va="center", fontsize=5,
-                            color="black" if R.values[i, j] > 0.6 else "white")
+                            color=self.annot_color(im, R.values[i, j]))
         fig.colorbar(im, ax=ax, fraction=0.04).set_label("share / row maximum (text: % of the section's spots)")
         ax.set_title(title or f"{group_col} share by age")
         self.style_figure(fig, font_color, bg_color, fontsize_scale)

@@ -918,7 +918,8 @@ class SingleCell(object):
 
     def filter_genes_c2l(self, adata=None, cell_count_cutoff: Optional[int] = None,
                          cell_percentage_cutoff2: Optional[float] = None, nonz_mean_cutoff: Optional[float] = None,
-                         figsize=(3, 4), inplace: bool = True, font_color: Optional[str] = None, bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None):
+                         figsize=(3, 4), inplace: bool = True, font_color: Optional[str] = None, 
+                         bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None):
         """
         cell2location permissive gene selection (keeps rare-cell-type markers). Returns (AnnData, genes).
         Style of the filter plot: font_color, bg_color, fontsize_scale (style_figure).
@@ -1407,11 +1408,13 @@ class SingleCell(object):
     def cluster_regions(self, adata=None, df_abund: Optional[pd.DataFrame] = None, n_neighbors: Optional[int] = None,
                         resolution: Optional[float] = None, key_added: Optional[str] = None,
                         flavor: Optional[str] = None) -> pd.Series:
-        """Leiden clusters of spots on cell-abundance space (paper: kNN 38, resolution 1.3).
+        """
+        Leiden clusters of spots on cell-abundance space (paper: kNN 38, resolution 1.3).
 
         The kNN graph is stored under neighbors_key='abund' (umap_regions uses it).
         flavor (params['region_leiden_flavor']): 'igraph' (n_iterations=2, undirected) or 'leidenalg'
-        (scanpy defaults, as in the cell2location tutorial). The two give different clusters."""
+        (scanpy defaults, as in the cell2location tutorial). The two give different clusters.
+        """
         a = self._check_adata(adata)
         key_added = self.get_param("region_key", key_added)
         flavor = self.get_param("region_leiden_flavor", flavor)
