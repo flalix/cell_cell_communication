@@ -929,8 +929,10 @@ class SingleCellHeart(SingleCell):
 
     def plotly_regions_by_age(self, adata, key: str = "region_label", sections: Optional[Sequence[str]] = None,
                               **kwargs):
-        """Interactive version of plot_regions_by_age: plotly_regions_on_sections on the sections ordered by age
-        (default representative_sections), panel titles = age | section."""
+        """
+        Interactive version of plot_regions_by_age: plotly_regions_on_sections on the sections ordered by age
+        (default representative_sections), panel titles = age | section.
+        """
         return self.plotly_regions_on_sections(adata, key=key, sections=sections, **kwargs)
 
     def plot_umap_celltype_dotplot(self, adata_ref, genes: Sequence[str], lineage: Optional[Dict[str, Sequence[str]]] = None,
@@ -1658,27 +1660,37 @@ class SingleCellHeart(SingleCell):
                         colors: Optional[Dict[str, str]] = None, figsize=(14, 6), fname: Optional[str] = None,
                         font_color: Optional[str] = None, bg_color: Optional[str] = None,
                         fontsize_scale: Optional[float] = None, force: bool = False, verbose: bool = False):
-        """Stacked bars: region shares per age label (mean over the sections of the age)."""
+        """
+        Stacked bars: region shares per age label (mean over the sections of the age).
+        """
+
         font_color = self.get_param("font_color", font_color)
         bg_color = self.get_param("bg_color", bg_color)
         fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
+
         M = df_region_age.pivot_table(index="age_label", columns="region", values="share_mean", observed=True)
         M = M.reindex(self.age_order(M.index.astype(str)))
+
         n_sec = df_region_age.groupby("age_label", observed=True)["n_sections"].first().reindex(M.index)
         colors = colors or self._region_palette(list(M.columns))
+
         fig, ax = plt.subplots(figsize=figsize)
+
         bottom = np.zeros(len(M))
         for r in M.columns:
             ax.bar(range(len(M)), M[r].values, bottom=bottom, color=colors.get(r, "#888888"), width=0.8,
                    label=f"{r} {names.get(r, '') if names else ''}", edgecolor="black", linewidth=0.3)
             bottom += M[r].fillna(0).values
+        
         ax.set_xticks(range(len(M)))
         ax.set_xticklabels([f"{a}\n(n={int(n)})" for a, n in zip(M.index, n_sec)])
         ax.set_ylabel("share of spots (mean over sections)")
         ax.set_ylim(0, 1)
         ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1), frameon=False, fontsize=8)
         ax.set_title("Regions by age (n = sections per age)")
+
         self.style_figure(fig, font_color, bg_color, fontsize_scale)
+
         self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 
@@ -1705,18 +1717,26 @@ class SingleCellHeart(SingleCell):
     def plot_celltype_age_trend(self, df_trend: pd.DataFrame, lineage: Optional[Dict[str, Sequence[str]]] = None,
                                 ncols: int = 3, panel_size=(7.5, 3.8), fname: Optional[str] = None,
                                 font_color: Optional[str] = None, bg_color: Optional[str] = None,
-                                fontsize_scale: Optional[float] = None, force: bool = False, verbose: bool = False):
-        """One panel per lineage: share of each cell type vs PCW (points = sections, line = mean per age)."""
+                                fontsize_scale: Optional[float] = None, figsize:tuple=(),
+                                force: bool = False, verbose: bool = False):
+        """
+        One panel per lineage: share of each cell type vs PCW (points = sections, line = mean per age).
+        """
+
         font_color = self.get_param("font_color", font_color)
         bg_color = self.get_param("bg_color", bg_color)
         fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         lineage = lineage or HEART_LINEAGE
+
         colors = self.celltype_colors(lineage)
         lins = [l for l in lineage if l in set(df_trend.lineage)]
         nrows = math.ceil(len(lins) / ncols)
-        fig, axes = plt.subplots(nrows, ncols, figsize=(panel_size[0] * ncols, panel_size[1] * nrows), squeeze=False)
+
+        fig, axes = plt.subplots(nrows, ncols, figsize=figsize or (panel_size[0] * ncols, panel_size[1] * nrows), squeeze=False)
+
         for ax in axes.ravel()[len(lins):]:
             ax.axis("off")
+
         for ax, lin in zip(axes.ravel(), lins):
             for i, df_ct in enumerate(lineage[lin]):
                 d = df_trend[df_trend.cell_type == df_ct]
@@ -1731,9 +1751,12 @@ class SingleCellHeart(SingleCell):
             ax.set_xlabel("PCW")
             ax.set_ylabel("mean share per spot")
             ax.legend(fontsize=7, frameon=False, loc="upper left", bbox_to_anchor=(1.0, 1.0))
+        
         fig.subplots_adjust(wspace=0.85, hspace=0.45, right=0.88)
+        
         self.style_figure(fig, font_color, bg_color, fontsize_scale, relayout=False)
         self._savefig(fig, fname, force=force, verbose=verbose)
+        
         return fig
 
     def plot_region_celltype_heatmap(self, adata, df_abund: pd.DataFrame, key: str = "region_label", cmap="RdBu_r",
@@ -1905,30 +1928,40 @@ class SingleCellHeart(SingleCell):
 
     def plot_group_age_heatmap(self, df_age: pd.DataFrame, group_col: str = "region", value: str = "share_mean",
                                min_share: float = 0.0, figsize=(9, 16), title: str = "", fname: Optional[str] = None,
-                               font_color: Optional[str] = None, bg_color: Optional[str] = None,
+                               cmap='Reds', font_color: Optional[str] = None, bg_color: Optional[str] = None,
                                fontsize_scale: Optional[float] = None, force: bool = False, verbose: bool = False):
-        """Heatmap groups (rows) x age labels (columns) of calc_df_region_age (any categorical key), each row scaled
-        to its maximum (the text gives the share in %)."""
+        """
+        Heatmap groups (rows) x age labels (columns) of calc_df_region_age (any categorical key), each row scaled
+        to its maximum (the text gives the share in %).
+        """
+
         font_color = self.get_param("font_color", font_color)
         bg_color = self.get_param("bg_color", bg_color)
         fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
+        
         M = df_age.pivot_table(index=group_col, columns="age_label", values=value, observed=True)
         M = M[[a for a in self.age_order() if a in M.columns]]
         M = M[M.max(1) >= min_share]
         R = M.div(M.max(1), axis=0)
+        
         fig, ax = plt.subplots(figsize=figsize)
-        im = ax.imshow(R.values, cmap="magma", vmin=0, vmax=1, aspect="auto")
+        
+        im = ax.imshow(R.values, cmap=cmap, vmin=0, vmax=1, aspect="auto")
         ax.set_xticks(range(M.shape[1]))
         ax.set_xticklabels(M.columns)
         ax.set_yticks(range(M.shape[0]))
         ax.set_yticklabels(M.index, fontsize=7)
+        
         for i in range(M.shape[0]):
             for j in range(M.shape[1]):
                 if M.values[i, j] > 0:
                     ax.text(j, i, f"{100 * M.values[i, j]:.1f}", ha="center", va="center", fontsize=5,
                             color=self.annot_color(im, R.values[i, j]))
+        
         fig.colorbar(im, ax=ax, fraction=0.04).set_label("share / row maximum (text: % of the section's spots)")
         ax.set_title(title or f"{group_col} share by age")
+        
         self.style_figure(fig, font_color, bg_color, fontsize_scale)
         self._savefig(fig, fname, force=force, verbose=verbose)
+        
         return fig

@@ -486,16 +486,22 @@ class SingleCell(object):
 
     def _write_table(self, df: pd.DataFrame, fname: Optional[str], force: bool = False, verbose: bool = False,
                      sep: str = "\t") -> Optional[Path]:
-        """Write a table a method returns (key of self.files or a name in root_result; None = not written). As the
-        figures (_savefig), an existing file is kept unless force; pdwritecsv prints with verbose."""
+        """
+        Write a table a method returns (key of self.files or a name in root_result; None = not written). As the
+        figures (_savefig), an existing file is kept unless force; pdwritecsv prints with verbose.
+        """
+
         if fname is None:
             return None
+        
         path = self._resolve_path(fname, None, self.root_result)
         if path.exists() and not force:
             if verbose:
                 print(f"File already exists: {path}")
             return path
+        
         pdwritecsv(df, path.name, path.parent, sep=sep, verbose=verbose)
+        
         return path
 
     # ---- colours and font scale of a finished matplotlib figure -------------------------------------------------
@@ -2031,6 +2037,34 @@ class SingleCell(object):
         section id; projects override it (heart: section | age (age group) | heart)."""
         return str(lib)
 
+    def _plotly_reset_button(self, fig, ranges: Optional[Dict[str, list]] = None,
+                             font_color: str = "black", bg_color: str = "white", fontsize: int = 12,
+                             x: float = 1.01, y: float = 1.0):
+        """Two buttons for the categories of an interactive map (the legend items, e.g. R00 ... R33):
+        - 'Set': every category visible (all circles), and the axes back to ranges (the original view after zoom /
+          pan): {'xaxis': [x0, x1], 'yaxis': [y0, y1], ...}; None = autorange of every axis;
+        - 'Reset': every category hidden (no circle; the legend keeps them, click one to show it again).
+        Traces that are not legend items (the H&E image, traces with showlegend=False) stay visible.
+        Placed at (x, y) in paper coordinates (default: above the legend on the right)."""
+        is_cat = [tr.type != "image" and tr.showlegend is not False for tr in fig.data]
+        vis_set = [True] * len(fig.data)
+        vis_reset = ["legendonly" if c else True for c in is_cat]
+        if ranges is None:
+            ranges = {k: None for k in fig.layout if k.startswith(("xaxis", "yaxis"))} or {"xaxis": None, "yaxis": None}
+        view = {}
+        for ax, r in ranges.items():
+            if r is None:
+                view[f"{ax}.autorange"] = True
+            else:
+                view[f"{ax}.range"] = list(r)
+        fig.update_layout(updatemenus=[dict(
+            type="buttons", direction="left", showactive=False, x=x, y=y, xanchor="left", yanchor="bottom",
+            pad=dict(t=2, b=2, l=2, r=2), bgcolor=bg_color, bordercolor=self._muted(bg_color),
+            font=dict(size=fontsize, color=font_color),
+            buttons=[dict(label="Set", method="update", args=[{"visible": vis_set}, view]),
+                     dict(label="Reset", method="restyle", args=[{"visible": vis_reset}])])])
+        return fig
+
     def plotly_spatial_visium(self, names: Dict[str, str], adata=None, key: Optional[str] = None,
                               library_id: Optional[str] = None, set_colors: bool = False,
                               width: int = 1400, height: int = 900, image_format: Optional[str] = None,
@@ -2038,7 +2072,8 @@ class SingleCell(object):
                               fontsize_title: int = 17, fontsize_legend: int = 12, fontsize_hover: int = 12,
                               font_color: Optional[str] = None, bg_color: Optional[str] = None, marker_line_color: str = "black",
                               image_bg_color: Optional[str] = None, fname: Optional[str] = None, include_plotlyjs=None,
-                              title: Optional[str] = None, force: bool = False, verbose: bool = False):
+                              title: Optional[str] = None, reset_button: bool = True, force: bool = False,
+                              verbose: bool = False):
         """
         Interactive (plotly) spatial map of a categorical key on the hires image.
         title: None = section_plot_title(library) (heart: section | age (age group) | heart).
@@ -2049,29 +2084,38 @@ class SingleCell(object):
         marker_line_color (spot outline), image_bg_color (H&E glass; None = params). fname: key of self.files ({lib} =
         the section) or an .html name in root_figure (None = not saved), written here; include_plotlyjs: True =
         self-contained HTML (default params['plotly_include_js']); an existing file is kept unless force.
+        reset_button: two buttons above the legend - 'Set': every category visible (all circles) and the original
+        view (after zoom / pan); 'Reset': every category hidden (click legend items to show single ones).
         """
         font_color = self.get_param("font_color", font_color)   # style: None -> params
         bg_color = self.get_param("bg_color", bg_color)
+
         import plotly.graph_objects as go
+
         hover_extra = hover_extra or {}
         a = self._check_adata(adata)
         key = self.get_param("region_key", key)
         cats = a.obs[key].cat.categories
+
         if set_colors:
             palette = KELLY_COLORS + [mpl.colors.to_hex(c) for c in plt.get_cmap("tab20").colors]
             if len(cats) > len(palette):
                 raise ValueError(f"{len(cats)} categories but only {len(palette)} colours")
             a.uns[f"{key}_colors"] = palette[:len(cats)]
+    
         cmap_ = self._category_colors(a, key, list(cats))     # uns colours (as the matplotlib figures), else _region_palette
         cols = [cmap_[c] for c in cats]
         s = library_id or self.library_id(a)
         m, xy = self.spot_xy(s, a)
         clust = a.obs[key].astype(str).values[m]
         spot_names = a.obs_names[m]
+
         img_tr, (x0, x1, y0, y1) = self._plotly_section_image(s, a, xy, image_format=image_format,
                                                               image_bg_color=image_bg_color)
         fig = go.Figure()
+
         fig.add_trace(img_tr)
+
         for k, c in zip(cats, cols):
             mk = clust == k
             if not mk.any():
@@ -2082,6 +2126,7 @@ class SingleCell(object):
                                        marker=dict(size=marker_size, color=c, opacity=0.9,
                                                    line=dict(width=0.5, color=marker_line_color)),
                                        hovertemplate=f"<b>{label}</b>{extra}<br>spot: %{{text}}<extra></extra>"))
+        
         fig.update_layout(title=dict(text=title if title is not None else self.section_plot_title(s),
                                      font=dict(size=fontsize_title, color=font_color)), width=width, height=height,
                           font=dict(color=font_color), paper_bgcolor=bg_color, plot_bgcolor=bg_color,
@@ -2089,9 +2134,16 @@ class SingleCell(object):
                           hoverlabel=dict(font=dict(size=fontsize_hover)),
                           legend=dict(font=dict(size=fontsize_legend, color=font_color), itemsizing="constant",
                                       x=1.01, y=0.5, yanchor="middle"))
+        
         fig.update_xaxes(visible=False, range=[x0, x1])
         fig.update_yaxes(visible=False, range=[y1, y0], scaleanchor="x")
+        
+        if reset_button:
+            self._plotly_reset_button(fig, ranges={"xaxis": [x0, x1], "yaxis": [y1, y0]}, font_color=font_color,
+                                      bg_color=bg_color, fontsize=fontsize_legend)
+        
         self._save_figure(fig, fname, force, verbose, include_plotlyjs=include_plotlyjs, lib=s)
+        
         return fig
 
     def plot_genes_per_cell_type(self, slide, genes, ctypes, q: Optional[float] = None, font_color: Optional[str] = None,
@@ -3032,6 +3084,7 @@ class SingleCell(object):
                               colors: Optional[Dict[str, str]] = None, panel_px: int = 360, marker_size: float = 3.5,
                               image_format: Optional[str] = None, fontsize_title: int = 13, fontsize_legend: int = 11,
                               fontsize_hover: int = 12, font_color: Optional[str] = None, bg_color: Optional[str] = None,
+                              width: Optional[int] = None, height: Optional[int] = None,
                               fname: Optional[str] = None, include_plotlyjs=None, force: bool = False,
                               verbose: bool = False):
         """
@@ -3039,8 +3092,9 @@ class SingleCell(object):
         _region_palette, as the matplotlib section grids), one legend for all panels (click = hide, double-click =
         isolate a category in every section). Panel titles: section_title(lib, short=True) when the project defines
         it, else the section id. Hover: spot, section, category and its name. sections: default
-        representative_sections(). fname: key of self.files or an .html name (None = not saved); an existing file is
-        kept unless force.
+        representative_sections(). width / height: figure size in pixels (None = panel_px x columns + 380 for the
+        legend, panel_px x rows + 60). fname: key of self.files or an .html name (None = not saved); an existing file
+        is kept unless force.
         """
         import plotly.graph_objects as go
         from plotly.subplots import make_subplots
@@ -3073,15 +3127,22 @@ class SingleCell(object):
                                            hovertemplate=f"<b>{label}</b><br>spot: %{{text}}<br>section: {lib}<extra></extra>"),
                               row=r, col=c)
                 shown.add(k)
+            
             ax = "" if i == 0 else str(i + 1)
+            
             fig.update_xaxes(visible=False, range=[x0, x1], row=r, col=c)
             fig.update_yaxes(visible=False, range=[y1, y0], scaleanchor=f"x{ax}", row=r, col=c)
-        fig.update_layout(width=panel_px * ncols + 380, height=panel_px * nrows + 60, font=dict(color=font_color),
+        
+        fig.update_layout(width=width or panel_px * ncols + 380, 
+                          height=height or panel_px * nrows + 60, 
+                          font=dict(color=font_color),
                           paper_bgcolor=bg_color, plot_bgcolor=bg_color, margin=dict(l=10, r=10, t=50, b=10),
                           hoverlabel=dict(font=dict(size=fontsize_hover)),
                           legend=dict(font=dict(size=fontsize_legend, color=font_color), itemsizing="constant",
                                       title=dict(text=key), x=1.01, y=0.5, yanchor="middle"))
+        
         fig.update_annotations(font=dict(size=fontsize_title, color=font_color))
+        
         self._save_figure(fig, fname, force, verbose, include_plotlyjs=include_plotlyjs)
         return fig
 
@@ -4221,34 +4282,47 @@ class SingleCell(object):
 
         df_load = self.calc_df_coloc_loadings(adata, n_fact, normalize=True)
         df_load.index = [str(i).replace("mean_cell_type_factors", "") for i in df_load.index]
+        
         order = [c for v in lineage.values() for c in v if c in df_load.index]
         if not order:
             raise ValueError(f"no cell type of lineage in the NMF loadings (e.g. {list(df_load.index[:3])})")
+        
         df_load = df_load.reindex(order)
         top_row = df_load.values.argmax(0)
         cols = [df_load.columns[i] for i in np.argsort(top_row, kind="stable")]
         df_load = df_load[cols]
         labels = [f"{c}: " + " / ".join(df_load[c].sort_values(ascending=False).index[:2]) for c in cols]
+        
         fig, ax = plt.subplots(figsize=figsize)
+        
         yy, xx = np.meshgrid(np.arange(len(order)), np.arange(len(cols)), indexing="ij")
         sca = ax.scatter(xx.ravel(), yy.ravel(), s=df_load.values.ravel() * 260, c=df_load.values.ravel(),
                          cmap="magma_r", vmin=0, vmax=1, edgecolors=self._muted(bg_color),
                          linewidths=0.3 if self._luminance(bg_color) > 0.5 else 0.6)   # dark dots visible on black
+        
         ax.set_xticks(range(len(cols)))
         ax.set_xticklabels(labels, rotation=70, ha="right")
         ax.set_yticks(range(len(order)))
         ax.set_yticklabels(order)
+        
         cmaps = self.params.get("lineage_cmaps")
+        
         lc = ({lin: plt.get_cmap(cmaps.get(lin, "Greys"))(0.75) for lin in lineage} if cmaps else
               {lin: plt.get_cmap("tab10")(i % 10) for i, lin in enumerate(lineage)})
+        
         lin_of = {c: k for k, v in lineage.items() for c in v}
         for t, c in zip(ax.get_yticklabels(), order):
             t.set_color(mpl.colors.to_hex(lc[lin_of[c]]))
+        
         ax.set_ylim(len(order) - 0.5, -0.5)
+        
         fig.colorbar(sca, ax=ax, fraction=0.03).set_label("relative weight of the cell type")
         ax.set_title(f"NMF co-location, {n_fact} factors")
+        
         self.style_figure(fig, font_color, bg_color, fontsize_scale)
         self._savefig(fig, fname, force=force, verbose=verbose)
+        
         if fname_tsv is not None:
             self._write_table(df_load.round(4).reset_index(names="cell_type"), fname_tsv, force=force, verbose=verbose)
+        
         return fig, df_load
