@@ -888,21 +888,29 @@ class SingleCellHeart(SingleCell):
                             panel_size: float = 3.0, colors: Optional[Dict[str, str]] = None,
                             legend_ncol: int = 4, fname: Optional[str] = None,
                             font_color: Optional[str] = None, bg_color: Optional[str] = None,
-                            bottom: float = 0.1, wspace: float = 0.02, hspace: float = 0.12,
+                            bottom: float = 0.1, wspace: float = 0.02, hspace: float = 0.12, 
+                            fontsize_legend:int=10, bbox_to_anchor: tuple = (0.5, -0.02),
                             fontsize_scale: Optional[float] = None, force: bool = False, verbose: bool = False):
-        """Categorical key (regions, paper clusters) on the sections ordered by age, one shared legend."""
+        """
+        Categorical key (regions, paper clusters) on the sections ordered by age, one shared legend.
+        """
+
         font_color = self.get_param("font_color", font_color)
         bg_color = self.get_param("bg_color", bg_color)
         fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         sections = list(sections) if sections is not None else self.representative_sections()
+
         df_sec = self.read_sections_table()
         labs = adata.obs[key].astype(str).values
         cats = [c for c in (adata.obs[key].cat.categories if hasattr(adata.obs[key], "cat") else sorted(set(labs)))
                 if c != "nan"]
+        
         colors = colors or self._region_palette(cats)
         ncols = ncols or len(sections)
         nrows = math.ceil(len(sections) / ncols)
+
         fig, axes = plt.subplots(nrows, ncols, figsize=(panel_size * ncols, panel_size * nrows + 1.6), squeeze=False)
+
         for ax in axes.ravel():
             ax.axis("off")
         col = np.array([colors.get(l, "#555555") if l != "nan" else "#00000000" for l in labs], dtype=object)
@@ -911,8 +919,9 @@ class SingleCellHeart(SingleCell):
         present = set(labs[np.isin(adata.obs[self.sample_col].astype(str).values, sections)])
         handles = [Line2D([], [], ls="", marker="o", ms=7, mfc=colors[c], mec="none",
                           label=f"{c} - {names[c]}" if names and c in names else c) for c in cats if c in present]
-        fig.legend(handles=handles, loc="lower center", ncol=legend_ncol, frameon=False, fontsize=8,
-                   bbox_to_anchor=(0.5, -0.02))
+        fig.legend(handles=handles, loc="lower center", ncol=legend_ncol, frameon=False, fontsize=fontsize_legend,
+                   bbox_to_anchor=bbox_to_anchor)
+        
         fig.subplots_adjust(bottom=bottom, wspace=wspace, hspace=hspace)
         self.style_figure(fig, font_color, bg_color, fontsize_scale, relayout=False)
         self._savefig(fig, fname, dpi=self.params["dpi_maps"], force=force, verbose=verbose)
@@ -1504,58 +1513,123 @@ class SingleCellHeart(SingleCell):
         return self._cached_any(fname, _compute, force=force, verbose=verbose)
 
     def calc_df_region_vs_paper(self, adata, key: str = "region_label", paper_key: str = "paper_cluster_name",
-                                min_overlap: Optional[float] = None, verbose: bool = False) -> pd.DataFrame:
-        """On the spots of the paper's 17 clustered sections: per region, the share of each paper cluster (columns),
-        n_shared, paper_best (when its share >= region_min_overlap, else 'mixed: A / B') and paper_share.
-        attrs: ARI and NMI between the two partitions. Always recomputed (fast) and written to tsv_region_vs_paper
-        (when registered), so the file matches the region labels in use."""
-        from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
+                                min_overlap: Optional[float] = None, force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        """
+        How do our regions (adata.obs[key]) match the paper's 23 spatial clusters (adata.obs[paper_key])?
+
+        Only spots that the paper clustered are used (17 sections; the other spots have paper_key = NaN).
+        Returns one row per region (index = key) with:
+            n_shared     number of the region's spots that the paper also clustered
+            paper_best   the paper cluster holding most of these spots, if its share >= min_overlap
+                         (params['region_min_overlap']); otherwise 'mixed: A / B' (the two largest)
+            paper_share  share of the region's spots in paper_best (0-1)
+            EN, LV_C ... one column per paper cluster: share of the region's spots in it (each row sums to 1)
+        and in df.attrs the agreement of the two partitions over all these spots:
+            ARI (adjusted Rand index), NMI (normalized mutual information), n_spots.
+
+        File: tsv_region_vs_paper (the table) + the same name with .attrs.json added (the attrs).
+        File present and not force: read it, so the table comes back exactly as computed (index and attrs).
+        The file belongs to the region labels of the run that wrote it: force=True after re-clustering.
+        """
+
+        # ---- the files ----
+        key_file = "tsv_region_vs_paper"
+        if key_file not in self.files:
+            raise KeyError(f"file key not registered: {key_file}")
+
+        filename = self.file_path(key_file)                                   # the table (tsv)
+        filename_attrs = filename.with_name(filename.name + ".attrs.json")      # ARI, NMI, n_spots
+
+        # ---- already computed: read the table and its attrs ----
+        if filename.exists() and not force:
+            df = pdreadcsv(filename.name, filename.parent, verbose=verbose)
+            df = df.set_index(key)                      # the region ids back as the index (R00, R01, ...)
+            df.index = df.index.astype(str)
+            if filename_attrs.exists():
+                with open(filename_attrs) as fh:
+                    df.attrs = json.load(fh)
+            return df
+
+        # ---- 1. the spots both partitions have: those the paper clustered ----
         min_overlap = self.get_param("region_min_overlap", min_overlap)
         obs = adata.obs[adata.obs[paper_key].notna()]
-        ct = pd.crosstab(obs[key].astype(str), obs[paper_key].astype(str))
-        share = ct.div(ct.sum(1), axis=0)
-        best = share.idxmax(1)
-        bs = share.max(1)
-        second = share.apply(lambda r: r.sort_values(ascending=False).index[1] if len(r) > 1 else "", axis=1)
-        out = share.round(4)
-        out.insert(0, "paper_share", bs.round(3))
-        out.insert(0, "paper_best", [b if s >= min_overlap else f"mixed: {b} / {s2}" for b, s, s2 in zip(best, bs, second)])
-        out.insert(0, "n_shared", ct.sum(1))
-        out.attrs["ARI"] = float(adjusted_rand_score(obs[key].astype(str), obs[paper_key].astype(str)))
-        out.attrs["NMI"] = float(normalized_mutual_info_score(obs[key].astype(str), obs[paper_key].astype(str)))
-        out.attrs["n_spots"] = int(len(obs))
-        if "tsv_region_vs_paper" in self.files:
-            self.write_tsv(out.reset_index(names=key), "tsv_region_vs_paper", verbose=verbose)
-        return out
+        region = obs[key].astype(str)                   # our region of each spot
+        paper = obs[paper_key].astype(str)              # the paper's cluster of each spot
+
+        # ---- 2. counts: rows = our regions, columns = paper clusters, cell = number of spots in both ----
+        df_count = pd.crosstab(region, paper)
+
+        # ---- 3. shares: each row divided by its total, so a row tells how a region splits over the paper clusters ----
+        n_shared = df_count.sum(axis=1)
+        df_share = df_count.div(n_shared, axis=0)
+
+        # ---- 4. the best matching paper cluster of each region ----
+        rows = []
+        for reg in df_share.index:
+            shares = df_share.loc[reg].sort_values(ascending=False)    # this region's paper clusters, largest first
+            first, second = shares.index[0], (shares.index[1] if len(shares) > 1 else "")
+            share_first = shares.iloc[0]
+            if share_first >= min_overlap:
+                paper_best = first                                      # one paper cluster dominates
+            else:
+                paper_best = f"mixed: {first} / {second}"               # no cluster reaches min_overlap
+            rows.append(dict(n_shared=int(n_shared[reg]), paper_best=paper_best, paper_share=round(float(share_first), 3)))
+        
+        df_best = pd.DataFrame(rows, index=df_share.index)
+
+        # ---- 5. the table: summary columns first, then the share of every paper cluster ----
+        df = pd.concat([df_best, df_share.round(4)], axis=1)
+        df.index.name = key
+
+        # ---- 6. agreement of the two partitions over all shared spots (1 = identical; ~0 = unrelated) ----
+        from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
+        
+        df.attrs["ARI"] = float(adjusted_rand_score(region, paper))
+        df.attrs["NMI"] = float(normalized_mutual_info_score(region, paper))
+        df.attrs["n_spots"] = int(len(obs))
+
+        # ---- 7. save: the table (index as a column) and the attrs ----
+        self.write_tsv(df.reset_index(), key_file, verbose=verbose)
+        with open(filename_attrs, "w") as fh:
+            json.dump(df.attrs, fh, indent=1)
+
+        return df
 
     def plot_region_vs_paper(self, df_vs: pd.DataFrame, names: Optional[Dict[str, str]] = None, figsize=(16, 10),
-                             fname: Optional[str] = None, font_color: Optional[str] = None,
+                             fname: Optional[str] = None, font_color: Optional[str] = None, cmap=cmap_byr,
                              bg_color: Optional[str] = None, fontsize_scale: Optional[float] = None,
                              force: bool = False, verbose: bool = False):
         """Heatmap: regions (rows) x paper clusters (columns), share of the region's spots (row sums = 1)."""
         font_color = self.get_param("font_color", font_color)
         bg_color = self.get_param("bg_color", bg_color)
         fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
+
         M = df_vs.drop(columns=["n_shared", "paper_best", "paper_share"])
         col_order = list(dict.fromkeys(list(M.idxmax(1)) + list(M.columns)))     # diagonal-like order
         M = M[col_order]
+        
         fig, ax = plt.subplots(figsize=figsize)
-        im = ax.imshow(M.values, cmap="viridis", vmin=0, vmax=1, aspect="auto")
+        im = ax.imshow(M.values, cmap=cmap, vmin=0, vmax=1, aspect="auto")
+        
         full = self.paper_cluster_full_names()
         ax.set_xticks(range(M.shape[1]))
         ax.set_xticklabels([f"{c} ({full.get(c, '')})" for c in M.columns], rotation=70, ha="right")
         ax.set_yticks(range(M.shape[0]))
         ax.set_yticklabels([f"{r} {names.get(r, '') if names else ''} (n={int(df_vs.loc[r, 'n_shared'])})" for r in M.index])
+        
         for i in range(M.shape[0]):
             for j in range(M.shape[1]):
                 if M.values[i, j] >= 0.1:
                     ax.text(j, i, f"{M.values[i, j]:.2f}", ha="center", va="center", fontsize=6,
                             color=self.annot_color(im, M.values[i, j]))
+        
         fig.colorbar(im, ax=ax, fraction=0.03).set_label("share of the region's spots")
+        
         ax.set_title(f"Regions (this study) vs the paper's 23 spatial clusters; {df_vs.attrs.get('n_spots', 0):,} spots of 17 "
                      f"sections; ARI {df_vs.attrs.get('ARI', np.nan):.2f}, NMI {df_vs.attrs.get('NMI', np.nan):.2f}")
         self.style_figure(fig, font_color, bg_color, fontsize_scale)
         self._savefig(fig, fname, force=force, verbose=verbose)
+        
         return fig
 
     def calc_df_region_age(self, adata, key: str = "region_label", fname: Optional[str] = None,
@@ -1565,11 +1639,11 @@ class SingleCellHeart(SingleCell):
 
         def _compute():
             obs = adata.obs
-            ct = pd.crosstab(obs[self.sample_col].astype(str), obs[key].astype(str), normalize="index")
+            df_ct = pd.crosstab(obs[self.sample_col].astype(str), obs[key].astype(str), normalize="index")
             age = obs.groupby(self.sample_col, observed=True)["age_label"].first().astype(str)
-            ct["age_label"] = age.reindex(ct.index).values
+            df_ct["age_label"] = age.reindex(df_ct.index).values
             rows = []
-            for a, sub in ct.groupby("age_label"):
+            for a, sub in df_ct.groupby("age_label"):
                 v = sub.drop(columns="age_label")
                 for r in v.columns:
                     rows.append(dict(age_label=a, region=r, share_mean=round(float(v[r].mean()), 5),
@@ -1644,15 +1718,15 @@ class SingleCellHeart(SingleCell):
         for ax in axes.ravel()[len(lins):]:
             ax.axis("off")
         for ax, lin in zip(axes.ravel(), lins):
-            for i, ct in enumerate(lineage[lin]):
-                d = df_trend[df_trend.cell_type == ct]
+            for i, df_ct in enumerate(lineage[lin]):
+                d = df_trend[df_trend.cell_type == df_ct]
                 if d.empty:
                     continue
-                col = colors[ct]
+                col = colors[df_ct]
                 jitter = (i - len(lineage[lin]) / 2) * 0.04
                 ax.scatter(d.age_pcw + jitter, d.share, s=10, color=col, alpha=0.6, linewidths=0)
                 mm = d.groupby("age_pcw")["share"].mean()
-                ax.plot(mm.index, mm.values, color=col, lw=1.6, label=ct)
+                ax.plot(mm.index, mm.values, color=col, lw=1.6, label=df_ct)
             ax.set_title(lin)
             ax.set_xlabel("PCW")
             ax.set_ylabel("mean share per spot")
@@ -1662,31 +1736,41 @@ class SingleCellHeart(SingleCell):
         self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 
-    def plot_region_celltype_heatmap(self, adata, df_abund: pd.DataFrame, key: str = "region_label",
+    def plot_region_celltype_heatmap(self, adata, df_abund: pd.DataFrame, key: str = "region_label", cmap="RdBu_r",
                                      names: Optional[Dict[str, str]] = None, figsize=(15, 9), fname: Optional[str] = None,
                                      font_color: Optional[str] = None, bg_color: Optional[str] = None,
                                      fontsize_scale: Optional[float] = None, force: bool = False,
                                      verbose: bool = False) -> pd.DataFrame:
-        """Regions (rows) x cell types (columns, by lineage): log2 enrichment (region mean / overall mean).
-        Returns the enrichment table."""
+        """
+        Regions (rows) x cell types (columns, by lineage): log2 enrichment (region mean / overall mean).
+        Returns the enrichment table.
+        """
+
         font_color = self.get_param("font_color", font_color)
         bg_color = self.get_param("bg_color", bg_color)
         fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
+
         df_a = df_abund.loc[adata.obs_names]
         df_enr = df_a.groupby(adata.obs[key].astype(str).values).mean() / df_a.mean(0)
         L = np.log2(df_enr.clip(lower=1 / 16))
         fig, ax = plt.subplots(figsize=figsize)
-        im = ax.imshow(L.values, cmap="RdBu_r", vmin=-3, vmax=3, aspect="auto")
+        im = ax.imshow(L.values, cmap=cmap, vmin=-3, vmax=3, aspect="auto")
+
         ax.set_xticks(range(L.shape[1]))
         ax.set_xticklabels(L.columns, rotation=80, ha="right")
         lc = self.lineage_colors()
+
         for t, c in zip(ax.get_xticklabels(), L.columns):
             t.set_color(mpl.colors.to_hex(lc.get(self.lineage_of(HEART_LINEAGE).get(c, ""), "#888888")))
+        
         ax.set_yticks(range(L.shape[0]))
         ax.set_yticklabels([f"{r} {names.get(r, '') if names else ''}" for r in L.index])
+        
         fig.colorbar(im, ax=ax, fraction=0.03).set_label("log2 enrichment (region / all spots)")
+        
         ax.set_title(f"Cell types in each region ({df_abund.attrs.get('source', '')} abundances)")
         self.style_figure(fig, font_color, bg_color, fontsize_scale)
+        
         self._savefig(fig, fname, force=force, verbose=verbose)
         return df_enr
 
@@ -1727,9 +1811,9 @@ class SingleCellHeart(SingleCell):
             df_sig = df.drop(columns="symbol")
             df_sig.index = df["symbol"].astype(str).values
             df_sig.attrs["source"] = "mean_counts"
-        out = df_sig[~df_sig.index.duplicated()]
-        out.attrs["source"] = df_sig.attrs["source"]
-        return out
+        df = df_sig[~df_sig.index.duplicated()]
+        df.attrs["source"] = df_sig.attrs["source"]
+        return df
 
     def calc_df_subregion_ref_score(self, adata_ref, df_gene_sets: pd.DataFrame, df_sub_table: Optional[pd.DataFrame] = None,
                                     status: Optional[str] = "supported", n_genes: int = 25, min_genes: int = 3,
@@ -1761,8 +1845,8 @@ class SingleCellHeart(SingleCell):
         order = [s_id for s_id in df_gene_sets.sub_region_id.unique() if s_id in genes_used]
         genes_used = {k: genes_used[k] for k in order}
         df_cell_score = self._calc_df_cell_score(adata_ref, genes_used)
-        ct = adata_ref.obs[groupby].astype(str).values
-        df_ref_score = df_cell_score.groupby(ct).mean().T.round(6)
+        df_ct = adata_ref.obs[groupby].astype(str).values
+        df_ref_score = df_cell_score.groupby(df_ct).mean().T.round(6)
         lin = [c for c in self.lineage_order(HEART_LINEAGE) if c in df_ref_score.columns]
         df_ref_score = df_ref_score[lin]
         if all(k in self.files for k in cache):
