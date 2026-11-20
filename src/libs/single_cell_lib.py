@@ -409,20 +409,24 @@ class SingleCell(object):
         return pd.DataFrame(rows)
 
     def read_tsv(self, key: str, str_cols: Optional[Sequence[str]] = None, verbose: bool = False, **fmt) -> pd.DataFrame:
-        """pdreadcsv of a registered table (FileNotFoundError if missing). Empty strings are written as empty fields
-        and read back as NaN: NaN -> '' in object columns and in str_cols (text columns that may be all empty)."""
+        """
+        pdreadcsv of a registered table (FileNotFoundError if missing). Empty strings are written as empty fields
+        and read back as NaN: NaN -> '' in object columns and in str_cols (text columns that may be all empty).
+        """
         path = self.file_path(key, **fmt)
         if not path.exists():
             raise FileNotFoundError(path)
-        df = pdreadcsv(path.name, path.parent)
+        
+        df = pdreadcsv(path.name, path.parent, verbose=verbose)
+
         str_cols = set(str_cols or ())
+
         for c in df.columns:
             if c in str_cols:
                 df[c] = df[c].fillna("").astype(str)
             elif df[c].dtype == object:
                 df[c] = df[c].fillna("")
-        if verbose:
-            print(f"Reading {path} ({len(df):,} rows)")
+        
         return df
 
     def write_tsv(self, df: pd.DataFrame, key: str, index: bool = False, verbose: bool = False, **fmt) -> Path:
@@ -2446,17 +2450,28 @@ class SingleCell(object):
 
     def calc_df_rank_genes(self, adata, groupby: str, groups: Any = "all", reference: str = "rest",
                            method: Optional[str] = None) -> pd.DataFrame:
-        """scanpy rank_genes_groups on log-normalised X (never .raw) with pts=True, as one tidy table:
+        """
+        scanpy rank_genes_groups on log-normalised X (never .raw) with pts=True, as one tidy table:
         group, names, scores, logfoldchanges, pvals, pvals_adj, pct_in (fraction of the group with expression > 0),
-        pct_out (fraction of the reference)."""
+        pct_out (fraction of the reference).
+
+        "rest" (default): all other cells/spots pooled ("one vs rest").
+        each Rxx verssus all others Rx1, Rx2, Rxn
+        "wilcoxon" test: rank-based (Mann–Whitney U); robust to outliers and the usual choice for single-cell data.          
+        """
+
         a = self._check_adata(adata)
         sc.tl.rank_genes_groups(a, groupby=groupby, groups=groups, reference=reference, use_raw=False,
                                 method=self.get_param("rank_method", method), pts=True, n_genes=a.n_vars,
                                 corr_method=self.params["rank_corr_method"], key_added="_rg")
+        
         df_rank = sc.get.rank_genes_groups_df(a, group=None, key="_rg")
+
         if "group" not in df_rank.columns:
             df_rank.insert(0, "group", groups[0] if isinstance(groups, (list, tuple)) else groups)
+
         df_rank = df_rank.rename(columns={"pct_nz_group": "pct_in", "pct_nz_reference": "pct_out"})
+
         del a.uns["_rg"]
         return df_rank
 
@@ -2526,9 +2541,14 @@ class SingleCell(object):
 
     def prepare_expression(self, adata_map, label_col: str = "region_label") -> ad.AnnData:
         """Spots x genes for subregion analysis: var_names = unique gene symbols (Ensembl in var['ENSEMBL']),
-        layers['counts'] = raw counts, X = log1p(CP10k). Needs obs[label_col] (add_region_labels)."""
+        layers['counts'] = raw counts, X = log1p(CP10k). Needs obs[label_col] (add_region_labels).
+        uns['mod'] keeps only factor_names (the cell types): the cell2location posterior summaries of all spots
+        (w_sf, z_sr_groups_factors, ... x 4 quantiles) are not needed here and were copied into every region h5ad of
+        run_subregions (most of its size and read time); the abundances themselves stay in obsm."""
         a = adata_map.copy()
         a.raw = None                       # the paper map carries .raw (Ensembl names); scanpy would test on it
+        if isinstance(a.uns.get("mod"), dict):
+            a.uns["mod"] = {k: a.uns["mod"][k] for k in ("factor_names",) if k in a.uns["mod"]}
         a.var["ENSEMBL"] = a.var_names
         a.var_names = a.var[self.symbol_col].astype(str).values
         a.var_names_make_unique()
@@ -2581,24 +2601,35 @@ class SingleCell(object):
         out = [g for g in genes if not (rx and rx.search(g))]
         return out[: (n or self.params["n_genes_show"])]
 
-    def calc_df_region_signature(self, adata_expr, label_col: str = "region_label", force: bool = False,
-                                 verbose: bool = False) -> Tuple[pd.DataFrame, Dict[str, set]]:
-        """Each region vs all other spots (Wilcoxon). Returns (df_rank of all genes, {region: signature gene set})
-        with signature = logFC >= region_sig_lfc, padj <= region_sig_padj, pct_in >= region_sig_min_pct.
-        Cached in files 'region_rank_genes' (the signature sets are rebuilt from its region_signature column)."""
-        P = self.params
+    def calc_df_region_signature(self, adata_expr, label_col: str = "region_label", 
+                                 force: bool = False, verbose: bool = False) -> Tuple[pd.DataFrame, Dict[str, set]]:
+        """
+        Each region vs all other spots (Wilcoxon). 
+        Returns (df_rank of all genes, df_region_info, {region: signature gene set}) with signature
+        - logFC >= region_sig_lfc, padj <= region_sig_padj, pct_in >= region_sig_min_pct.
+        Cached in files 'region_rank_genes' (the signature sets are rebuilt from its region_signature column).
+
+        calc_df_rank_genes()
+        "rest" (default): all other cells/spots pooled ("one vs rest").
+        each Rxx verssus all others Rx1, Rx2, Rxn
+        "wilcoxon" test: rank-based (Mann–Whitney U); robust to outliers and the usual choice for single-cell data.        
+        """
+        PARAMS = self.params
 
         def _compute():
-            df = self.calc_df_rank_genes(adata_expr, groupby=label_col)
-            df = df.rename(columns={"group": "region_id", "names": "gene"})
-            df["region_id"] = df["region_id"].astype(str)
-            df["region_signature"] = (df.logfoldchanges >= P["region_sig_lfc"]) & (df.pvals_adj <= P["region_sig_padj"]) & \
-                                     (df.pct_in >= P["region_sig_min_pct"])
-            return df
+            df_sig = self.calc_df_rank_genes(adata_expr, groupby=label_col)
+            df_sig = df_sig.rename(columns={"group": "region_id", "names": "gene"})
+            df_sig["region_id"] = df_sig["region_id"].astype(str)
+            df_sig["region_signature"] = (df_sig.logfoldchanges >= PARAMS["region_sig_lfc"]) & \
+                                         (df_sig.pvals_adj <= PARAMS["region_sig_padj"]) & \
+                                         (df_sig.pct_in >= PARAMS["region_sig_min_pct"])
+            return df_sig
 
         df_rank = self._cached_table("region_rank_genes", _compute, force, verbose, str_cols=("region_id", "gene"))
         df_rank["region_signature"] = df_rank["region_signature"].astype(bool)
+        
         sig = {r: set(g.gene) for r, g in df_rank[df_rank.region_signature].groupby("region_id", observed=True)}
+
         return df_rank, sig
 
     def calc_df_subregion_gene_sets(self, adata_expr, region_sig: Dict[str, set], label_col: str = "region_label",
@@ -3391,15 +3422,18 @@ class SingleCell(object):
                           fontsize_hover: int = 13, n_genes_hover: int = 8, region_colors: Optional[Dict[str, str]] = None,
                           marker_line_color: str = "black", marker_line_width: float = 0.3,
                           marker_opacity: Optional[float] = None, font_color: Optional[str] = None, bg_color: Optional[str] = None,
-                          image_bg_color: Optional[str] = None,
+                          image_bg_color: Optional[str] = None, reset_button: bool = True,
                           fname: Optional[str] = "fig_region_map", force: bool = False, verbose: bool = False):
-        """All regions of one section on the H&E (one trace per region, colours = _region_palette, as in the subregion map).
+        """
+        All regions of one section on the H&E (one trace per region, colours = _region_palette, as in the subregion map).
         Legend: 'R10 - Interferon-active zone (n=173)'; click to toggle, double-click to isolate.
         Hover (from df_region_table, any of these columns that exist): region_name, compartment, n_spots, median_UMIs,
         median_cells_per_spot, n_signature_genes, signature_genes (first n_genes_hover), enriched_cell_types.
 
         Font sizes: fontsize_title, fontsize_legend, fontsize_hover. Colours: region_colors (region -> colour; others from
-        _region_palette), marker_line_color / marker_line_width (spot outline), marker_opacity, font_color, bg_color."""
+        _region_palette), marker_line_color / marker_line_width (spot outline), marker_opacity, font_color, bg_color.
+        reset_button: 'Set' (every region visible, original view) and 'Reset' (every region hidden) above the legend.
+        """
         font_color = self.get_param("font_color", font_color)   # style: None -> params
         bg_color = self.get_param("bg_color", bg_color)
         import plotly.graph_objects as go
@@ -3450,8 +3484,14 @@ class SingleCell(object):
                           hoverlabel=dict(font=dict(size=fontsize_hover)),
                           legend=dict(itemsizing="constant", font=dict(size=fontsize_legend, color=font_color)),
                           margin=dict(l=10, r=10, t=50, b=10))
-        fig.update_xaxes(visible=False, range=[xy[:, 0].min() - 40, xy[:, 0].max() + 40])
-        fig.update_yaxes(visible=False, range=[xy[:, 1].max() + 40, xy[:, 1].min() - 40], scaleanchor="x")
+        xr = [xy[:, 0].min() - 40, xy[:, 0].max() + 40]
+        yr = [xy[:, 1].max() + 40, xy[:, 1].min() - 40]
+        fig.update_xaxes(visible=False, range=xr)
+        fig.update_yaxes(visible=False, range=yr, scaleanchor="x")
+        if reset_button:
+            self._plotly_reset_button(fig, ranges={"xaxis": xr, "yaxis": yr}, font_color=font_color, bg_color=bg_color,
+                                      fontsize=fontsize_legend, x=1.02, y=1.0)
+            fig.update_layout(legend=dict(y=0.97, yanchor="top"))      # the legend just below the buttons
         self._save_figure(fig, fname, force, verbose, lib=library_id)
         return fig
 

@@ -96,6 +96,7 @@ HEART_PARAMS: Dict[str, Any] = dict(
     age_order=("w6", "w7", "w7.5", "w8", "w9", "w10", "w10.5", "w11", "w12"),
     age_group_order=("w6-w7", "w8-w9", "w10-w12"),
     library_main="V11A20-401_A1",      # w8, 4 chambers: the section used for single-section figures
+
     # --- scRNA reference
     ref_labels_key="cell_type",        # 31 high-level types (+ 4 HL_excl_* removed by the authors)
     ref_batch_key="sample_id",         # 21 10x libraries
@@ -106,6 +107,7 @@ HEART_PARAMS: Dict[str, Any] = dict(
     ref_symbol_col="symbol",           # reference LIANA: symbols in var['symbol'] (var_names = Ensembl IDs)
     celltype_col="cell_type",
     libsize_col="n_counts",
+
     # --- cell2location (runs: results/c2l_{c2l_tag}/; GPU: src/programs/run_c2l_heart_dvlp.py)
     c2l_tag="gpu",                     # results/c2l_<tag>/: run src/programs/run_c2l_heart_dvlp.py --tag gpu first
     c2l_N_cells_per_location=20,       # dense fetal myocardium; estimate from H&E nuclei counts if possible
@@ -115,6 +117,7 @@ HEART_PARAMS: Dict[str, Any] = dict(
     c2l_train_if_missing=False,        # notebooks: train when the cache is missing (long; normally the program does it)
     ref_max_epochs=250,
     abundance_source="auto",           # 'c2l' | 'stereoscope' | 'auto' (c2l map when it exists, else the paper's)
+
     # --- regions on cell-abundance space (69k spots, 31 types)
     region_n_neighbors=30,
     region_resolution=1.0,             # 20 regions on the stereoscope abundances (paper: 23 expression clusters)
@@ -122,6 +125,7 @@ HEART_PARAMS: Dict[str, Any] = dict(
     region_top_n=2,
     region_id_fmt="R{:02d}",
     region_min_overlap=0.30,           # region -> paper cluster label when >= this share of its (shared) spots
+
     # --- subregions (heart03) and LIANA (heart04): SingleCell defaults; ComBat by section
     subregion_skip=("R28",),            # c2l partition: R28 = low-signal spots (618 UMIs); stereoscope partition: use ("R18",)
     sub_min_batch_spots=10,            # ComBat by section: sections with fewer spots in a region are pooled           # 20-spot outlier cluster of the stereoscope regions (heart_regions.tsv)
@@ -132,6 +136,7 @@ HEART_PARAMS: Dict[str, Any] = dict(
     gene_display_exclude=r"^RP[SL]\d|^MT-|^A[CLP]\d{6}\.\d|^LINC\d|-AS\d$",
     border_min_rel=1.25,
     subregion_map_title="{lib}: subregions of each heart region",
+    
     # --- plotting
     lineage_cmaps={"cardiomyocyte": "Reds", "fibroblast": "Oranges", "epicardial": "YlOrBr", "mesenchymal": "Purples",
                    "mural": "RdPu", "endothelial": "Blues", "TMSB10high": "Greys", "neural": "Greens",
