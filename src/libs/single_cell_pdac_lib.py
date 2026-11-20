@@ -2187,21 +2187,30 @@ class SingleCellPDAC(RegionCacheMixin, SingleCell):
         self._save_figure(fig, fname, force=force, verbose=verbose)
         return fig
 
-    def plot_ring_heatmap(self, df_ring: pd.DataFrame, title: str = "", figsize=(14, 5), fname: Optional[str] = None,
+    def plot_ring_heatmap(self, df_ring: pd.DataFrame, title: str = "", figsize=(14, 5), 
+                          fname: Optional[str] = None, cmap="magma",
                           force: bool = False, verbose: bool = False):
-        """Heatmap of a calc_df_ring_profile table: features (rows) x (ring_status, ring) columns, mean share."""
-        M = df_ring.pivot_table(index="feature", columns=["ring_status", "ring"], values="mean") if len(df_ring) else pd.DataFrame()
-        if M.empty:
-            M = pd.DataFrame(np.zeros((1, 1)), index=["no nerves called"], columns=pd.MultiIndex.from_tuples([("", 0)]))
+        """
+        Heatmap of a calc_df_ring_profile table: features (rows) x (ring_status, ring) columns, mean share.
+        """
+        
+        df_ring2 = df_ring.pivot_table(index="feature", columns=["ring_status", "ring"], values="mean") if len(df_ring) else pd.DataFrame()
+        if df_ring2.empty:
+            df_ring2 = pd.DataFrame(np.zeros((1, 1)), index=["no nerves called"], columns=pd.MultiIndex.from_tuples([("", 0)]))
+        
         fig, ax = plt.subplots(figsize=figsize)
-        im = ax.imshow(M.values, cmap="magma", aspect="auto")
-        ax.set_xticks(range(M.shape[1]))
-        ax.set_xticklabels([f"{s}\nring {r}" for s, r in M.columns], fontsize=7)
-        ax.set_yticks(range(M.shape[0]))
-        ax.set_yticklabels(M.index)
+        
+        im = ax.imshow(df_ring2.values, cmap=cmap, aspect="auto")
+        ax.set_xticks(range(df_ring2.shape[1]))
+        ax.set_xticklabels([f"{s}\nring {r}" for s, r in df_ring2.columns], fontsize=7)
+        ax.set_yticks(range(df_ring2.shape[0]))
+        ax.set_yticklabels(df_ring2.index)
+
         fig.colorbar(im, ax=ax, fraction=0.03).set_label("mean share")
+
         ax.set_title(title)
         self.style_figure(fig, self.params["font_color"], self.params["bg_color"], self.params["fontsize_scale"])
+
         self._save_figure(fig, fname, force=force, verbose=verbose)
         return fig
 
@@ -2262,17 +2271,27 @@ class SingleCellPDAC(RegionCacheMixin, SingleCell):
     def plot_ring_profile(self, df_ring: pd.DataFrame, features: Sequence[str], ncols: int = 4, panel_size=(3.6, 3),
                           ylabel: str = "mean share", title: str = "", fname: Optional[str] = None,
                           font_color: Optional[str] = None, bg_color: Optional[str] = None,
-                          fontsize_scale: Optional[float] = None, force: bool = False, verbose: bool = False):
-        """One panel per feature: mean vs ring (5 -> 0 = nerve), invaded (dashed) vs non-invaded (solid)."""
+                          fontsize_scale: Optional[float] = None, figsize:tuple=(),
+                          title_y: Optional[float] = None, title_fontsize: Optional[float] = None,
+                          force: bool = False, verbose: bool = False):
+        """
+        One panel per feature: mean vs ring (5 -> 0 = nerve), invaded (dashed) vs non-invaded (solid).
+        title: figure title (suptitle). title_y: its height in figure fractions (1.0 = top edge of the figure, > 1
+        above the panels, e.g. 1.05; None = just above the highest panel title, never overlapping); title_fontsize:
+        None = matplotlib default (larger than the panel titles).
+        """
         font_color = self.get_param("font_color", font_color)
         bg_color = self.get_param("bg_color", bg_color)
         fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         features = [f for f in features if f in set(df_ring.feature)]
+
         if not features:
             print("no nerve rings (no nerve called with the current thresholds): nothing to plot")
             return None
+        
         nrows = math.ceil(len(features) / ncols)
-        fig, axes = plt.subplots(nrows, ncols, figsize=(panel_size[0] * ncols, panel_size[1] * nrows), squeeze=False)
+        fig, axes = plt.subplots(nrows, ncols, figsize=figsize or (panel_size[0] * ncols, panel_size[1] * nrows), squeeze=False)
+        
         for ax in axes.ravel()[len(features):]:
             ax.axis("off")
         sty = {"invaded": dict(ls="--", color="#E8504C"), "non-invaded": dict(ls="-", color="#4C9BE8")}
@@ -2287,10 +2306,24 @@ class SingleCellPDAC(RegionCacheMixin, SingleCell):
             ax.set_xlabel("ring (0 = nerve)", fontsize=8)
             ax.set_ylabel(ylabel, fontsize=8)
         axes.ravel()[0].legend(frameon=False, fontsize=8)
-        if title:
-            fig.suptitle(title)
-        fig.tight_layout()
+        # style first (colours, fonts x fontsize_scale), then the layout: the spacing is computed for the final fonts
         self.style_figure(fig, font_color, bg_color, fontsize_scale, relayout=False)
+        
+        if title:
+            from matplotlib.font_manager import FontProperties
+            size = title_fontsize or FontProperties(size=plt.rcParams["figure.titlesize"]).get_size_in_points()
+            kw = dict(fontsize=size * (fontsize_scale or 1), color=font_color)
+        
+        fig.tight_layout()                                    # panels first (final fonts), then the title
+        if title and title_y is None:
+            # just above the highest panel title, measured on the drawn figure (never overlaps it)
+            renderer = fig.canvas.get_renderer()
+            tops = [ax.title.get_window_extent(renderer).y1 for ax in fig.axes if ax.get_title()]
+            top = max(tops) / fig.bbox.height if tops else 1.0
+            fig.suptitle(title, y=top + 0.01, va="bottom", **kw)
+        elif title:
+            fig.suptitle(title, y=title_y, **kw)              # as asked (va='top': title_y = its upper edge)
+        
         self._savefig(fig, fname, force=force, verbose=verbose)
         return fig
 
