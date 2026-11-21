@@ -3217,16 +3217,20 @@ class SingleCell(object):
         return df
 
     def plotly_region_subregions(self, region: str, adata_sub: ad.AnnData, adata_map, df_sub_table: Optional[pd.DataFrame] = None,
-                                 df_region_table: Optional[pd.DataFrame] = None, pad: float = 80, height: int = 470, width: Optional[int] = None, spot_size: float = 7,
+                                 df_region_table: Optional[pd.DataFrame] = None, pad: float = 80, 
+                                 height: int = 470, width: Optional[int] = None, spot_size: float = 7,
                                  umap_size: float = 5, fontsize_title: int = 17, fontsize_subplot_title: int = 16,
                                  fontsize_axis: int = 14, fontsize_legend: int = 12, fontsize_colorbar: int = 12,
                                  fontsize_hover: int = 13, subregion_colors: Optional[Dict[str, str]] = None,
                                  section_colors: Optional[Dict[str, str]] = None, umi_colorscale=LIGHT_SEQUENTIAL,
                                  marker_line_color: str = "black", marker_line_width: float = 0.4,
                                  font_color: Optional[str] = None, bg_color: Optional[str] = None, webgl: bool = False,
-                                 image_bg_color: Optional[str] = None,
+                                 image_bg_color: Optional[str] = None, ncols: Optional[int] = None,
+                                 nrows: Optional[int] = None, sections: Optional[Sequence[str]] = None,
+                                 row_height: int = 420,
                                  fname: Optional[str] = "fig_region_sub", force: bool = False, verbose: bool = False):
-        """One region: UMAP by subregion | UMAP by section (one section: by log10 UMIs, the depth confounder) |
+        """
+        One region: UMAP by subregion | UMAP by section (one section: by log10 UMIs, the depth confounder) |
         subregions on the H&E of each section (cropped to the region).
         Legend entries toggle a subregion in every panel. Hover: subregion, section, status, signature genes.
         webgl=False draws the points as SVG (go.Scatter): many of these figures shown in one notebook would otherwise
@@ -3238,29 +3242,58 @@ class SingleCell(object):
         fontsize_subplot_title (panel titles), fontsize_axis (UMAP1/UMAP2), fontsize_legend, fontsize_colorbar (log10 UMIs),
         fontsize_hover. Colours (light by default): subregion_colors (subregion -> colour; others from subregion_palette =
         REGION_COLORS), section_colors (section -> colour; others REGION_COLORS), umi_colorscale (Plotly scale name or
-        list of colours; default LIGHT_SEQUENTIAL), marker_line_color / marker_line_width (H&E spot outline), font_color, bg_color."""
+        list of colours; default LIGHT_SEQUENTIAL), marker_line_color / marker_line_width (H&E spot outline), font_color, bg_color.
+
+        Layout: ncols=None -> one row (UMAPs, then every section), height = height. ncols (e.g. 2) -> a grid read row by
+        row (UMAP subregions, UMAP sections / UMIs, then the sections), each row row_height px; nrows (e.g. 3) caps the
+        grid at ncols x nrows panels. sections: the sections shown (default: every section with spots of the region;
+        when they do not fit the grid, those with the most spots of the region are kept and the others printed).
+        """
+
         font_color = self.get_param("font_color", font_color)   # style: None -> params
         bg_color = self.get_param("bg_color", bg_color)
+
         import plotly.graph_objects as go
         from plotly.subplots import make_subplots
+
         Scatter = go.Scattergl if webgl else go.Scatter      # SVG by default: browsers keep only ~16 WebGL contexts per page
         key = self.params["subregion_key"]
         subs = list(adata_sub.obs[key].cat.categories)
         cols = {**self.subregion_palette(subs), **(subregion_colors or {})}
-        libs = [lb for lb in self.library_ids(adata_map) if (adata_sub.obs[self.sample_col].astype(str) == lb).any()]
+        n_by_lib = adata_sub.obs[self.sample_col].astype(str).value_counts()
+        libs = [lb for lb in self.library_ids(adata_map) if lb in n_by_lib.index]
+        if sections is not None:
+            libs = [lb for lb in sections if lb in n_by_lib.index]
+        if ncols and nrows and len(libs) > ncols * nrows - 2:            # grid full: the sections with most spots
+            keep = set(sorted(libs, key=lambda lb: -n_by_lib[lb])[:max(ncols * nrows - 2, 0)])
+            dropped = [lb for lb in libs if lb not in keep]
+            libs = [lb for lb in libs if lb in keep]
+            print(f"{region}: {len(dropped)} section(s) not shown (grid {ncols} x {nrows}): {', '.join(dropped)}")
         info, sub_names = {}, {}
+        
         if df_sub_table is not None:
             for r in df_sub_table[df_sub_table.region_id == region].itertuples():
                 info[r.sub_region_id] = f"{r.status}; coherence {r.coherence_ratio}<br>up: {r.subregion_signature_genes[:80]}"
                 nm = getattr(r, "subregion_name", "") or self._short_label(getattr(r, "functional_description", ""))
                 if nm:
                     sub_names[r.sub_region_id] = nm
+        
         region_name = ""
         if df_region_table is not None and "region_name" in df_region_table.columns:
             region_name = dict(zip(df_region_table.region_id, df_region_table.region_name)).get(region, "") or ""
+        
         one_section = adata_sub.obs[self.sample_col].astype(str).nunique() == 1
+        
         titles = ["UMAP - subregions", "UMAP - log10 UMIs" if one_section else "UMAP - sections"] + [f"{lb}" for lb in libs]
-        fig = make_subplots(rows=1, cols=2 + len(libs), subplot_titles=titles, horizontal_spacing=0.03)
+        n_pan = 2 + len(libs)
+        nc = ncols or n_pan
+        nr = -(-n_pan // nc)
+        pos = [(i // nc + 1, i % nc + 1) for i in range(n_pan)]               # panel i -> (row, col), row by row
+        axis_id = lambda i: "" if i == 0 else str(i + 1)                       # make_subplots numbering: x, x2, x3 ...
+        h_space = (0.03 if nr == 1 else 0.06) if nc < 2 else min(0.03 if nr == 1 else 0.06, 0.5 / (nc - 1))
+        fig = make_subplots(rows=nr, cols=nc, subplot_titles=titles, horizontal_spacing=h_space,
+                            vertical_spacing=0.08 if nr > 1 else 0.0)       # spacing < 1/(cols-1): many sections
+        
         U = adata_sub.obsm["X_umap"]
         lab = adata_sub.obs[key].astype(str).values
         sec = adata_sub.obs[self.sample_col].astype(str).values
@@ -3270,23 +3303,28 @@ class SingleCell(object):
             fig.add_trace(Scatter(x=U[m, 0], y=U[m, 1], mode="markers", name=legend_name, legendgroup=s,
                                        marker=dict(size=umap_size, color=cols[s]), text=adata_sub.obs_names[m],
                                        hovertemplate=f"<b>{s}</b><br>{info.get(s, '')}<br>%{{text}}<extra></extra>"),
-                          row=1, col=1)
+                          row=pos[0][0], col=pos[0][1])
+        
         sec_cols = {**dict(zip(self.library_ids(adata_map), REGION_COLORS[1:])), **(section_colors or {})}
+        
         if one_section and self.params["counts_layer"] in adata_sub.layers:
             umi = np.log10(np.asarray(adata_sub.layers[self.params["counts_layer"]].sum(1)).ravel() + 1)
             fig.add_trace(Scatter(x=U[:, 0], y=U[:, 1], mode="markers", name="log10 UMIs", showlegend=False,
                                        marker=dict(size=umap_size, color=umi, colorscale=umi_colorscale,
                                                    colorbar=dict(title=dict(text="log10<br>UMIs", font=dict(size=fontsize_colorbar)),
                                                                  tickfont=dict(size=fontsize_colorbar),
-                                                                 len=0.6, x=0.33, thickness=10)),
+                                                                 len=0.6 / nr, thickness=10,
+                                                                 x=fig.layout[f"xaxis{axis_id(1)}"].domain[1] + 0.005,
+                                                                 y=float(np.mean(fig.layout[f"yaxis{axis_id(1)}"].domain)))),
                                        text=[f"{v:.2f}" for v in umi],
-                                       hovertemplate="log10 UMIs %{text}<extra></extra>"), row=1, col=2)
+                                       hovertemplate="log10 UMIs %{text}<extra></extra>"), row=pos[1][0], col=pos[1][1])
         else:
             for lb in np.unique(sec):
                 m = sec == lb
                 fig.add_trace(Scatter(x=U[m, 0], y=U[m, 1], mode="markers", name=lb, legendgroup=lb,
                                            marker=dict(size=umap_size, color=sec_cols.get(lb, REGION_COLORS[0])), hoverinfo="skip"),
-                              row=1, col=2)
+                              row=pos[1][0], col=pos[1][1])
+        
         for j, lb in enumerate(libs):
             img = self._map_image(lb, adata_map, image_bg_color, force, verbose)
             mm, xy_all = self.spot_xy(lb, adata_map)
@@ -3295,9 +3333,9 @@ class SingleCell(object):
             xy = xy_all[in_reg]
             x0, x1 = int(max(xy[:, 0].min() - pad, 0)), int(min(xy[:, 0].max() + pad, img.shape[1]))
             y0, y1 = int(max(xy[:, 1].min() - pad, 0)), int(min(xy[:, 1].max() + pad, img.shape[0]))
-            col = 3 + j
+            row, col = pos[2 + j]
             fig.add_trace(go.Image(source=self._jpeg_uri(img[y0:y1, x0:x1]), x0=x0, y0=y0, dx=1, dy=1, hoverinfo="skip"),
-                          row=1, col=col)
+                          row=row, col=col)
             lab_lb = adata_sub.obs.loc[names_lb[in_reg], key].astype(str).values
             for s in subs:
                 m = lab_lb == s
@@ -3308,23 +3346,31 @@ class SingleCell(object):
                                                        line=dict(width=marker_line_width, color=marker_line_color)),
                                            text=names_lb[in_reg][m],
                                            hovertemplate=f"<b>{s}</b> - {lb}<br>{info.get(s, '')}<br>%{{text}}<extra></extra>"),
-                              row=1, col=col)
-            fig.update_xaxes(range=[x0, x1], visible=False, row=1, col=col)
-            fig.update_yaxes(range=[y1, y0], visible=False, scaleanchor=f"x{col}", row=1, col=col)
+                              row=row, col=col)
+            fig.update_xaxes(range=[x0, x1], visible=False, row=row, col=col)
+            fig.update_yaxes(range=[y1, y0], visible=False, scaleanchor=f"x{axis_id(2 + j)}", row=row, col=col)
+        
         axis_font = dict(size=fontsize_axis, color=font_color)
-        for c in (1, 2):
-            fig.update_xaxes(showticklabels=False, title_text="UMAP1", title_font=axis_font, row=1, col=c)
-            fig.update_yaxes(showticklabels=False, title_text="UMAP2" if c == 1 else None, title_font=axis_font, row=1, col=c)
+        
+        for i in (0, 1):
+            r_, c_ = pos[i]
+            fig.update_xaxes(showticklabels=False, title_text="UMAP1", title_font=axis_font, row=r_, col=c_)
+            fig.update_yaxes(showticklabels=False, title_text="UMAP2" if (i == 0 or c_ == 1) else None, title_font=axis_font,
+                             row=r_, col=c_)
+        
         fig.update_annotations(font=dict(size=fontsize_subplot_title, color=font_color))      # subplot titles
         res = adata_sub.uns.get("subcluster_resolution", "")
         head = f"{region} - {region_name}" if region_name else region
         fig.update_layout(title=dict(text=f"{head}: {len(subs)} subregion(s), {adata_sub.n_obs} spots (Leiden resolution {res})",
                                      font=dict(size=fontsize_title, color=font_color)),
-                          height=height, width=width or 420 * (2 + len(libs)) + (300 if sub_names else 0), template="plotly_white",
+                          height=height if nr == 1 else row_height * nr + 70,
+                          width=width or 420 * nc + (300 if sub_names else 0), template="plotly_white",
                           font=dict(color=font_color), paper_bgcolor=bg_color, plot_bgcolor=bg_color,
                           hoverlabel=dict(font=dict(size=fontsize_hover)),
                           legend=dict(itemsizing="constant", font=dict(size=fontsize_legend, color=font_color)),
                           margin=dict(l=20, r=20, t=70, b=20))
+        if nr > 1:                                             # grid: legend at the bottom right, the UMI colour bar
+            fig.update_layout(legend=dict(y=0.0, yanchor="bottom"))   # (top right, next to panel 2) stays free
         self._save_figure(fig, fname, force, verbose, region=region)
         return fig
 
