@@ -2043,18 +2043,27 @@ class SingleCell(object):
 
     def _plotly_reset_button(self, fig, ranges: Optional[Dict[str, list]] = None,
                              font_color: str = "black", bg_color: str = "white", fontsize: int = 12,
-                             x: float = 1.01, y: float = 1.0):
-        """Two buttons for the categories of an interactive map (the legend items, e.g. R00 ... R33):
-        - 'Set': every category visible (all circles), and the axes back to ranges (the original view after zoom /
-          pan): {'xaxis': [x0, x1], 'yaxis': [y0, y1], ...}; None = autorange of every axis;
+                             x: float = 1.01, y: float = 1.0, xanchor: str = "left"):
+        """Two buttons for the categories of an interactive map / UMAP (the legend items, e.g. R00 ... R33):
+        - 'Set': every category visible (all circles / points), and the axes back to their view when the figure was
+          built (after zoom / pan);
         - 'Reset': every category hidden (no circle; the legend keeps them, click one to show it again).
-        Traces that are not legend items (the H&E image, traces with showlegend=False) stay visible.
-        Placed at (x, y) in paper coordinates (default: above the legend on the right)."""
-        is_cat = [tr.type != "image" and tr.showlegend is not False for tr in fig.data]
+        A legend item hides its whole legendgroup (e.g. the UMAP points and the H&E spots of one subregion), as a
+        legend click does. Traces outside any legend group (the H&E images, colour-scaled panels such as log10 UMIs,
+        per-section UMAP traces without a legend entry) stay visible.
+        ranges: {'xaxis': [x0, x1], 'yaxis': [y0, y1], ...}; None = the ranges set on the figure (the H&E crops),
+        autorange for axes without one (UMAPs). Call it after the axes are set. Placed at (x, y) in paper
+        coordinates, xanchor 'left' (default: right of the plot, above the legend) or 'right' (inside the top-right).
+        """
+        item = [tr.type != "image" and tr.showlegend is not False for tr in fig.data]
+        groups = {tr.legendgroup for tr, it in zip(fig.data, item) if it and tr.legendgroup}
+        is_cat = [it or (tr.type != "image" and tr.legendgroup is not None and tr.legendgroup in groups)
+                  for tr, it in zip(fig.data, item)]
         vis_set = [True] * len(fig.data)
         vis_reset = ["legendonly" if c else True for c in is_cat]
         if ranges is None:
-            ranges = {k: None for k in fig.layout if k.startswith(("xaxis", "yaxis"))} or {"xaxis": None, "yaxis": None}
+            axes = [k for k in fig.layout if k.startswith(("xaxis", "yaxis"))] or ["xaxis", "yaxis"]
+            ranges = {k: (list(fig.layout[k].range) if fig.layout[k].range is not None else None) for k in axes}
         view = {}
         for ax, r in ranges.items():
             if r is None:
@@ -2062,7 +2071,7 @@ class SingleCell(object):
             else:
                 view[f"{ax}.range"] = list(r)
         fig.update_layout(updatemenus=[dict(
-            type="buttons", direction="left", showactive=False, x=x, y=y, xanchor="left", yanchor="bottom",
+            type="buttons", direction="left", showactive=False, x=x, y=y, xanchor=xanchor, yanchor="bottom",
             pad=dict(t=2, b=2, l=2, r=2), bgcolor=bg_color, bordercolor=self._muted(bg_color),
             font=dict(size=fontsize, color=font_color),
             buttons=[dict(label="Set", method="update", args=[{"visible": vis_set}, view]),
@@ -3023,6 +3032,7 @@ class SingleCell(object):
                                   fontsize_title: int = 16, fontsize_legend: int = 11, fontsize_hover: int = 12,
                                   legend_ncol: Optional[int] = 4,
                                   font_color: Optional[str] = None, bg_color: Optional[str] = None,
+                                  reset_button: bool = True,
                                   fname: Optional[str] = None, include_plotlyjs=None, force: bool = False,
                                   verbose: bool = False):
         """
@@ -3032,6 +3042,7 @@ class SingleCell(object):
         figure grows by the legend height, panels keep `height`); None = legend on the right, one column. colors: region -> colour (None = the colours of the matplotlib
         figure: adata.uns['<key>_colors'], else _region_palette). fname: key of self.files or an .html name
         (None = not saved); an existing file is kept unless force.
+        reset_button: 'Set' / 'Reset' buttons (every category shown / hidden; Set also restores the view).
         """
         import plotly.graph_objects as go
         from plotly.subplots import make_subplots
@@ -3107,6 +3118,9 @@ class SingleCell(object):
                           plot_bgcolor=bg_color, margin=margin, hoverlabel=dict(font=dict(size=fontsize_hover)),
                           legend=legend)
         fig.update_annotations(font=dict(size=fontsize_title, color=font_color))
+        if reset_button:
+            self._plotly_reset_button(fig, font_color=font_color, bg_color=bg_color, fontsize=fontsize_legend,
+                                      **(dict(x=1.0, xanchor="right") if legend_ncol else {}))
         self._save_figure(fig, fname, force, verbose, include_plotlyjs=include_plotlyjs, lib=lib)
         return fig
 
@@ -3115,7 +3129,7 @@ class SingleCell(object):
                               colors: Optional[Dict[str, str]] = None, panel_px: int = 360, marker_size: float = 3.5,
                               image_format: Optional[str] = None, fontsize_title: int = 13, fontsize_legend: int = 11,
                               fontsize_hover: int = 12, font_color: Optional[str] = None, bg_color: Optional[str] = None,
-                              width: Optional[int] = None, height: Optional[int] = None,
+                              width: Optional[int] = None, height: Optional[int] = None, reset_button: bool = True,
                               fname: Optional[str] = None, include_plotlyjs=None, force: bool = False,
                               verbose: bool = False):
         """
@@ -3126,6 +3140,7 @@ class SingleCell(object):
         representative_sections(). width / height: figure size in pixels (None = panel_px x columns + 380 for the
         legend, panel_px x rows + 60). fname: key of self.files or an .html name (None = not saved); an existing file
         is kept unless force.
+        reset_button: 'Set' / 'Reset' buttons (every category shown / hidden; Set also restores the view).
         """
         import plotly.graph_objects as go
         from plotly.subplots import make_subplots
@@ -3174,6 +3189,8 @@ class SingleCell(object):
         
         fig.update_annotations(font=dict(size=fontsize_title, color=font_color))
         
+        if reset_button:
+            self._plotly_reset_button(fig, font_color=font_color, bg_color=bg_color, fontsize=fontsize_legend)
         self._save_figure(fig, fname, force, verbose, include_plotlyjs=include_plotlyjs)
         return fig
 
@@ -3227,7 +3244,7 @@ class SingleCell(object):
                                  font_color: Optional[str] = None, bg_color: Optional[str] = None, webgl: bool = False,
                                  image_bg_color: Optional[str] = None, ncols: Optional[int] = None,
                                  nrows: Optional[int] = None, sections: Optional[Sequence[str]] = None,
-                                 row_height: int = 420,
+                                 row_height: int = 420, reset_button: bool = True,
                                  fname: Optional[str] = "fig_region_sub", force: bool = False, verbose: bool = False):
         """
         One region: UMAP by subregion | UMAP by section (one section: by log10 UMIs, the depth confounder) |
@@ -3248,6 +3265,7 @@ class SingleCell(object):
         row (UMAP subregions, UMAP sections / UMIs, then the sections), each row row_height px; nrows (e.g. 3) caps the
         grid at ncols x nrows panels. sections: the sections shown (default: every section with spots of the region;
         when they do not fit the grid, those with the most spots of the region are kept and the others printed).
+        reset_button: 'Set' / 'Reset' buttons (every category shown / hidden; Set also restores the view).
         """
 
         font_color = self.get_param("font_color", font_color)   # style: None -> params
@@ -3371,6 +3389,8 @@ class SingleCell(object):
                           margin=dict(l=20, r=20, t=70, b=20))
         if nr > 1:                                             # grid: legend at the bottom right, the UMI colour bar
             fig.update_layout(legend=dict(y=0.0, yanchor="bottom"))   # (top right, next to panel 2) stays free
+        if reset_button:
+            self._plotly_reset_button(fig, font_color=font_color, bg_color=bg_color, fontsize=fontsize_legend)
         self._save_figure(fig, fname, force, verbose, region=region)
         return fig
 
@@ -3381,7 +3401,7 @@ class SingleCell(object):
                              skip_color: str = "#dddddd", marker_line_color: str = "black", marker_line_width: float = 0.3,
                              font_color: Optional[str] = None, bg_color: Optional[str] = None, legend_ncols: int = 1,
                              image_bg_color: Optional[str] = None,
-                             legend_col_width: int = 110,
+                             legend_col_width: int = 110, reset_button: bool = True,
                              fname: Optional[str] = "fig_subregion_map", force: bool = False, verbose: bool = False):
         """All subregions of one section on the H&E. Colours = shades of each region's colour; legend grouped by region
         (click a region title to toggle its subregions). Hover: region, subregion, status, signature genes, cell types.
@@ -3390,7 +3410,9 @@ class SingleCell(object):
         Colours: region_colors (region -> base colour of its shades; others from _region_palette), skip_color (regions in
         subregion_skip), marker_line_color / marker_line_width (spot outline), font_color, bg_color.
         Legend: legend_ncols columns side by side on the right (regions kept whole, split in order into columns of about
-        equal length; each column is a separate Plotly legend), legend_col_width pixels per column."""
+        equal length; each column is a separate Plotly legend), legend_col_width pixels per column.
+        reset_button: 'Set' / 'Reset' buttons (every category shown / hidden; Set also restores the view).
+        """
         font_color = self.get_param("font_color", font_color)   # style: None -> params
         bg_color = self.get_param("bg_color", bg_color)
         import plotly.graph_objects as go
@@ -3459,6 +3481,8 @@ class SingleCell(object):
             fig.update_layout(legend=legend_style)
         fig.update_xaxes(visible=False, range=[xy[:, 0].min() - 40, xy[:, 0].max() + 40])
         fig.update_yaxes(visible=False, range=[xy[:, 1].max() + 40, xy[:, 1].min() - 40], scaleanchor="x")
+        if reset_button:
+            self._plotly_reset_button(fig, font_color=font_color, bg_color=bg_color, fontsize=fontsize_legend)
         self._save_figure(fig, fname, force, verbose, lib=library_id)
         return fig
 

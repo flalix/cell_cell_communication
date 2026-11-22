@@ -1777,17 +1777,23 @@ class SingleCellPDAC(RegionCacheMixin, SingleCell):
 
     def plot_ni_groups(self, df_long: pd.DataFrame, groups: Sequence[str], value: str = "share",
                        group_col: str = "group", df_test: Optional[pd.DataFrame] = None, ncols: int = 6,
-                       panel_size=(2.6, 3.2), title: str = "", ylabel: str = "share of the section",
+                       panel_size=(2.6, 3.2), figsize: Optional[tuple] = None,
+                       title: str = "", ylabel: str = "share of the section",
                        fname: Optional[str] = None, font_color: Optional[str] = None, bg_color: Optional[str] = None,
                        fontsize_scale: Optional[float] = None, force: bool = False, verbose: bool = False):
-        """One panel per group: section values for low vs high NI (box + points; marker = technique), Mann-Whitney
-        p in the title (Figure 2E / 3B / 3D analogue; the paper's ridge plots summarise the same 5 vs 16 sections)."""
+        """
+        One panel per group: section values for low vs high NI (box + points; marker = technique), Mann-Whitney
+        p in the title (Figure 2E / 3B / 3D analogue; the paper's ridge plots summarise the same 5 vs 16 sections).
+        """
+
         font_color = self.get_param("font_color", font_color)
         bg_color = self.get_param("bg_color", bg_color)
         fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         groups = [g for g in groups if g in set(df_long[group_col])]
+
         nrows = math.ceil(len(groups) / ncols)
-        fig, axes = plt.subplots(nrows, ncols, figsize=(panel_size[0] * ncols, panel_size[1] * nrows), squeeze=False)
+        fig, axes = plt.subplots(nrows, ncols, figsize=figsize or (panel_size[0] * ncols, panel_size[1] * nrows), squeeze=False)
+
         for ax in axes.ravel()[len(groups):]:
             ax.axis("off")
         col = {"low": "#4C9BE8", "high": "#E8504C"}
@@ -2164,27 +2170,40 @@ class SingleCellPDAC(RegionCacheMixin, SingleCell):
         return df.merge(n.reset_index(), on=["ring_status", "ring"])
 
     def calc_df_juxta_enrichment(self, adata, df_share: pd.DataFrame, zone: str = "juxta-neural",
-                                 fname: Optional[str] = None, force: bool = False, verbose: bool = False) -> pd.DataFrame:
+                                 fname: Optional[str] = None, 
+                                 force: bool = False, verbose: bool = False) -> pd.DataFrame:
+        
         """Cell types in the juxta-neural spots (rings 1-2) of invaded vs non-invaded nerves: means, log2 ratio,
         two-sided Mann-Whitney p and BH FDR over spots (Figure 4A analogue; spots are not independent: rank by effect).
         attrs: n_invaded, n_non_invaded. fname: cache, None = not written."""
         return self._cached_any(fname, lambda: self._juxta_enrichment(adata, df_share, zone), force=force,
                                 verbose=verbose)
 
-    def plot_juxta_enrichment(self, df_juxta: pd.DataFrame, max_fdr: float = 0.05, fname: Optional[str] = None,
+    def plot_juxta_enrichment(self, df_juxta: pd.DataFrame, max_fdr: float = 0.05, 
+                              fontsize_y:int=11, fontsize_x:int=11, figsize: Optional[tuple] = None,
+                              fname: Optional[str] = None,
                               force: bool = False, verbose: bool = False):
-        """Bars of log2 (invaded / non-invaded) of the cell types with FDR < max_fdr (Figure 4A analogue)."""
+        """
+        Bars of log2 (invaded / non-invaded) of the cell types with FDR < max_fdr (Figure 4A analogue).
+        """
+
         d = df_juxta[df_juxta.fdr < max_fdr]
-        fig, ax = plt.subplots(figsize=(8, max(4, 0.28 * len(d))))
+
+        fig, ax = plt.subplots(figsize=figsize or (8, max(4, 0.28 * len(d))))
+        
         ax.barh(range(len(d)), d.log2_ratio, color=["#E8504C" if v > 0 else "#4C9BE8" for v in d.log2_ratio])
         ax.set_yticks(range(len(d)))
-        ax.set_yticklabels(d.cell_type)
+        ax.set_yticklabels(d.cell_type, fontsize=fontsize_y)
+
         ax.invert_yaxis()
         ax.axvline(0, color="#888888", lw=0.8)
-        ax.set_xlabel("log2 (invaded / non-invaded), juxta-neural rings 1-2")
+
+        ax.set_xlabel("log2 (invaded / non-invaded), juxta-neural rings 1-2", fontsize=fontsize_x)
         ax.set_title(f"Juxta-neural cell types (Figure 4A analogue; FDR < {max_fdr} over spots)")
+
         self.style_figure(fig, self.params["font_color"], self.params["bg_color"], self.params["fontsize_scale"])
         self._save_figure(fig, fname, force=force, verbose=verbose)
+
         return fig
 
     def plot_ring_heatmap(self, df_ring: pd.DataFrame, title: str = "", figsize=(14, 5), 

@@ -1207,24 +1207,32 @@ class SingleCellHeart(SingleCell):
 
     def plot_lr_auroc_by_age_group(self, df_lr_age: pd.DataFrame, df_age_top: pd.DataFrame, vmin: float = 0.35,
                                    vmax: float = 0.65, fname: Optional[str] = "heart04_lr_by_age_group_top.png",
+                                   fontsize_x:int=10, fontsize_y:int=10, figsize: Optional[tuple] = None,
                                    force: bool = False, verbose: bool = False):
-        """Heatmap: AUROC (stage vs the other stages) of the top-ranked LR pairs of every developmental stage
+        """
+        Heatmap: AUROC (stage vs the other stages) of the top-ranked LR pairs of every developmental stage
         (df_age_top) in all stages (df_lr_age: interaction, group, auroc); 0.5 = as in the other stages. Rows ordered
-        by the stage of maximal AUROC."""
+        by the stage of maximal AUROC.
+        """
+
         order_age = [g for g in self.params["age_group_order"] if g in set(df_lr_age.group)]
         lr_union = list(dict.fromkeys(df_age_top.sort_values(["group", "auroc"], ascending=[True, False]).interaction))
         M = df_lr_age[df_lr_age.interaction.isin(lr_union)].pivot_table(index="interaction", columns="group",
                                                                          values="auroc")[order_age]
         M = M.loc[M.idxmax(1).map({g: i for i, g in enumerate(order_age)}).sort_values(kind="stable").index]
-        fig, ax = plt.subplots(figsize=(6, 0.32 * len(M) + 1.5))
+        
+        fig, ax = plt.subplots(figsize=figsize or (6, 0.32 * len(M) + 1.5))
         im = ax.imshow(M.values, cmap="RdBu_r", vmin=vmin, vmax=vmax, aspect="auto")
+        
         ax.set_xticks(range(len(order_age)))
-        ax.set_xticklabels(order_age)
+        ax.set_xticklabels(order_age, fontsize=fontsize_x)
         ax.set_yticks(range(len(M)))
-        ax.set_yticklabels(M.index, fontsize=8)
+        ax.set_yticklabels(M.index, fontsize=fontsize_y)
         fig.colorbar(im, ax=ax, fraction=0.05).set_label("AUROC (stage vs other stages)")
         ax.set_title("Top-ranked LR pairs per developmental stage")
+
         self.style_figure(fig, self.params["font_color"], self.params["bg_color"], self.params["fontsize_scale"])
+
         self._save_figure(fig, fname, force=force, verbose=verbose)
         return fig
 
