@@ -3,7 +3,7 @@ name: Publish notebook pages
 on:
   push:
     branches: [main]
-    paths: ["notebooks_multiproject/docs/**"]
+    paths: ["notebooks_multiproject/docs/**", ".github/workflows/pages.yaml"]
   workflow_dispatch:
 
 permissions:
