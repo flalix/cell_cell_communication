@@ -2085,7 +2085,7 @@ class SingleCell(object):
                               fontsize_title: int = 17, fontsize_legend: int = 12, fontsize_hover: int = 12,
                               font_color: Optional[str] = None, bg_color: Optional[str] = None, marker_line_color: str = "black",
                               image_bg_color: Optional[str] = None, fname: Optional[str] = None, include_plotlyjs=None,
-                              title: Optional[str] = None, reset_button: bool = True, force: bool = False,
+                              title: Optional[str] = None, reset_button: bool = True, webgl: bool = False, force: bool = False,
                               verbose: bool = False):
         """
         Interactive (plotly) spatial map of a categorical key on the hires image.
@@ -2099,11 +2099,15 @@ class SingleCell(object):
         self-contained HTML (default params['plotly_include_js']); an existing file is kept unless force.
         reset_button: two buttons above the legend - 'Set': every category visible (all circles) and the original
         view (after zoom / pan); 'Reset': every category hidden (click legend items to show single ones).
+        webgl: False (default) = points as SVG (go.Scatter), drawn in every browser and in exported HTML pages;
+        True = WebGL (go.Scattergl), faster for very many points, but a page keeps only ~16 WebGL contexts and
+        without WebGL the whole figure is replaced by 'WebGL is not supported' (exported notebooks, GitHub Pages).
         """
         font_color = self.get_param("font_color", font_color)   # style: None -> params
         bg_color = self.get_param("bg_color", bg_color)
 
         import plotly.graph_objects as go
+        Scatter = go.Scattergl if webgl else go.Scatter      # SVG by default (see webgl)
 
         hover_extra = hover_extra or {}
         a = self._check_adata(adata)
@@ -2135,7 +2139,7 @@ class SingleCell(object):
                 continue
             label = f"{k} – {names.get(k, '')}" if names.get(k) else str(k)
             extra = f"<br>{hover_extra[k]}" if k in hover_extra else ""
-            fig.add_trace(go.Scattergl(x=xy[mk, 0], y=xy[mk, 1], mode="markers", name=label, text=spot_names[mk],
+            fig.add_trace(Scatter(x=xy[mk, 0], y=xy[mk, 1], mode="markers", name=label, text=spot_names[mk],
                                        marker=dict(size=marker_size, color=c, opacity=0.9,
                                                    line=dict(width=0.5, color=marker_line_color)),
                                        hovertemplate=f"<b>{label}</b>{extra}<br>spot: %{{text}}<extra></extra>"))
@@ -3032,7 +3036,7 @@ class SingleCell(object):
                                   fontsize_title: int = 16, fontsize_legend: int = 11, fontsize_hover: int = 12,
                                   legend_ncol: Optional[int] = 4,
                                   font_color: Optional[str] = None, bg_color: Optional[str] = None,
-                                  reset_button: bool = True,
+                                  reset_button: bool = True, webgl: bool = False,
                                   fname: Optional[str] = None, include_plotlyjs=None, force: bool = False,
                                   verbose: bool = False):
         """
@@ -3043,8 +3047,12 @@ class SingleCell(object):
         figure: adata.uns['<key>_colors'], else _region_palette). fname: key of self.files or an .html name
         (None = not saved); an existing file is kept unless force.
         reset_button: 'Set' / 'Reset' buttons (every category shown / hidden; Set also restores the view).
+        webgl: False (default) = points as SVG (go.Scatter), drawn in every browser and in exported HTML pages;
+        True = WebGL (go.Scattergl), faster for very many points, but a page keeps only ~16 WebGL contexts and
+        without WebGL the whole figure is replaced by 'WebGL is not supported' (exported notebooks, GitHub Pages).
         """
         import plotly.graph_objects as go
+        Scatter = go.Scattergl if webgl else go.Scatter      # SVG by default (see webgl)
         from plotly.subplots import make_subplots
 
         font_color = self.get_param("font_color", font_color)
@@ -3076,12 +3084,12 @@ class SingleCell(object):
             hov = f"<b>{label}</b><br>spot: %{{text}}<br>{self.sample_col}: %{{customdata}}<extra></extra>"
             k = labs == c
             if k.any():
-                fig.add_trace(go.Scattergl(x=U[k, 0], y=U[k, 1], mode="markers", name=label, legendgroup=c,
+                fig.add_trace(Scatter(x=U[k, 0], y=U[k, 1], mode="markers", name=label, legendgroup=c,
                                            marker=dict(size=marker_size_umap, color=colors[c]), text=obs_names[k],
                                            customdata=samples[k], hovertemplate=hov), row=1, col=1)
             ks = lab_m == c
             if ks.any():
-                fig.add_trace(go.Scattergl(x=xy[ks, 0], y=xy[ks, 1], mode="markers", name=label, legendgroup=c,
+                fig.add_trace(Scatter(x=xy[ks, 0], y=xy[ks, 1], mode="markers", name=label, legendgroup=c,
                                            showlegend=not k.any(),
                                            marker=dict(size=marker_size_spatial, color=colors[c], opacity=0.85,
                                                        line=dict(width=0.3, color="#222222")),
@@ -3090,7 +3098,7 @@ class SingleCell(object):
         for s in scats:
             k = samples == s
             if k.any():
-                fig.add_trace(go.Scattergl(x=U[k, 0], y=U[k, 1], mode="markers", name=s, legendgroup=f"sample_{s}",
+                fig.add_trace(Scatter(x=U[k, 0], y=U[k, 1], mode="markers", name=s, legendgroup=f"sample_{s}",
                                            showlegend=False, marker=dict(size=marker_size_umap, color=scol[s]),
                                            text=obs_names[k], customdata=labs[k],
                                            hovertemplate=f"<b>{s}</b><br>spot: %{{text}}<br>{key}: %{{customdata}}<extra></extra>"),
@@ -3104,7 +3112,7 @@ class SingleCell(object):
         margin = dict(l=10, r=10, t=40 + fontsize_title, b=10)
         total_h = height
         if legend_ncol:
-            n_items = sum(1 for t in fig.data if t.type == "scattergl" and t.showlegend is not False)
+            n_items = sum(1 for t in fig.data if t.type in ("scatter", "scattergl") and t.showlegend is not False)
             n_rows = math.ceil(n_items / legend_ncol)
             leg_h = n_rows * (fontsize_legend + 10) + fontsize_legend + 30         # rows + title + gap
             total_h = height + leg_h
@@ -3129,7 +3137,7 @@ class SingleCell(object):
                               colors: Optional[Dict[str, str]] = None, panel_px: int = 360, marker_size: float = 3.5,
                               image_format: Optional[str] = None, fontsize_title: int = 13, fontsize_legend: int = 11,
                               fontsize_hover: int = 12, font_color: Optional[str] = None, bg_color: Optional[str] = None,
-                              width: Optional[int] = None, height: Optional[int] = None, reset_button: bool = True,
+                              width: Optional[int] = None, height: Optional[int] = None, reset_button: bool = True, webgl: bool = False,
                               fname: Optional[str] = None, include_plotlyjs=None, force: bool = False,
                               verbose: bool = False):
         """
@@ -3141,8 +3149,12 @@ class SingleCell(object):
         legend, panel_px x rows + 60). fname: key of self.files or an .html name (None = not saved); an existing file
         is kept unless force.
         reset_button: 'Set' / 'Reset' buttons (every category shown / hidden; Set also restores the view).
+        webgl: False (default) = points as SVG (go.Scatter), drawn in every browser and in exported HTML pages;
+        True = WebGL (go.Scattergl), faster for very many points, but a page keeps only ~16 WebGL contexts and
+        without WebGL the whole figure is replaced by 'WebGL is not supported' (exported notebooks, GitHub Pages).
         """
         import plotly.graph_objects as go
+        Scatter = go.Scattergl if webgl else go.Scatter      # SVG by default (see webgl)
         from plotly.subplots import make_subplots
 
         font_color = self.get_param("font_color", font_color)
@@ -3167,7 +3179,7 @@ class SingleCell(object):
                 if not ks.any():
                     continue
                 label = f"{k} - {names[k]}" if names and names.get(k) else k
-                fig.add_trace(go.Scattergl(x=xy[ks, 0], y=xy[ks, 1], mode="markers", name=label, legendgroup=k,
+                fig.add_trace(Scatter(x=xy[ks, 0], y=xy[ks, 1], mode="markers", name=label, legendgroup=k,
                                            showlegend=k not in shown, text=bc[ks],
                                            marker=dict(size=marker_size, color=colors.get(k, "#555555"), opacity=0.85),
                                            hovertemplate=f"<b>{label}</b><br>spot: %{{text}}<br>section: {lib}<extra></extra>"),
@@ -3401,7 +3413,7 @@ class SingleCell(object):
                              skip_color: str = "#dddddd", marker_line_color: str = "black", marker_line_width: float = 0.3,
                              font_color: Optional[str] = None, bg_color: Optional[str] = None, legend_ncols: int = 1,
                              image_bg_color: Optional[str] = None,
-                             legend_col_width: int = 110, reset_button: bool = True,
+                             legend_col_width: int = 110, reset_button: bool = True, webgl: bool = False,
                              fname: Optional[str] = "fig_subregion_map", force: bool = False, verbose: bool = False):
         """All subregions of one section on the H&E. Colours = shades of each region's colour; legend grouped by region
         (click a region title to toggle its subregions). Hover: region, subregion, status, signature genes, cell types.
@@ -3412,10 +3424,14 @@ class SingleCell(object):
         Legend: legend_ncols columns side by side on the right (regions kept whole, split in order into columns of about
         equal length; each column is a separate Plotly legend), legend_col_width pixels per column.
         reset_button: 'Set' / 'Reset' buttons (every category shown / hidden; Set also restores the view).
+        webgl: False (default) = points as SVG (go.Scatter), drawn in every browser and in exported HTML pages;
+        True = WebGL (go.Scattergl), faster for very many points, but a page keeps only ~16 WebGL contexts and
+        without WebGL the whole figure is replaced by 'WebGL is not supported' (exported notebooks, GitHub Pages).
         """
         font_color = self.get_param("font_color", font_color)   # style: None -> params
         bg_color = self.get_param("bg_color", bg_color)
         import plotly.graph_objects as go
+        Scatter = go.Scattergl if webgl else go.Scatter      # SVG by default (see webgl)
         key = self.params["subregion_key"]
         img = self._map_image(library_id, adata_map, image_bg_color, force, verbose)
         mm, xy = self.spot_xy(library_id, adata_map)
@@ -3436,7 +3452,7 @@ class SingleCell(object):
                 continue
             n_before = len(fig.data)
             if reg in self.params["subregion_skip"]:
-                fig.add_trace(go.Scattergl(x=xy[mreg, 0], y=xy[mreg, 1], mode="markers", name=reg, legendgroup=reg,
+                fig.add_trace(Scatter(x=xy[mreg, 0], y=xy[mreg, 1], mode="markers", name=reg, legendgroup=reg,
                                            legendgrouptitle_text=reg, marker=dict(size=spot_size, color=skip_color),
                                            hovertemplate=f"<b>{reg}</b> (not subclustered)<extra></extra>"))
                 reg_traces[reg] = list(range(n_before, len(fig.data)))
@@ -3445,14 +3461,14 @@ class SingleCell(object):
             cols = self.subregion_colors(subs, reg, regions, region_colors=region_colors)
             for s in subs:
                 m = (obs[key] == s).values
-                fig.add_trace(go.Scattergl(x=xy[m, 0], y=xy[m, 1], mode="markers", name=s, legendgroup=reg,
+                fig.add_trace(Scatter(x=xy[m, 0], y=xy[m, 1], mode="markers", name=s, legendgroup=reg,
                                            legendgrouptitle_text=reg,
                                            marker=dict(size=spot_size, color=cols[s],
                                                        line=dict(width=marker_line_width, color=marker_line_color)),
                                            text=names_lb[m],
                                            hovertemplate=f"<b>{s}</b><br>{info.get(s, '')}<br>%{{text}}<extra></extra>"))
             reg_traces[reg] = list(range(n_before, len(fig.data)))
-        fig.update_traces(legendgrouptitle_font=dict(size=fontsize_legend_title, color=font_color), selector=dict(type="scattergl"))
+        fig.update_traces(legendgrouptitle_font=dict(size=fontsize_legend_title, color=font_color), selector=dict(type="scattergl" if webgl else "scatter"))
         legend_style = dict(groupclick="toggleitem", itemsizing="constant", font=dict(size=fontsize_legend, color=font_color))
         margin = dict(l=10, r=10, t=50, b=10)
         ncols = max(1, int(legend_ncols))
@@ -3492,7 +3508,7 @@ class SingleCell(object):
                           fontsize_hover: int = 13, n_genes_hover: int = 8, region_colors: Optional[Dict[str, str]] = None,
                           marker_line_color: str = "black", marker_line_width: float = 0.3,
                           marker_opacity: Optional[float] = None, font_color: Optional[str] = None, bg_color: Optional[str] = None,
-                          image_bg_color: Optional[str] = None, reset_button: bool = True,
+                          image_bg_color: Optional[str] = None, reset_button: bool = True, webgl: bool = False,
                           fname: Optional[str] = "fig_region_map", force: bool = False, verbose: bool = False):
         """
         All regions of one section on the H&E (one trace per region, colours = _region_palette, as in the subregion map).
@@ -3503,10 +3519,14 @@ class SingleCell(object):
         Font sizes: fontsize_title, fontsize_legend, fontsize_hover. Colours: region_colors (region -> colour; others from
         _region_palette), marker_line_color / marker_line_width (spot outline), marker_opacity, font_color, bg_color.
         reset_button: 'Set' (every region visible, original view) and 'Reset' (every region hidden) above the legend.
+        webgl: False (default) = points as SVG (go.Scatter), drawn in every browser and in exported HTML pages;
+        True = WebGL (go.Scattergl), faster for very many points, but a page keeps only ~16 WebGL contexts and
+        without WebGL the whole figure is replaced by 'WebGL is not supported' (exported notebooks, GitHub Pages).
         """
         font_color = self.get_param("font_color", font_color)   # style: None -> params
         bg_color = self.get_param("bg_color", bg_color)
         import plotly.graph_objects as go
+        Scatter = go.Scattergl if webgl else go.Scatter      # SVG by default (see webgl)
         mm, xy = self.spot_xy(library_id, adata_map)
         names_lb = adata_map.obs_names[mm]
         keep = names_lb.isin(adata_expr.obs_names)
@@ -3542,7 +3562,7 @@ class SingleCell(object):
                 continue
             name = tab.loc[reg, "region_name"] if (reg in tab.index and "region_name" in tab.columns) else ""
             legend = f"{reg} - {name} (n={m.sum()})" if isinstance(name, str) and name else f"{reg} (n={m.sum()})"
-            fig.add_trace(go.Scattergl(x=xy[m, 0], y=xy[m, 1], mode="markers", name=legend, legendgroup=reg,
+            fig.add_trace(Scatter(x=xy[m, 0], y=xy[m, 1], mode="markers", name=legend, legendgroup=reg,
                                        marker=dict(size=spot_size, color=cols[reg], opacity=marker_opacity,
                                                    line=dict(width=marker_line_width, color=marker_line_color)),
                                        text=names_lb[m],
@@ -3858,16 +3878,20 @@ class SingleCell(object):
             lambda x: ", ".join(f"{i} ({v:.2f})" for i, v in zip(x.interaction.head(n), x.auroc.head(n))),
             include_groups=False).rename("top_lr")
 
+
     def calc_celltype_expr(self, adata, df_abund: pd.DataFrame, df_sig: pd.DataFrame, genes: Sequence[str],
                            counts_layer: Optional[str] = None, target_sum: Optional[float] = None
                            ) -> Tuple[np.ndarray, List[str], List[str]]:
-        """Cell-type-attributed expression without the c2l per-cell-type layers: the observed counts of every spot are
+        """
+        Cell-type-attributed expression without the c2l per-cell-type layers: the observed counts of every spot are
         split across cell types in proportion to abundance x reference signature,
             counts_A(s, g) = counts(s, g) * w(s, A) g(A, g) / sum_B w(s, B) g(B, g),
         which is how cell2location's per-cell-type layers are made (checked: identical to the layers of the lymph node
         map with q05 abundances and 'means' signatures). Returns (E = log1p(CP10k of the split counts; spot library
         size), spots x cell types x genes, float32; genes found; cell types).
-        df_sig: genes (same names as adata.var_names) x cell types; df_abund: spots x cell types."""
+        df_sig: genes (same names as adata.var_names) x cell types; df_abund: spots x cell types.
+        """
+
         counts_layer = self.get_param("counts_layer", counts_layer)
         target_sum = self.get_param("target_sum", target_sum)
         celltypes = [c for c in df_abund.columns if c in df_sig.columns]
