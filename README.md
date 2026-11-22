@@ -69,7 +69,21 @@ Rendered via **html-preview** *(Ctrl+click to open in a new tab)*:
 - [01 — Prepare](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_mouse_brain01_prepare.html)
 - [02 — Region astrocytes](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_mouse_brain02_region_astrocytes.html)
 - [03 — Subregions](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_mouse_brain03_subregions.html)
-- [04 — LIANA regions](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_mouse_brain04_liana_regions.html)
+- [04 — LIANA regions](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_mouse_brain04_liana_ccc.html)
+
+
+### **Human Heart Development**
+- [01 — Prepare](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_heart_dvlp01_prepare.html)
+- [02 — Region astrocytes](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_heart_dvlp02_regions.html)
+- [03 — Subregions](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_heart_dvlp03_subregions.html)
+- [04 — LIANA regions](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_heart_dvlp04_liana_ccc.html)
+
+
+### **Pancreatic Cancer (PDAC)**
+- [01 — Prepare](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_pdac01_prepare.html)
+- [02 — Region astrocytes](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_pdac02_regions.html)
+- [03 — Subregions](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_pdac03_subregions.html)
+- [04 — LIANA regions](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_pdac04_liana_ccc.html)
 
 ---
 
