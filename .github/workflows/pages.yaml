@@ -1,0 +1,38 @@
+name: Publish notebook pages
+
+on:
+  push:
+    branches: [main]
+    paths: ["notebooks_multiproject/docs/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: notebooks_multiproject/docs
+      - name: Collect the HTML pages
+        run: |
+          mkdir -p _site/notebooks_multiproject/docs
+          cp notebooks_multiproject/docs/*.html _site/notebooks_multiproject/docs/
+          du -sh _site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
