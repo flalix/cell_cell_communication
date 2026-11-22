@@ -14230,10 +14230,14 @@ if (outputEl) {{
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
 <h3 id="9.-Tables">9. Tables<a class="anchor-link" href="#9.-Tables">¶</a></h3><p>Written by the methods (NEURO_FILES["mb04"], root_result, prefix <strong>mb04_</strong>): spatial weights, bivariate global table, LR by region / subregion, cell-type LR (tissue, by group), cell-type links by group, reference support, consensus by region / subregion; caches: bivariate h5ad, reference rank_aggregate.</p>
 <h3 id="Notes-for-interpretation">Notes for interpretation<a class="anchor-link" href="#Notes-for-interpretation">¶</a></h3><ul>
-<li><strong>AUROC</strong> compares a group with the rest of the tissue; a pair can be enriched in a group only because its producers are concentrated there (composition), which is the point of the cell-type sections.</li>
-<li><strong>Sender -&gt; receiver</strong> calls follow the reference signatures x cell2location abundances; they say which types <em>can</em> carry ligand and receptor <em>where</em>, not that they signal.</li>
-<li><strong>z</strong> values ignore spatial autocorrelation and are large for any co-localised pair; compare links by score, ratio and n_lr.</li>
-<li><strong>Parametrisation</strong>: the same LIANA parameter values run unchanged on the lymph node (one section, human, 34 types) and the mouse brain (two sections, mouse, 59 types); only the resource, the files and the region settings differ.</li>
+<li><p><strong>AUROC</strong> compares a group with the rest of the tissue; a pair can be enriched in a group only because its producers are concentrated there (composition), which is the point of the cell-type sections.</p>
+</li>
+<li><p><strong>Sender -&gt; receiver</strong> calls follow the reference signatures x cell2location abundances; they say which types <em>can</em> carry ligand and receptor <em>where</em>, not that they signal.</p>
+</li>
+<li><p><strong>z</strong> values ignore spatial autocorrelation and are large for any co-localised pair; compare links by score, ratio and n_lr.</p>
+</li>
+<li><p><strong>Parametrisation</strong>: the same LIANA parameter values run unchanged on the lymph node (one section, human, 34 types) and the mouse brain (two sections, mouse, 59 types); only the resource, the files and the region settings differ.</p>
+</li>
 </ul>
 </div>
 </div>
