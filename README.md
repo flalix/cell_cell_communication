@@ -60,30 +60,30 @@ Visium (H&E / IF) ────► Scanpy / Squidpy ──► spatial graphs, nei
 Rendered via **html-preview** *(Ctrl+click to open in a new tab)*:
 
 ### **Lymphoid tissue**
-- [01 — Prepare](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_lymphoid01_prepare.html)
-- [02 — Regions](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_lymphoid02_regions.html)
-- [03 — Subregions](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_lymphoid03_subregions.html)
-- [04 — LIANA regions](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_lymphoid04_liana_regions.html)
+- [01 — Prepare](https://flalix.github.io/cell_cell_communication/notebooks_multiproject/docs/mp_lymphoid01_prepare.html)
+- [02 — Regions](https://flalix.github.io/cell_cell_communication/notebooks_multiproject/docs/mp_lymphoid02_regions.html)
+- [03 — Subregions](https://flalix.github.io/cell_cell_communication/notebooks_multiproject/docs/mp_lymphoid03_subregions.html)
+- [04 — LIANA regions](https://flalix.github.io/cell_cell_communication/notebooks_multiproject/docs/mp_lymphoid04_liana_regions.html)
 
 ### **Mouse brain**
-- [01 — Prepare](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_mouse_brain01_prepare.html)
-- [02 — Region astrocytes](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_mouse_brain02_region_astrocytes.html)
-- [03 — Subregions](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_mouse_brain03_subregions.html)
-- [04 — LIANA regions](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_mouse_brain04_liana_ccc.html)
+- [01 — Prepare](https://flalix.github.io/cell_cell_communication/notebooks_multiproject/docs/mp_mouse_brain01_prepare.html)
+- [02 — Region astrocytes](https://flalix.github.io/cell_cell_communication/notebooks_multiproject/docs/mp_mouse_brain02_region_astrocytes.html)
+- [03 — Subregions](https://flalix.github.io/cell_cell_communication/notebooks_multiproject/docs/mp_mouse_brain03_subregions.html)
+- [04 — LIANA regions](https://flalix.github.io/cell_cell_communication/notebooks_multiproject/docs/mp_mouse_brain04_liana_ccc.html)
 
 
 ### **Human Heart Development**
-- [01 — Prepare](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_heart_dvlp01_prepare.html)
-- [02 — Region astrocytes](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_heart_dvlp02_regions.html)
-- [03 — Subregions](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_heart_dvlp03_subregions.html)
-- [04 — LIANA regions](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_heart_dvlp04_liana_ccc.html)
+- [01 — Prepare](https://flalix.github.io/cell_cell_communication/notebooks_multiproject/docs/mp_heart_dvlp01_prepare.html)
+- [02 — Region astrocytes](https://flalix.github.io/cell_cell_communication/notebooks_multiproject/docs/mp_heart_dvlp02_regions.html)
+- [03 — Subregions](https://flalix.github.io/cell_cell_communication/notebooks_multiproject/docs/mp_heart_dvlp03_subregions.html)
+- [04 — LIANA regions](https://flalix.github.io/cell_cell_communication/notebooks_multiproject/docs/mp_heart_dvlp04_liana_ccc.html)
 
 
 ### **Pancreatic Cancer (PDAC)**
-- [01 — Prepare](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_pdac01_prepare.html)
-- [02 — Region astrocytes](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_pdac02_regions.html)
-- [03 — Subregions](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_pdac03_subregions.html)
-- [04 — LIANA regions](https://html-preview.github.io/?url=https://github.com/flalix/cell_cell_communication/blob/main/notebooks_multiproject/docs/mp_pdac04_liana_ccc.html)
+- [01 — Prepare](https://flalix.github.io/cell_cell_communication/notebooks_multiproject/docs/mp_pdac01_prepare.html)
+- [02 — Region astrocytes](https://flalix.github.io/cell_cell_communication/notebooks_multiproject/docs/mp_pdac02_regions.html)
+- [03 — Subregions](https://flalix.github.io/cell_cell_communication/notebooks_multiproject/docs/mp_pdac03_subregions.html)
+- [04 — LIANA regions](https://flalix.github.io/cell_cell_communication/notebooks_multiproject/docs/mp_pdac04_liana_ccc.html)
 
 ---
 
