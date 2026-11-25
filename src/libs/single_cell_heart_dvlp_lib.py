@@ -64,6 +64,11 @@ HEART_LINEAGE: Dict[str, List[str]] = {
     "immune":        ["MyC", "LyC"],
 }
 
+# 10 contrasting light colours for line plots on a dark background (plot_celltype_age_trend): one per cell type
+# of a panel, in order; the first 7 (the largest lineage) are the most distinct hues
+LIGHT_CONTRAST_10: List[str] = ["#FF6B6B", "#4FC3F7", "#FFEB3B", "#69F0AE", "#CE93D8",
+                                "#FFA726", "#F5F5F5", "#F48FB1", "#A1887F", "#C5E1A5"]
+
 # 20 genes of heart development shown on the reference UMAP and on the Visium sections (symbol -> role)
 HEART_GENES: Dict[str, str] = {
     "NKX2-5": "core cardiac TF (first + second heart field)",
@@ -1728,12 +1733,16 @@ class SingleCellHeart(SingleCell):
         return self._cached_any(fname, _compute, force=force, verbose=verbose)
 
     def plot_celltype_age_trend(self, df_trend: pd.DataFrame, lineage: Optional[Dict[str, Sequence[str]]] = None,
-                                ncols: int = 3, panel_size=(7.5, 3.8), fname: Optional[str] = None,
+                                ncols: int = 3, panel_size=(7.5, 3.8), max_celltypes: int = 10,
+                                colors: Optional[Sequence[str]] = None, fname: Optional[str] = None,
                                 font_color: Optional[str] = None, bg_color: Optional[str] = None,
                                 fontsize_scale: Optional[float] = None, figsize:tuple=(),
                                 force: bool = False, verbose: bool = False):
         """
         One panel per lineage: share of each cell type vs PCW (points = sections, line = mean per age).
+        max_celltypes: at most this many cell types per panel (a larger lineage keeps those with the highest mean
+        share). colors: one colour per cell type of a panel, in order (default LIGHT_CONTRAST_10: 10 contrasting light
+        colours for the dark background; pass darker colours for a white background).
         """
 
         font_color = self.get_param("font_color", font_color)
@@ -1741,7 +1750,9 @@ class SingleCellHeart(SingleCell):
         fontsize_scale = self.get_param("fontsize_scale", fontsize_scale)
         lineage = lineage or HEART_LINEAGE
 
-        colors = self.celltype_colors(lineage)
+        palette = list(colors or LIGHT_CONTRAST_10)
+        if max_celltypes > len(palette):
+            raise ValueError(f"max_celltypes={max_celltypes} > {len(palette)} colours: pass more colours")
         lins = [l for l in lineage if l in set(df_trend.lineage)]
         nrows = math.ceil(len(lins) / ncols)
 
@@ -1751,12 +1762,15 @@ class SingleCellHeart(SingleCell):
             ax.axis("off")
 
         for ax, lin in zip(axes.ravel(), lins):
-            for i, df_ct in enumerate(lineage[lin]):
+            types = [t for t in lineage[lin] if t in set(df_trend.cell_type)]
+            if len(types) > max_celltypes:                   # keep the most abundant, in lineage order
+                top = set(df_trend[df_trend.cell_type.isin(types)].groupby("cell_type")["share"].mean()
+                          .nlargest(max_celltypes).index)
+                types = [t for t in types if t in top]
+            for i, df_ct in enumerate(types):
                 d = df_trend[df_trend.cell_type == df_ct]
-                if d.empty:
-                    continue
-                col = colors[df_ct]
-                jitter = (i - len(lineage[lin]) / 2) * 0.04
+                col = palette[i]
+                jitter = (i - len(types) / 2) * 0.04
                 ax.scatter(d.age_pcw + jitter, d.share, s=10, color=col, alpha=0.6, linewidths=0)
                 mm = d.groupby("age_pcw")["share"].mean()
                 ax.plot(mm.index, mm.values, color=col, lw=1.6, label=df_ct)
@@ -1940,12 +1954,15 @@ class SingleCellHeart(SingleCell):
         return fig
 
     def plot_group_age_heatmap(self, df_age: pd.DataFrame, group_col: str = "region", value: str = "share_mean",
+                               names: Optional[Dict[str, str]] = None, fontsize_ylabel: float = 7,
                                min_share: float = 0.0, figsize=(9, 16), title: str = "", fname: Optional[str] = None,
                                cmap='Reds', font_color: Optional[str] = None, bg_color: Optional[str] = None,
                                fontsize_scale: Optional[float] = None, force: bool = False, verbose: bool = False):
         """
         Heatmap groups (rows) x age labels (columns) of calc_df_region_age (any categorical key), each row scaled
         to its maximum (the text gives the share in %).
+        names: optional {group id: description} (e.g. region_id -> region_name of heart_regions.tsv); the y tick
+        labels are then 'R00  description' (as plot_region_age). fontsize_ylabel: font size of these labels.
         """
 
         font_color = self.get_param("font_color", font_color)
@@ -1963,7 +1980,8 @@ class SingleCellHeart(SingleCell):
         ax.set_xticks(range(M.shape[1]))
         ax.set_xticklabels(M.columns)
         ax.set_yticks(range(M.shape[0]))
-        ax.set_yticklabels(M.index, fontsize=7)
+        ylabels = [f"{g}  {names.get(str(g), '')}".rstrip() if names else str(g) for g in M.index]
+        ax.set_yticklabels(ylabels, fontsize=fontsize_ylabel)
         
         for i in range(M.shape[0]):
             for j in range(M.shape[1]):
